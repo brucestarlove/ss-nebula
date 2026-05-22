@@ -1,0 +1,1688 @@
+/* Nebula app shell — flex-column chrome (top rail / canvas / footer) built on
+ * the starscape-ui-system-v3 tokens + components. The UI system's base reset
+ * already makes <body> a flex column; we just lock the viewport and let #root
+ * and .nebula-app fill it. */
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+
+#root {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.nebula-app {
+  position: relative;
+  z-index: 1;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* ---------- Top rail ---------- */
+/* The package's .topbar is position:fixed for scroll-aware pages; Nebula's
+ * canvas doesn't scroll, so the rail sits statically in the flex column. */
+.nebula-topbar {
+  position: static;
+  flex-shrink: 0;
+  gap: 0.65rem;
+  min-height: 3.05rem;
+  padding: 0.55rem clamp(0.65rem, 2vw, 1.1rem);
+  /* No border: the package's .topbar keeps a transparent bottom border that only
+   * colors when scrolled. Nebula's rail is static, so it stays borderless like
+   * Orbit's non-scrolled top rail. */
+}
+
+.nebula-brand {
+  flex-shrink: 0;
+}
+
+.nebula-logo {
+  width: 2.55rem;
+  height: 2.55rem;
+  object-fit: contain;
+  filter: drop-shadow(0 0 8px rgba(var(--accent-rgb), 0.25));
+}
+
+/* Right-aligned search (left-most of the right control cluster, Orbit-style).
+ * Field chrome and rail sizing come from @starlove/ui's .topbar-search and
+ * .controls rules; Nebula only tweaks the available width for this shell. */
+.nebula-search {
+  flex: 0 1 18rem;
+  min-width: 7rem;
+  width: min(18rem, 34vw);
+  max-width: 18rem;
+}
+
+.nebula-new-btn {
+  white-space: nowrap;
+}
+
+/* ---------- Canvas menu ---------- */
+/* The canvas trigger is the package .topbar-chip; Nebula only keeps the icon
+ * spacing and board-label cap. */
+.nebula-menu-trigger {
+  gap: 0.4rem;
+}
+
+.nebula-menu-trigger__label {
+  max-width: 12rem;
+}
+
+/* Canvases dropdown — adopts the package .menu-flyout look (same as the UI
+ * preview's Boards dropdown). Nebula-local tweaks only: ellipsize long canvas
+ * names, and accent the "New Canvas" action row. */
+.nebula-canvas-menu .menu-flyout-item-title {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nebula-canvas-menu__create .menu-flyout-item-title {
+  color: var(--accent);
+  font-weight: 800;
+}
+
+.nebula-canvas-menu {
+  top: calc(100% + 0.4rem);
+  inset-inline-end: 0;
+  min-width: 15rem;
+  max-height: min(60vh, 26rem);
+  overflow-y: auto;
+}
+
+.nebula-canvas-menu__name {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nebula-canvas-menu__meta {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.nebula-canvas-menu__create {
+  font-weight: 700;
+  color: var(--accent);
+}
+
+/* ---------- Canvas area ---------- */
+/* The canvas sits in an Orbit-style framed board: a 1px outline with rounded
+ * corners and a soft drop shadow, but a *transparent* fill so the app's themed
+ * background (the Starscape starfield in dark, the parchment surface in light)
+ * shows straight through the frame and the transparent Excalidraw canvas. */
+.nebula-main {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0 clamp(0.6rem, 1.5vw, 1rem);
+}
+
+.nebula-board {
+  --frame-shadow: 0 2px 16px rgba(0, 0, 0, 0.06);
+
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  padding: 0.5rem;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius, 18px) + 4px);
+  background: transparent;
+  box-shadow: var(--frame-shadow);
+}
+
+[data-theme="dark"] .nebula-board {
+  --frame-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 12px 40px rgba(0, 0, 0, 0.3);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .nebula-board {
+    --frame-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 12px 40px rgba(0, 0, 0, 0.3);
+  }
+}
+
+/* Excalidraw fills the inner board, clipped to the inner radius. */
+.nebula-board > .nebula-canvas {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: var(--radius, 18px);
+  touch-action: none;
+}
+
+.nebula-canvas .excalidraw {
+  height: 100%;
+}
+
+/* ---------- Background flavors ---------- */
+/* Rich flavors (parchment / starfield) are owned by the package backgrounds —
+ * no override needed. Plain flavors swap <body> to a flat fill (winning over
+ * the package's body rules via the :root prefix) and hide the starfield; the
+ * transparent canvas then shows the flat color through the framed board. */
+:root[data-bg="white"] body {
+  background: #ffffff;
+}
+
+:root[data-bg="black"] body {
+  background: #000000;
+}
+
+[data-bg="white"] .grain,
+[data-bg="black"] .grain {
+  display: none;
+}
+
+/* Small dot marking the active theme button when it's on the plain flavor, so
+ * the double-tap state is visible at a glance. */
+.nebula-theme-option[data-flavor="plain"] {
+  position: relative;
+}
+
+.nebula-theme-option[data-flavor="plain"]::after {
+  content: "";
+  position: absolute;
+  bottom: 0.18rem;
+  left: 50%;
+  width: 3px;
+  height: 3px;
+  margin-left: -1.5px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.7;
+}
+
+/* ---------- Footer (ported from Orbit's .frame-footer) ---------- */
+.frame-footer {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: center;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 0.4rem clamp(0.75rem, 2vw, 1.25rem) 0.5rem;
+}
+
+.frame-footer-title {
+  font-size: 0.86rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+.frame-footer-subtitle {
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.15;
+}
+
+.frame-footer-subtitle em {
+  font-style: italic;
+}
+
+/* ---------- Settings drawer ----------
+ * Shell + tabs + sections come from the package .drawer (is-settings / is-wide)
+ * exactly as ss-orbit uses them, so the only local detail is the section
+ * heading. The first heading in a section sheds its top margin since the
+ * .drawer-section card already provides the spacing. */
+.nebula-settings-heading {
+  margin: 0 0 0.35rem;
+  font-size: 0.85rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+}
+
+/* ---------- Library controls (Excalidraw top-bar, via renderTopRightUI) ----------
+ * Nebula's library switcher + selection "Add" button sit just left of
+ * Excalidraw's native Library button. They live inside `.excalidraw`, so the
+ * triggers are styled with that prefix to win over the canvas's button reset;
+ * the dropdown panels are portaled to <body> and reuse the shared .flyout look. */
+.nebula-library-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Nebula library chips + Excalidraw's native Library trigger share one look so
+ * the three top-bar buttons read as a single, sized-up control cluster. */
+.excalidraw .nebula-library-trigger,
+.excalidraw .default-sidebar-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  height: 2.6rem !important;
+  min-height: 2.6rem !important;
+  max-width: 15rem;
+  padding: 0 1.05rem !important;
+  border: 1px solid var(--line, rgba(0, 0, 0, 0.12)) !important;
+  border-radius: 13px !important;
+  background: var(--surface-raised, #fff) !important;
+  color: var(--ink, inherit) !important;
+  font-size: 0.95rem !important;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  transition: background 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.excalidraw .nebula-library-trigger:hover,
+.excalidraw .nebula-library-trigger[aria-expanded='true'],
+.excalidraw .default-sidebar-trigger:hover,
+.excalidraw .default-sidebar-trigger.active,
+.excalidraw .default-sidebar-trigger[aria-expanded='true'] {
+  background: var(--accent-hover, rgba(0, 0, 0, 0.05)) !important;
+  border-color: var(--accent, rgba(0, 0, 0, 0.2)) !important;
+  box-shadow: 0 2px 10px rgba(var(--accent-rgb), 0.18);
+}
+
+.excalidraw .nebula-library-trigger--add {
+  color: var(--accent, inherit) !important;
+  font-weight: 700;
+}
+
+.excalidraw .default-sidebar-trigger .sidebar-trigger__label {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.nebula-library-trigger__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nebula-library-trigger__icon {
+  display: none;
+}
+
+/* Portaled dropdown: position is set inline (fixed); inherit the Canvases-menu look. */
+.nebula-library-flyout {
+  min-width: 16rem;
+  max-height: min(60vh, 26rem);
+  overflow-y: auto;
+}
+
+/* Action confirmation toast, pinned top-right just under the library buttons. */
+.nebula-library-toast {
+  position: fixed;
+  top: 3.6rem;
+  right: 1rem;
+  z-index: 60;
+  max-width: 22rem;
+  padding: 0.55rem 0.8rem;
+  border: 1px solid var(--line, rgba(0, 0, 0, 0.12));
+  border-radius: 12px;
+  background: var(--surface-raised, #fff);
+  box-shadow: var(--flyout-shadow, 0 8px 24px rgba(0, 0, 0, 0.18));
+  color: var(--ink, inherit);
+  font-size: 0.82rem;
+  font-weight: 600;
+  animation: nebula-library-toast-in 160ms ease;
+}
+
+[data-theme='dark'] .nebula-library-toast {
+  background: rgba(16, 24, 48, 0.96);
+  border-color: rgba(var(--starlight-rgb), 0.16);
+}
+
+@keyframes nebula-library-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+[data-motion='reduce'] .nebula-library-toast {
+  animation: none;
+}
+
+/* ---------- Nebula-skinned Excalidraw Library sidebar ----------
+ * Excalidraw themes its panels through CSS variables. Because custom properties
+ * resolve from the nearest ancestor, scoping these onto the `.default-sidebar`
+ * subtree re-skins just the Library panel with Nebula surfaces + accent, leaving
+ * the rest of Excalidraw's chrome untouched. */
+.excalidraw .sidebar.default-sidebar {
+  --island-bg-color: var(--surface-raised);
+  --sidebar-bg-color: var(--surface-raised);
+  --popup-bg-color: var(--surface-raised);
+  --default-bg-color: var(--surface-raised);
+  --color-on-surface: var(--ink);
+  --color-primary: var(--accent);
+  --color-primary-darker: var(--accent);
+  --color-primary-darkest: var(--accent);
+  --button-hover-bg: var(--accent-hover);
+  --sidebar-border-color: var(--line);
+  --default-border-color: var(--line);
+  --input-bg-color: var(--surface);
+  --input-border-color: var(--line);
+  --input-hover-bg-color: var(--accent-hover);
+  --focus-highlight-color: var(--accent-active);
+
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--flyout-shadow);
+  overflow: hidden;
+}
+
+/* Section headers ("Personal Library", "Excalidraw Library") as Nebula labels. */
+.excalidraw .default-sidebar .library-menu-items-container__header {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* The "Find on canvas" search field: Nebula surface + ink, muted placeholder,
+ * and an accent focus ring instead of Excalidraw's flat gray box.
+ *
+ * Excalidraw doesn't theme this box through variables — it hardcodes
+ * `background-color:#f5f5f9` (light) / `#31303b` (dark) and `border:0` directly
+ * on `.layer-ui__search-header .ExcTextField__input`, and the dark rule carries
+ * specificity (0,5,0) via a doubled `.excalidraw`. The leading `.excalidraw.excalidraw`
+ * here lifts us to (0,6,0) so a single theme-agnostic rule (Nebula vars already
+ * switch with the theme) overrides both the light and dark hardcodes. */
+.excalidraw.excalidraw .layer-ui__search-header .ExcTextField__input {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.excalidraw.excalidraw .layer-ui__search-header .ExcTextField__input input {
+  color: var(--ink);
+}
+
+.excalidraw.excalidraw .layer-ui__search-header .ExcTextField__input input::placeholder {
+  color: var(--muted);
+}
+
+.excalidraw.excalidraw .layer-ui__search-header .ExcTextField__input:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-active);
+}
+
+/* Active sidebar tab: a subtle accent tint + accent icon (theme-correct in both
+ * light and dark) rather than the solid light fill Excalidraw paints by default. */
+.excalidraw .default-sidebar .sidebar-tab-trigger[data-state='active'] {
+  background: var(--accent-active) !important;
+  color: var(--accent) !important;
+}
+
+/* Library cells: soft rounded tiles that lift on hover. */
+.excalidraw .default-sidebar .library-unit {
+  border-radius: 12px;
+  transition: background 140ms ease, box-shadow 140ms ease;
+}
+
+.excalidraw .default-sidebar .library-unit:hover {
+  background: var(--accent-hover);
+  box-shadow: 0 2px 10px rgba(var(--accent-rgb), 0.16);
+}
+
+/* The ⋯ menu button. */
+.excalidraw .default-sidebar .dropdown-menu-button {
+  border-radius: 10px;
+  color: var(--ink);
+}
+
+.excalidraw .default-sidebar .dropdown-menu-button:hover {
+  background: var(--accent-hover);
+}
+
+/* "Browse libraries" as a Nebula-styled button rather than a plain link. */
+.excalidraw .default-sidebar .library-menu-browse-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--accent);
+  font-weight: 700;
+  text-decoration: none;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.excalidraw .default-sidebar .library-menu-browse-button:hover {
+  background: var(--accent-hover);
+  color: var(--accent);
+}
+
+/* ---------- Nebula-skinned Excalidraw left properties menu ----------
+ * The selected-shape property panel is an Excalidraw Island rather than the
+ * default sidebar, so it needs its own scoped variables and control-level
+ * polish to match the Library menu treatment above. */
+.excalidraw .App-menu__left {
+  --island-bg-color: var(--surface-raised);
+  --popup-bg-color: var(--surface-raised);
+  --default-bg-color: var(--surface-raised);
+  --color-on-surface: var(--ink);
+  --text-primary-color: var(--ink);
+  --icon-fill-color: var(--ink);
+  --color-primary: var(--accent);
+  --color-primary-darker: var(--accent);
+  --color-primary-darkest: var(--accent);
+  --color-on-primary-container: var(--accent);
+  --color-surface-primary-container: var(--accent-active);
+  --button-bg: var(--surface);
+  --button-border: var(--line);
+  --button-hover-bg: var(--accent-hover);
+  --button-hover-border: rgba(var(--accent-rgb), 0.36);
+  --button-active-bg: var(--accent-active);
+  --button-active-border: var(--accent);
+  --button-selected-bg: var(--accent-active);
+  --button-selected-border: var(--accent);
+  --button-selected-hover-bg: rgba(var(--accent-rgb), 0.16);
+  --default-border-color: var(--line);
+  --input-bg-color: var(--surface);
+  --input-border-color: var(--line);
+  --focus-highlight-color: var(--accent-active);
+  --color-brand-hover: var(--accent);
+  --color-slider-track: rgba(var(--accent-rgb), 0.36);
+  --color-slider-thumb: var(--accent);
+
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface-raised);
+  box-shadow: var(--flyout-shadow);
+}
+
+.excalidraw .App-menu__left .panelColumn {
+  row-gap: 0.65rem;
+}
+
+.excalidraw .App-menu__left .panelColumn > div,
+.excalidraw .App-menu__left .panelColumn > fieldset,
+.excalidraw .App-menu__left .panelColumn > .control-label {
+  padding-bottom: 0.7rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.excalidraw .App-menu__left .panelColumn > :last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.excalidraw .App-menu__left .panelColumn h3,
+.excalidraw .App-menu__left .panelColumn legend,
+.excalidraw .App-menu__left .panelColumn .control-label {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.excalidraw .App-menu__left .color-picker-container,
+.excalidraw .App-menu__left .FontPicker__container {
+  box-sizing: border-box;
+  column-gap: 0.25rem;
+  padding: 0.25rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.excalidraw .App-menu__left .color-picker__button {
+  border-color: var(--line);
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+}
+
+.excalidraw .App-menu__left .color-picker__button:hover::after {
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.excalidraw .App-menu__left .color-picker__button.active .color-picker__button-outline {
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.excalidraw .App-menu__left .buttonList {
+  gap: 0.4rem;
+  padding: 0.25rem 0 0;
+}
+
+.excalidraw .App-menu__left .buttonList label,
+.excalidraw .App-menu__left .buttonList button,
+.excalidraw .App-menu__left .buttonList .zIndexButton,
+.excalidraw .App-menu__left button.standalone {
+  border-radius: 10px;
+  transition: background 140ms ease, border-color 140ms ease, box-shadow 140ms ease, color 140ms ease;
+}
+
+.excalidraw .App-menu__left .buttonList label:hover,
+.excalidraw .App-menu__left .buttonList button:hover,
+.excalidraw .App-menu__left .buttonList .zIndexButton:hover,
+.excalidraw .App-menu__left button.standalone:hover {
+  box-shadow: 0 2px 10px rgba(var(--accent-rgb), 0.14);
+}
+
+.excalidraw .App-menu__left .buttonList label.active,
+.excalidraw .App-menu__left .buttonList button.active,
+.excalidraw .App-menu__left .buttonList .zIndexButton.active,
+.excalidraw .App-menu__left button.standalone.active {
+  color: var(--accent);
+}
+
+.excalidraw .App-menu__left .buttonList label.active svg,
+.excalidraw .App-menu__left .buttonList button.active svg,
+.excalidraw .App-menu__left .buttonList .zIndexButton.active svg,
+.excalidraw .App-menu__left button.standalone.active svg {
+  color: var(--accent);
+}
+
+.excalidraw .App-menu__left .range-wrapper {
+  padding-top: 0.8rem;
+  padding-bottom: 1.35rem;
+}
+
+.excalidraw .App-menu__left .range-input::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px var(--surface-raised), 0 2px 8px rgba(var(--accent-rgb), 0.24);
+}
+
+.excalidraw .App-menu__left .range-input::-moz-range-thumb {
+  box-shadow: 0 0 0 3px var(--surface-raised), 0 2px 8px rgba(var(--accent-rgb), 0.24);
+}
+
+.excalidraw .App-menu__left .value-bubble,
+.excalidraw .App-menu__left .zero-label {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+/* ---------- Nebula-skinned Excalidraw shape toolbar ---------- */
+.excalidraw .App-toolbar {
+  --island-bg-color: var(--surface-raised);
+  --color-on-surface: var(--ink);
+  --text-primary-color: var(--ink);
+  --icon-fill-color: var(--ink);
+  --keybinding-color: var(--muted);
+  --color-primary: var(--accent);
+  --color-primary-darker: var(--accent);
+  --color-primary-darkest: var(--accent);
+  --color-on-primary-container: var(--accent);
+  --color-surface-primary-container: var(--accent-active);
+  --button-bg: transparent;
+  --button-border: transparent;
+  --button-hover-bg: var(--accent-hover);
+  --button-hover-border: rgba(var(--accent-rgb), 0.28);
+  --button-active-bg: var(--accent-active);
+  --button-active-border: var(--accent);
+  --button-selected-bg: var(--accent-active);
+  --button-selected-border: var(--accent);
+  --button-selected-hover-bg: rgba(var(--accent-rgb), 0.16);
+  --default-border-color: var(--line);
+  --focus-highlight-color: var(--accent-active);
+  --color-brand-active: var(--accent);
+
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface-raised);
+  box-shadow: var(--flyout-shadow);
+}
+
+.excalidraw .App-toolbar label.ToolIcon {
+  margin-bottom: 0;
+}
+
+.excalidraw .App-toolbar .ToolIcon__icon,
+.excalidraw .App-toolbar .App-toolbar__extra-tools-trigger {
+  border-radius: 10px;
+  transition: background 140ms ease, border-color 140ms ease, box-shadow 140ms ease, color 140ms ease;
+}
+
+.excalidraw .App-toolbar .ToolIcon__icon:hover,
+.excalidraw .App-toolbar .App-toolbar__extra-tools-trigger:hover {
+  background: var(--accent-hover);
+  box-shadow: 0 2px 10px rgba(var(--accent-rgb), 0.14);
+}
+
+.excalidraw .App-toolbar .ToolIcon .ToolIcon_type_radio:checked + .ToolIcon__icon,
+.excalidraw .App-toolbar .ToolIcon .ToolIcon_type_checkbox:checked + .ToolIcon__icon,
+.excalidraw .App-toolbar .App-toolbar__extra-tools-trigger--selected,
+.excalidraw .App-toolbar .App-toolbar__extra-tools-trigger--selected:hover {
+  background: var(--accent-active);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.excalidraw .App-toolbar .ToolIcon .ToolIcon_type_radio:checked + .ToolIcon__icon svg,
+.excalidraw .App-toolbar .ToolIcon .ToolIcon_type_checkbox:checked + .ToolIcon__icon svg,
+.excalidraw .App-toolbar .App-toolbar__extra-tools-trigger--selected svg {
+  color: var(--accent);
+}
+
+.excalidraw .App-toolbar .ToolIcon__keybinding {
+  color: var(--muted);
+  font-weight: 700;
+  opacity: 0.72;
+}
+
+.excalidraw .App-toolbar .ToolIcon .ToolIcon_type_radio:checked + .ToolIcon__icon .ToolIcon__keybinding,
+.excalidraw .App-toolbar .ToolIcon .ToolIcon_type_checkbox:checked + .ToolIcon__icon .ToolIcon__keybinding {
+  color: var(--accent);
+  opacity: 1;
+}
+
+.excalidraw .App-toolbar__divider {
+  background: var(--line);
+}
+
+.excalidraw .App-toolbar .HintViewer {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+/* ---------- Nebula-skinned Excalidraw dropdown menus ----------
+ * Covers the main canvas menu and toolbar submenus. The Library sidebar has its
+ * own block above because its default-sidebar layout differs from these menus. */
+.excalidraw .dropdown-menu .dropdown-menu-container {
+  --island-bg-color: var(--surface-raised);
+  --popup-bg-color: var(--surface-raised);
+  --default-bg-color: var(--surface-raised);
+  --color-on-surface: var(--ink);
+  --text-primary-color: var(--ink);
+  --icon-fill-color: var(--ink);
+  --color-primary: var(--accent);
+  --color-primary-darker: var(--accent);
+  --color-primary-darkest: var(--accent);
+  --color-primary-light: var(--accent-active);
+  --button-hover-bg: var(--accent-hover);
+  --button-active-bg: var(--accent-active);
+  --button-active-border: var(--accent);
+  --default-border-color: var(--line);
+  --focus-highlight-color: var(--accent-active);
+  --color-brand-active: var(--accent);
+
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface-raised);
+  box-shadow: var(--flyout-shadow);
+}
+
+.excalidraw .dropdown-menu .dropdown-menu-item {
+  border-radius: 10px;
+  color: var(--ink);
+  transition: background 140ms ease, border-color 140ms ease, box-shadow 140ms ease, color 140ms ease;
+}
+
+.excalidraw .dropdown-menu .dropdown-menu-item:hover,
+.excalidraw .dropdown-menu.manual-hover .dropdown-menu-item--hovered {
+  background: var(--accent-hover) !important;
+  border-color: rgba(var(--accent-rgb), 0.22);
+  box-shadow: 0 2px 10px rgba(var(--accent-rgb), 0.12);
+}
+
+.excalidraw .dropdown-menu .dropdown-menu-item:active,
+.excalidraw .dropdown-menu .dropdown-menu-item--selected,
+.excalidraw .dropdown-menu.manual-hover .dropdown-menu-item--selected {
+  background: var(--accent-active) !important;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.excalidraw .dropdown-menu .dropdown-menu-item:active svg,
+.excalidraw .dropdown-menu .dropdown-menu-item--selected svg {
+  color: var(--accent);
+}
+
+.excalidraw .dropdown-menu .dropdown-menu-item__shortcut {
+  color: var(--muted);
+  font-weight: 700;
+  opacity: 1;
+}
+
+.excalidraw .dropdown-menu .dropdown-menu-group-title,
+.excalidraw .dropdown-menu [data-testid='canvas-background-label'] {
+  color: var(--muted) !important;
+  font-size: 0.72rem !important;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.excalidraw .dropdown-menu .color-picker-container {
+  box-sizing: border-box;
+  column-gap: 0.25rem;
+  padding: 0.25rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.excalidraw .dropdown-menu .color-picker__button {
+  border-color: var(--line);
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+}
+
+.excalidraw .dropdown-menu .color-picker__button:hover::after {
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.excalidraw .dropdown-menu .color-picker__button.active .color-picker__button-outline {
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.excalidraw .main-menu-trigger,
+.excalidraw .App-toolbar .dropdown-menu-button {
+  --button-bg: var(--surface-raised);
+  --button-border: var(--line);
+  --button-hover-bg: var(--accent-hover);
+  --button-hover-border: rgba(var(--accent-rgb), 0.36);
+  --button-active-bg: var(--accent-active);
+  --button-active-border: var(--accent);
+
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--surface-raised);
+  color: var(--ink);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  transition: background 140ms ease, border-color 140ms ease, box-shadow 140ms ease, color 140ms ease;
+}
+
+.excalidraw .main-menu-trigger:hover,
+.excalidraw .App-toolbar .dropdown-menu-button:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent);
+  box-shadow: 0 2px 10px rgba(var(--accent-rgb), 0.18);
+}
+
+/* ---------- Nebula-skinned Excalidraw Help dialog ---------- */
+.excalidraw .Modal.HelpDialog {
+  --island-bg-color: var(--surface-raised);
+  --dialog-border-color: var(--line);
+  --color-on-surface: var(--ink);
+  --text-primary-color: var(--ink);
+  --icon-fill-color: var(--ink);
+  --color-primary: var(--accent);
+  --color-primary-darker: var(--accent);
+  --color-primary-darkest: var(--accent);
+  --color-primary-light: var(--accent-active);
+  --button-hover-bg: var(--accent-hover);
+  --focus-highlight-color: var(--accent-active);
+}
+
+.excalidraw .Modal.HelpDialog .Modal__background {
+  background: var(--backdrop-bg, rgba(12, 18, 26, 0.38));
+  backdrop-filter: blur(8px);
+}
+
+.excalidraw .Modal.HelpDialog .Modal__content {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface-raised);
+  box-shadow: var(--flyout-shadow);
+  color: var(--ink);
+}
+
+.excalidraw .Modal.HelpDialog .Island {
+  background: transparent;
+}
+
+.excalidraw .Modal.HelpDialog .Dialog__title {
+  border-bottom-color: var(--line);
+  color: var(--ink);
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.excalidraw .Modal.HelpDialog h3 {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.excalidraw .Modal.HelpDialog .HelpDialog__btn {
+  border-color: var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 700;
+  transition: background 140ms ease, border-color 140ms ease, box-shadow 140ms ease, color 140ms ease;
+}
+
+.excalidraw .Modal.HelpDialog .HelpDialog__btn:hover {
+  border-color: rgba(var(--accent-rgb), 0.36);
+  background: var(--accent-hover);
+  color: var(--accent);
+  box-shadow: 0 2px 10px rgba(var(--accent-rgb), 0.14);
+  text-decoration: none;
+}
+
+.excalidraw .Modal.HelpDialog .HelpDialog__btn:active {
+  border-color: var(--accent);
+  background: var(--accent-active);
+}
+
+.excalidraw .Modal.HelpDialog .HelpDialog__island h4 {
+  color: var(--ink);
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
+.excalidraw .Modal.HelpDialog .HelpDialog__island-content {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.excalidraw .Modal.HelpDialog .HelpDialog__shortcut {
+  border-bottom-color: var(--line);
+  color: var(--ink);
+}
+
+.excalidraw .Modal.HelpDialog .HelpDialog__shortcut:hover {
+  background: var(--accent-hover);
+}
+
+.excalidraw .Modal.HelpDialog .HelpDialog__key-container {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.excalidraw .Modal.HelpDialog .HelpDialog__key {
+  border: 1px solid rgba(var(--accent-rgb), 0.28);
+  border-bottom-width: 2px;
+  border-radius: 8px;
+  background: var(--accent-active);
+  color: var(--accent);
+  font-weight: 800;
+}
+
+/* ---------- Nebula-skinned Excalidraw Publish library dialog ----------
+ * The publish dialog does not expose a dedicated Modal class, so scope the
+ * modal shell through its publish-library form fields and keep the rest of
+ * Excalidraw's modal surfaces untouched. */
+.excalidraw .Modal:has(.publish-library__fields) {
+  --island-bg-color: var(--surface-raised);
+  --dialog-border-color: var(--line);
+  --color-on-surface: var(--ink);
+  --text-primary-color: var(--ink);
+  --icon-fill-color: var(--ink);
+  --color-primary: var(--accent);
+  --color-primary-darker: var(--accent);
+  --color-primary-darkest: var(--accent);
+  --color-primary-light: var(--accent-active);
+  --button-hover-bg: var(--accent-hover);
+  --default-border-color: var(--line);
+  --input-bg-color: var(--surface);
+  --input-border-color: var(--line);
+  --focus-highlight-color: var(--accent-active);
+}
+
+.excalidraw .Modal:has(.publish-library__fields) .Modal__background {
+  background: var(--backdrop-bg, rgba(12, 18, 26, 0.38));
+  backdrop-filter: blur(8px);
+}
+
+.excalidraw .Modal__content:has(.publish-library__fields) {
+  width: min(800px, calc(100vw - 2rem));
+  max-height: min(88vh, 54rem);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface-raised);
+  box-shadow: var(--flyout-shadow);
+  color: var(--ink);
+}
+
+.excalidraw .Modal__content:has(.publish-library__fields) .Island {
+  display: flex;
+  max-height: inherit;
+  flex-direction: column;
+  background: transparent;
+}
+
+.excalidraw .Modal__content:has(.publish-library__fields) .Dialog__title {
+  flex-shrink: 0;
+  border-bottom-color: var(--line);
+  color: var(--ink);
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.excalidraw .Modal__content:has(.publish-library__fields) .Dialog__content {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.excalidraw .Modal__content:has(.publish-library__fields) form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.excalidraw .publish-library-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.excalidraw .publish-library-note a {
+  color: var(--accent);
+  font-weight: 700;
+  text-decoration-color: rgba(var(--accent-rgb), 0.38);
+  text-underline-offset: 0.18em;
+}
+
+.excalidraw .publish-library-note a:hover {
+  color: var(--accent);
+  text-decoration-color: var(--accent);
+}
+
+.excalidraw .selected-library-items {
+  display: grid;
+  gap: 0.75rem;
+  max-height: 18rem;
+  padding: 0.75rem;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.excalidraw .single-library-item-wrapper {
+  min-width: 0;
+}
+
+.excalidraw .single-library-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(7rem, 11rem) minmax(0, 1fr);
+  gap: 0.85rem;
+  align-items: start;
+  padding: 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-raised);
+}
+
+.excalidraw .single-library-item__svg {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.excalidraw .single-library-item__svg svg {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.excalidraw .single-library-item--remove {
+  position: absolute;
+  top: 0.55rem;
+  right: 0.55rem;
+  display: inline-grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 1px solid rgba(var(--accent-rgb), 0.28);
+  border-radius: 10px;
+  background: var(--surface-raised);
+  color: var(--muted);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  transition: background 140ms ease, border-color 140ms ease, box-shadow 140ms ease, color 140ms ease;
+}
+
+.excalidraw .single-library-item--remove:hover {
+  border-color: var(--accent);
+  background: var(--accent-hover);
+  color: var(--accent);
+  box-shadow: 0 2px 10px rgba(var(--accent-rgb), 0.14);
+}
+
+.excalidraw .single-library-item--remove .ToolIcon__icon {
+  width: 1.15rem;
+  height: 1.15rem;
+  color: currentColor;
+}
+
+.excalidraw .single-library-item > div:last-child {
+  min-width: 0;
+  margin: 0 !important;
+  padding-right: 2rem;
+  color: var(--ink);
+}
+
+.excalidraw .single-library-item label,
+.excalidraw .publish-library__fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  color: var(--ink);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.excalidraw .publish-library__fields {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.excalidraw .single-library-item label > div,
+.excalidraw .publish-library__fields label > div {
+  display: flex;
+  gap: 0.25rem;
+  align-items: center;
+  padding: 0 !important;
+}
+
+.excalidraw .single-library-item label span,
+.excalidraw .publish-library__fields label span {
+  color: var(--muted) !important;
+  font-size: 0.78rem;
+  font-weight: 800 !important;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.excalidraw .single-library-item .required,
+.excalidraw .publish-library__fields .required {
+  color: var(--accent) !important;
+}
+
+.excalidraw .single-library-item input,
+.excalidraw .publish-library__fields input,
+.excalidraw .publish-library__fields textarea {
+  box-sizing: border-box;
+  width: 100% !important;
+  min-height: 2.45rem;
+  padding: 0.55rem 0.7rem !important;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  outline: none;
+  transition: background 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.excalidraw .publish-library__fields textarea {
+  min-height: 6rem;
+  resize: vertical;
+}
+
+.excalidraw .single-library-item input::placeholder,
+.excalidraw .publish-library__fields input::placeholder,
+.excalidraw .publish-library__fields textarea::placeholder {
+  color: var(--muted);
+  opacity: 0.8;
+}
+
+.excalidraw .single-library-item input:focus,
+.excalidraw .publish-library__fields input:focus,
+.excalidraw .publish-library__fields textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-active);
+}
+
+.excalidraw .publish-library__buttons {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin: 0 -0.25rem -0.25rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--line);
+  background: var(--surface-raised);
+}
+
+.excalidraw .publish-library__buttons .Dialog__action-button {
+  min-height: 2.45rem;
+  padding: 0 1rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 800;
+  transition: background 140ms ease, border-color 140ms ease, box-shadow 140ms ease, color 140ms ease;
+}
+
+.excalidraw .publish-library__buttons .Dialog__action-button:hover {
+  border-color: rgba(var(--accent-rgb), 0.36);
+  background: var(--accent-hover);
+  color: var(--accent);
+  box-shadow: 0 2px 10px rgba(var(--accent-rgb), 0.14);
+}
+
+.excalidraw .publish-library__buttons .Dialog__action-button--primary {
+  border-color: var(--btn-secondary-border, var(--accent));
+  background: var(--btn-secondary-gradient, var(--accent));
+  color: var(--btn-secondary-color, #fff);
+}
+
+.excalidraw .publish-library__buttons .Dialog__action-button--primary:hover {
+  border-color: var(--btn-secondary-border, var(--accent));
+  background: var(--btn-secondary-gradient, var(--accent));
+  color: var(--btn-secondary-color, #fff);
+  box-shadow: 0 4px 14px rgba(var(--accent-rgb), 0.28);
+}
+
+@media (max-width: 640px) {
+  .excalidraw .Modal__content:has(.publish-library__fields) {
+    width: calc(100vw - 1rem);
+    max-height: calc(100vh - 1rem);
+    border-radius: 14px;
+  }
+
+  .excalidraw .single-library-item {
+    grid-template-columns: 1fr;
+  }
+
+  .excalidraw .single-library-item__svg {
+    max-height: 13rem;
+  }
+
+  .excalidraw .publish-library__buttons {
+    flex-direction: column-reverse;
+  }
+
+  .excalidraw .publish-library__buttons .Dialog__action-button {
+    width: 100%;
+  }
+}
+
+/* ---------- Responsive shell ---------- */
+@media (max-width: 1080px) {
+  .nebula-topbar {
+    gap: 0.45rem;
+  }
+
+  .nebula-search {
+    flex-basis: 13rem;
+  }
+
+  .nebula-theme-switch .segmented-option {
+    padding-inline: 0.65rem;
+  }
+}
+
+@media (max-width: 860px) {
+  .nebula-topbar {
+    flex-wrap: wrap;
+    align-items: center;
+    padding-block: 0.45rem;
+  }
+
+  .nebula-search {
+    order: 10;
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .nebula-search input {
+    width: 100%;
+  }
+
+  .nebula-main {
+    padding-inline: 0.55rem;
+  }
+
+  .nebula-board {
+    padding: 0.35rem;
+    border-radius: calc(var(--radius, 18px) + 1px);
+  }
+
+  .frame-footer {
+    padding-block: 0.3rem 0.38rem;
+  }
+
+  .nebula-library-controls {
+    max-width: min(100vw - 1.5rem, 28rem);
+    gap: 0.35rem;
+  }
+
+  .excalidraw .nebula-library-trigger,
+  .excalidraw .default-sidebar-trigger {
+    max-width: 10.5rem;
+    padding-inline: 0.75rem !important;
+  }
+
+  .excalidraw .App-toolbar-container > .nebula-library-controls {
+    justify-content: flex-start;
+    justify-self: start;
+    max-width: calc(100vw - 1rem);
+  }
+
+  .excalidraw .mobile-misc-tools-container {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.4rem;
+    max-width: calc(100vw - 1rem);
+    padding: 0 !important;
+    border: 0 !important;
+    outline: 0 !important;
+    background-color: transparent !important;
+    box-shadow: none !important;
+  }
+
+  .excalidraw .mobile-misc-tools-container > label,
+  .excalidraw .mobile-misc-tools-container .ToolIcon {
+    width: 2.35rem !important;
+    height: 2.35rem !important;
+    margin: 0 !important;
+  }
+
+  .excalidraw .mobile-misc-tools-container .sidebar-trigger__label {
+    display: none !important;
+  }
+
+  .excalidraw .mobile-misc-tools-container .default-sidebar-trigger,
+  .excalidraw .mobile-misc-tools-container .ToolIcon__icon {
+    display: grid !important;
+    place-items: center;
+    width: 2.35rem !important;
+    min-width: 2.35rem !important;
+    height: 2.35rem !important;
+    min-height: 2.35rem !important;
+    padding: 0 !important;
+    border: 1px solid var(--line, rgba(0, 0, 0, 0.12));
+    border-radius: 13px;
+    background: var(--surface-raised, #fff);
+    color: var(--ink, inherit);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  }
+
+  .excalidraw .mobile-misc-tools-container .ToolIcon_type_checkbox:checked + .ToolIcon__icon,
+  .excalidraw .mobile-misc-tools-container .ToolIcon_type_radio:checked + .ToolIcon__icon {
+    border-color: var(--accent, rgba(0, 0, 0, 0.2));
+    background: var(--accent-active, rgba(0, 0, 0, 0.08));
+    color: var(--accent, currentColor);
+    box-shadow: inset 0 0 0 1px var(--accent, currentColor), 0 2px 10px rgba(var(--accent-rgb), 0.14);
+  }
+
+  .excalidraw .mobile-misc-tools-container .ToolIcon__icon:hover,
+  .excalidraw .mobile-misc-tools-container .default-sidebar-trigger:hover {
+    border-color: var(--accent, rgba(0, 0, 0, 0.2));
+    background: var(--accent-hover, rgba(0, 0, 0, 0.05));
+  }
+
+  .excalidraw .nebula-library-trigger--switch {
+    display: inline-grid;
+    place-items: center;
+    width: 2.35rem !important;
+    min-width: 2.35rem !important;
+    height: 2.35rem !important;
+    min-height: 2.35rem !important;
+    max-width: 2.35rem;
+    padding: 0 !important;
+  }
+
+  .excalidraw .nebula-library-trigger--switch .nebula-library-trigger__icon {
+    display: inline-flex;
+  }
+
+  .excalidraw .nebula-library-trigger--switch .nebula-library-trigger__label,
+  .excalidraw .nebula-library-trigger--switch .nebula-library-trigger__caret {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  html,
+  body {
+    height: 100dvh;
+  }
+
+
+  .nebula-new-btn,
+  .nebula-menu-trigger,
+  .nebula-help-btn,
+  .nebula-settings-btn,
+  .nebula-theme-switch .segmented,
+  .nebula-theme-switch .segmented-option {
+    min-height: 2.35rem;
+  }
+
+  .nebula-new-btn {
+    padding-inline: 0.72rem;
+  }
+
+  .nebula-menu-trigger__label {
+    max-width: 8rem;
+  }
+
+  .nebula-help-btn__label,
+  .nebula-settings-btn__label {
+    display: none;
+  }
+
+  .nebula-canvas-menu,
+  .nebula-library-flyout {
+    max-width: calc(100vw - 1rem);
+    max-height: min(68dvh, 28rem);
+  }
+
+  .nebula-canvas-menu {
+    inset-inline-end: auto;
+    inset-inline-start: 0;
+  }
+
+  .nebula-main {
+    padding-inline: 0.35rem;
+  }
+
+  .nebula-board {
+    padding: 0.25rem;
+    border-radius: 14px;
+  }
+
+  .nebula-board > .nebula-canvas {
+    border-radius: 11px;
+  }
+
+  .frame-footer-subtitle {
+    display: none;
+  }
+
+  .nebula-library-controls {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .excalidraw .FixedSideContainer_side_top.App-top-bar {
+    align-items: flex-start !important;
+  }
+
+  .excalidraw section[aria-labelledby$='-shapes-title'] > .Stack.Stack_vertical {
+    align-items: flex-start !important;
+    justify-items: start !important;
+  }
+
+  .excalidraw .Stack.App-toolbar-container {
+    display: grid !important;
+    grid-auto-flow: row !important;
+    grid-template-columns: max-content !important;
+    grid-template-rows: auto !important;
+    align-items: start !important;
+    justify-items: start !important;
+    justify-content: start;
+    gap: 0.45rem !important;
+    width: max-content;
+    max-width: calc(100vw - 1rem);
+    margin-inline-start: 0.45rem;
+  }
+
+  .excalidraw .App-toolbar.App-toolbar--mobile {
+    justify-self: start;
+    width: max-content;
+    max-width: calc(100vw - 1rem);
+    overflow-x: auto;
+    overflow-y: visible;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .excalidraw .App-toolbar.App-toolbar--mobile > .Stack.Stack_horizontal {
+    display: flex !important;
+    flex-direction: column !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    justify-content: center;
+    max-width: calc(100vw - 1rem);
+  }
+
+  .excalidraw .App-toolbar.App-toolbar--mobile > .Stack.Stack_horizontal > .ToolIcon,
+  .excalidraw .App-toolbar.App-toolbar--mobile > .Stack.Stack_horizontal > .dropdown-menu-button {
+    flex: 0 0 auto;
+  }
+
+  .excalidraw .App-toolbar.App-toolbar--mobile .App-toolbar__divider {
+    width: 1.65rem;
+    height: 1px;
+    margin-block: 0.15rem;
+  }
+
+  .excalidraw .App-toolbar-container > .nebula-library-controls {
+    justify-content: flex-start;
+    justify-self: start;
+    max-width: calc(100vw - 1rem);
+  }
+
+  .excalidraw .mobile-misc-tools-container {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.4rem;
+    max-width: calc(100vw - 1rem);
+    padding: 0 !important;
+    border: 0 !important;
+    outline: 0 !important;
+    background-color: transparent !important;
+    box-shadow: none !important;
+  }
+
+  .excalidraw .mobile-misc-tools-container > label,
+  .excalidraw .mobile-misc-tools-container .ToolIcon {
+    width: 2.35rem !important;
+    height: 2.35rem !important;
+    margin: 0 !important;
+  }
+
+  .excalidraw .mobile-misc-tools-container .sidebar-trigger__label {
+    display: none !important;
+  }
+
+  .excalidraw .mobile-misc-tools-container .default-sidebar-trigger,
+  .excalidraw .mobile-misc-tools-container .ToolIcon__icon {
+    display: grid !important;
+    place-items: center;
+    width: 2.35rem !important;
+    min-width: 2.35rem !important;
+    height: 2.35rem !important;
+    min-height: 2.35rem !important;
+    padding: 0 !important;
+    border: 1px solid var(--line, rgba(0, 0, 0, 0.12));
+    border-radius: 13px;
+    background: var(--surface-raised, #fff);
+    color: var(--ink, inherit);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  }
+
+  .excalidraw .mobile-misc-tools-container .ToolIcon_type_checkbox:checked + .ToolIcon__icon,
+  .excalidraw .mobile-misc-tools-container .ToolIcon_type_radio:checked + .ToolIcon__icon {
+    border-color: var(--accent, rgba(0, 0, 0, 0.2));
+    background: var(--accent-active, rgba(0, 0, 0, 0.08));
+    color: var(--accent, currentColor);
+    box-shadow: inset 0 0 0 1px var(--accent, currentColor), 0 2px 10px rgba(var(--accent-rgb), 0.14);
+  }
+
+  .excalidraw .mobile-misc-tools-container .ToolIcon__icon:hover,
+  .excalidraw .mobile-misc-tools-container .default-sidebar-trigger:hover {
+    border-color: var(--accent, rgba(0, 0, 0, 0.2));
+    background: var(--accent-hover, rgba(0, 0, 0, 0.05));
+  }
+
+  .excalidraw .nebula-library-trigger:not(.nebula-library-trigger--switch),
+  .excalidraw .default-sidebar-trigger {
+    height: 2.35rem !important;
+    min-height: 2.35rem !important;
+    max-width: 9rem;
+    padding-inline: 0.65rem !important;
+    font-size: 0.86rem !important;
+  }
+
+  .nebula-library-toast {
+    top: auto;
+    right: 0.5rem;
+    bottom: 0.65rem;
+    left: 0.5rem;
+    max-width: none;
+  }
+}
+
+@media (max-width: 460px) {
+  .nebula-topbar {
+    gap: 0.35rem;
+    padding-inline: max(0.45rem, env(safe-area-inset-left)) max(0.45rem, env(safe-area-inset-right));
+  }
+
+  .nebula-new-btn {
+    font-size: 0;
+  }
+
+  .nebula-new-btn span {
+    font-size: 1rem;
+  }
+
+  .nebula-menu-trigger__label {
+    max-width: 6.5rem;
+  }
+
+  .nebula-theme-switch .segmented {
+    height: 2.25rem;
+  }
+
+  .nebula-theme-switch .segmented-option {
+    min-width: 2.35rem;
+    padding-inline: 0.5rem;
+  }
+
+  .nebula-search {
+    display: none;
+  }
+
+  .nebula-board {
+    border-inline: 0;
+    border-radius: 0;
+  }
+}
+
+/* ---------- Loading and error states ---------- */
+.nebula-loading,
+.nebula-error-state {
+  flex: 1 1 auto;
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  padding: clamp(1rem, 4vw, 3rem);
+  color: var(--muted);
+  text-align: center;
+}
+
+.nebula-loading {
+  gap: 0.25rem;
+  font-size: 0.95rem;
+}
+
+.nebula-loading__title {
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.nebula-loading__hint {
+  max-width: 22rem;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.nebula-error-state {
+  min-height: 100dvh;
+  background: var(--surface, transparent);
+}
+
+.nebula-error-card {
+  width: min(100%, 34rem);
+  padding: clamp(1.1rem, 4vw, 2rem);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--surface-raised);
+  box-shadow: var(--flyout-shadow, 0 12px 36px rgba(0, 0, 0, 0.16));
+  text-align: left;
+}
+
+.nebula-error-eyebrow {
+  margin: 0 0 0.35rem;
+  color: var(--accent);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.nebula-error-card h1 {
+  margin: 0 0 0.7rem;
+  color: var(--ink);
+  font-size: clamp(1.4rem, 4vw, 2rem);
+  line-height: 1.1;
+}
+
+.nebula-error-card p {
+  margin: 0 0 1rem;
+  line-height: 1.55;
+}
+
+.nebula-error-card pre {
+  max-height: 10rem;
+  margin: 0 0 1rem;
+  padding: 0.75rem;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink);
+  white-space: pre-wrap;
+}
+
+/* ---------- Utilities ---------- */
+.nebula-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Keep the Excalidraw UI unaffected by the global token-driven <button>/<input>
+ * rules — Excalidraw ships its own scoped chrome and should own its widgets. */
+.excalidraw button,
+.excalidraw input,
+.excalidraw select,
+.excalidraw textarea {
+  min-height: revert;
+  border-radius: revert;
+  letter-spacing: revert;
+}

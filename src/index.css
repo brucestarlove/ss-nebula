@@ -1,0 +1,22 @@
+/* App-level base tweaks only. The Nebula shell chrome — tokens, reset,
+ * typography, body background — is owned by @starlove/ui (tokens/base imported
+ * in main.tsx), so this file deliberately sets no tokens and no body
+ * background, to avoid fighting the themed background. */
+
+:root {
+  line-height: 1.5;
+  font-weight: 400;
+
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+}
+
+#root {
+  width: 100%;
+  background: transparent;
+}

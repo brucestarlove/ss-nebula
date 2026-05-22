@@ -1,0 +1,20 @@
+{
+  "name": "Starscape Nebula",
+  "short_name": "Nebula",
+  "description": "A local-first Excalidraw canvas wrapped in the Starscape shell.",
+  "icons": [
+    {
+      "src": "/ss-nebula-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/ss-nebula-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "theme_color": "#1a1a2e",
+  "background_color": "#1a1a2e",
+  "display": "standalone"
+}

@@ -1,0 +1,263 @@
+/* Nebula "About / Help" dialog.
+ *
+ * Renders via the package <Dialog> (class `.dialog`), which owns the overlay
+ * shell: fixed centering, border/radius, --surface-raised background, shadow,
+ * rise + backdrop-blur animations, reduced-motion handling, and the dark
+ * override. This file only adds the Nebula-specific bits: a slightly wider
+ * panel and the `.nebula-about__*` content (logo header, getting-started step
+ * list after ui-studio's .pipeline-help-step, and a shortcuts grid).
+ * Tokens resolve from @starlove/ui. */
+
+/* Wider than the package default (30rem). Doubled class keeps it ahead of
+   `.dialog` regardless of stylesheet order. */
+.dialog.nebula-about {
+  width: min(34rem, calc(100vw - 2rem));
+}
+
+/* ---- Layout ---- */
+.nebula-about__inner {
+  display: flex;
+  flex-direction: column;
+  gap: 1.35rem;
+  padding: 1.75rem 1.75rem 1.5rem;
+}
+
+.nebula-about__head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.nebula-about__logo {
+  width: 2.4rem;
+  height: 2.4rem;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+
+.nebula-about__pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.22rem 0.65rem;
+  border-radius: 999px;
+  background: rgba(var(--accent-rgb), 0.1);
+  border: 1px solid rgba(var(--accent-rgb), 0.28);
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+[data-theme="dark"] .nebula-about__pill {
+  background: rgba(var(--starlight-rgb), 0.12);
+  border-color: rgba(var(--starlight-rgb), 0.28);
+}
+
+.nebula-about__close {
+  margin-inline-start: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0 0 0.12rem;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 150ms ease, border-color 150ms ease, background 150ms ease;
+}
+
+.nebula-about__close:hover {
+  color: var(--ink);
+  border-color: rgba(var(--accent-rgb), 0.4);
+  background: rgba(var(--accent-rgb), 0.08);
+}
+
+.nebula-about__body {
+  display: flex;
+  flex-direction: column;
+  gap: 1.35rem;
+}
+
+.nebula-about__title {
+  margin: 0;
+  font-size: 1.45rem;
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 1.2;
+  color: var(--ink);
+}
+
+.nebula-about__lede {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.nebula-about__heading {
+  margin: 0 0 0.6rem;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ---- Getting-started steps (after ui-studio .pipeline-help-step) ---- */
+.nebula-about-steps {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.nebula-about-step {
+  display: grid;
+  grid-template-columns: 2.1rem minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: start;
+  padding: 0.65rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.nebula-about-step:last-child {
+  border-bottom: 0;
+}
+
+.nebula-about-step__index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 50%;
+  color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.12);
+  font-size: 0.72rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.nebula-about-step__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.18rem;
+}
+
+.nebula-about-step__header h4 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.95rem;
+  font-weight: 650;
+}
+
+.nebula-about-step__header span {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.nebula-about-step p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+/* ---- Keyboard shortcuts grid ---- */
+.nebula-about-keys {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: 0.4rem 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.nebula-about-key {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.84rem;
+  color: var(--ink);
+}
+
+.nebula-about-key__combo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  flex: 0 0 auto;
+}
+
+.nebula-about-key__label {
+  color: var(--muted);
+}
+
+.nebula-about-key kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5rem;
+  padding: 0.1rem 0.4rem;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  background: rgba(var(--ink-rgb, 0, 0, 0), 0.04);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+[data-theme="dark"] .nebula-about-key kbd {
+  background: rgba(var(--starlight-rgb), 0.08);
+}
+
+.nebula-about__note {
+  margin: 0.6rem 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+/* ---- Footer CTA ---- */
+.nebula-about__footer {
+  display: flex;
+  justify-content: center;
+}
+
+.nebula-about__cta {
+  padding: 0.6rem 2.25rem;
+  border-radius: 12px;
+  border: 1px solid var(--btn-border);
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #fff;
+  background: var(--btn-gradient);
+  cursor: pointer;
+  transition:
+    filter 150ms ease,
+    transform 150ms ease;
+}
+
+.nebula-about__cta:hover {
+  filter: brightness(1.05);
+  transform: translateY(-1px);
+}
+
+.nebula-about__cta:active {
+  transform: translateY(0);
+}

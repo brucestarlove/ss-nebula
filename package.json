@@ -1,0 +1,107 @@
+{
+  "name": "@starlove/nebula",
+  "version": "1.0.0",
+  "description": "Starscape Nebula - a polished Excalidraw shell for board-scoped visual thinking.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "nebula": "./bin/nebula.mjs"
+  },
+  "packageManager": "pnpm@10.22.0",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/nebula/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/nebula/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./style.css": "./dist/style.css",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "bin",
+    "cli",
+    "dist",
+    "README.md",
+    "LICENSE",
+    "package.json"
+  ],
+  "sideEffects": [
+    "*.css",
+    "**/*.css",
+    "src/nebula/style.ts"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/brucestarlove/ss-nebula.git"
+  },
+  "bugs": {
+    "url": "https://github.com/brucestarlove/ss-nebula/issues"
+  },
+  "homepage": "https://github.com/brucestarlove/ss-nebula#readme",
+  "keywords": [
+    "excalidraw",
+    "whiteboard",
+    "canvas",
+    "starscape",
+    "orbit",
+    "local-first"
+  ],
+  "scripts": {
+    "prepack": "pnpm run build:package",
+    "prepublishOnly": "pnpm run verify",
+    "dev": "vite",
+    "dev:site": "pnpm run build:site && node serve-site.mjs",
+    "build": "pnpm run build:app",
+    "build:app": "tsc -b && vite build",
+    "build:site": "pnpm run typecheck && node scripts/build-site.mjs",
+    "build:vercel": "pnpm run build:site",
+    "build:cli-app": "vite build --base=./ --outDir dist/app --emptyOutDir=false",
+    "build:package": "pnpm run build:lib && pnpm run build:cli-app",
+    "build:lib": "vite build --config vite.lib.config.ts && tsc -p tsconfig.lib.json --pretty false",
+    "typecheck": "tsc -b --pretty false",
+    "lint": "eslint .",
+    "test": "vitest run --environment jsdom --pool=vmThreads",
+    "test:watch": "vitest --environment jsdom --pool=vmThreads",
+    "smoke": "vitest run --environment jsdom --pool=vmThreads src/nebula/runtimeSmoke.test.tsx",
+    "verify": "pnpm run typecheck && pnpm test && pnpm run build && pnpm run lint",
+    "pack:dry-run": "npm pack --dry-run",
+    "preview": "vite preview",
+    "serve:site": "node serve-site.mjs"
+  },
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
+  "peerDependencies": {
+    "react": ">=18",
+    "react-dom": ">=18"
+  },
+  "dependencies": {
+    "@excalidraw/excalidraw": "^0.18.1",
+    "@starlove/ui": "^3.3.0",
+    "@starlove/ui-react": "^3.3.0",
+    "lz-string": "^1.5.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.36.0",
+    "@types/node": "^24.6.0",
+    "@types/react": "^19.1.16",
+    "@types/react-dom": "^19.1.9",
+    "@vitejs/plugin-react": "^5.0.4",
+    "eslint": "^9.36.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.22",
+    "globals": "^16.4.0",
+    "jsdom": "^27.4.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.45.0",
+    "vite": "^7.1.7",
+    "vitest": "^4.1.7"
+  }
+}

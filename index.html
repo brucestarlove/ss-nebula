@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    
+    <!-- Favicons -->
+    <link rel="icon" type="image/png" sizes="16x16" href="/ss-nebula-16x16.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/ss-nebula-32x32.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/ss-nebula-apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    
+    <!-- Preload Nebula logo to prevent layout shift -->
+    <link rel="preload" as="image" href="/ss-nebula-512x512.png" />
+    
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Starscape Nebula — Local-first Excalidraw workspace</title>
+
+    <meta name="description" content="Nebula is a standalone local-first Excalidraw workspace for spatial project thinking. Create board-scoped canvases, save locally, and export portable Nebula, Excalidraw, or Obsidian drawing files." />
+
+    <!-- OpenGraph Meta Tags -->
+    <meta property="og:title" content="Starscape Nebula — Local-first Excalidraw workspace" />
+    <meta property="og:description" content="A standalone local-first Excalidraw workspace for spatial project thinking, portable canvas backups, and future Starscape Suite embedding." />
+    <meta property="og:image" content="/ss-nebula-og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Starscape Nebula" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Starscape Nebula" />
+
+    <!-- Twitter Card Meta Tags -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Starscape Nebula — Local-first Excalidraw workspace" />
+    <meta name="twitter:description" content="A standalone local-first Excalidraw workspace for spatial project thinking, portable canvas backups, and future Starscape Suite embedding." />
+    <meta name="twitter:image" content="/ss-nebula-og.png" />
+    
+    <!-- Theme Color -->
+    <meta name="theme-color" content="#1a1a2e" />
+
+    <!-- Apply the stored theme before first paint so the app underneath the
+         splash paints in the right theme (no light-mode flash on dark setting).
+         Mirrors useTheme's storage key; the hook reconciles once React mounts.
+         `system`/unset is left off so prefers-color-scheme tokens apply. We do
+         NOT set data-motion here: the boot splash honors only OS reduced-motion
+         (see the splash CSS), independent of Nebula's ambient-motion default. -->
+    <script>
+      try {
+        var t = localStorage.getItem('nebula:theme');
+        if (t === 'light' || t === 'dark')
+          document.documentElement.setAttribute('data-theme', t);
+      } catch (e) {}
+    </script>
+
+    <style>
+      /* Boot splash — the canonical ss-ui loading screen (see the package's
+       * components/loader.css). Shown before the JS bundle loads, so this is an
+       * inline critical-CSS copy. The Nebula logo grows in then breathes; no
+       * spinner. Keyframes are namespaced `starscape-loader-*` to match web-demo.
+       *
+       * Motion note: unlike Nebula's ambient starfield (which defaults to OFF
+       * because it's disorienting over a drawing surface — see useMotion), this
+       * boot splash is a one-time animation shown BEFORE the canvas exists, so
+       * it honors only the OS `prefers-reduced-motion` setting, not Nebula's
+       * ambient data-motion preference. */
+      .loader {
+        position: fixed;
+        inset: 0;
+        z-index: 99999;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 2rem;
+        overflow: hidden;
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+        transition: opacity 0.4s ease;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+          'Helvetica Neue', Arial, sans-serif;
+      }
+
+      .loader::before {
+        content: '';
+        position: absolute;
+        width: 200%;
+        height: 200%;
+        background-image: radial-gradient(
+          circle,
+          rgba(168, 192, 255, 0.15) 1px,
+          transparent 1px
+        );
+        background-size: 50px 50px;
+        will-change: transform;
+        animation: starscape-loader-drift 20s linear infinite;
+      }
+
+      .loader.is-hiding {
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .loader__logo {
+        width: 120px;
+        height: 120px;
+        object-fit: contain;
+        filter: drop-shadow(0 0 20px rgba(255, 255, 255, 0.3));
+        transform-origin: center;
+        /* translateZ in the keyframes + backface-visibility keep the star on a
+           stable GPU layer, so it doesn't snap ~1px as the grow starts. */
+        backface-visibility: hidden;
+        will-change: transform;
+        animation:
+          starscape-loader-grow 0.6s cubic-bezier(0.22, 1, 0.36, 1) both,
+          starscape-loader-breathe 3s ease-in-out 0.6s infinite;
+      }
+
+      .loader__label {
+        margin: 0;
+        color: #fff;
+        font-size: 1.25rem;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+        text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+      }
+
+      @keyframes starscape-loader-drift {
+        from { transform: translate(0, 0); }
+        to   { transform: translate(-50px, -50px); }
+      }
+
+      @keyframes starscape-loader-grow {
+        from { transform: scale(0) translateZ(0); opacity: 0; }
+        to   { transform: scale(1) translateZ(0); opacity: 1; }
+      }
+
+      @keyframes starscape-loader-breathe {
+        0%, 100% { transform: scale(1) translateZ(0); }
+        50%      { transform: scale(1.06) translateZ(0); }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        /* Skip the abrupt grow-in; keep the gentle breathe (starts at full
+         * size, so no jump). Dot grid stops drifting. */
+        .loader::before { animation: none; }
+        .loader__logo {
+          animation: starscape-loader-breathe 3s ease-in-out infinite;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Boot splash - shows immediately, removed once React mounts (App.tsx) -->
+    <div id="loader" class="loader" role="status" aria-live="polite">
+      <img
+        class="loader__logo"
+        src="/ss-nebula-512x512.png"
+        alt="Starscape Nebula"
+        width="120"
+        height="120"
+      />
+      <p class="loader__label">Loading Starscape Nebula…</p>
+    </div>
+    
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
