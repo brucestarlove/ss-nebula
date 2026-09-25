@@ -12,11 +12,11 @@ importers:
         specifier: ^0.18.1
         version: 0.18.1(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@starlove/ui':
-        specifier: ^3.3.0
-        version: 3.3.0
+        specifier: ^3.3.3
+        version: 3.3.3
       '@starlove/ui-react':
-        specifier: ^3.3.0
-        version: 3.3.0(react@19.2.6)(sonner@2.0.7(react-dom@19.2.6(react@19.2.6))(react@19.2.6))
+        specifier: ^3.3.3
+        version: 3.3.3(react@19.2.6)(sonner@2.0.7(react-dom@19.2.6(react@19.2.6))(react@19.2.6))
       lz-string:
         specifier: ^1.5.0
         version: 1.5.0
@@ -932,8 +932,8 @@ packages:
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
-  '@starlove/ui-react@3.3.0':
-    resolution: {integrity: sha512-icYpuDz4aUwUJKyqCNUQzz2gForp5+lec587w4VFSbwjeyHAnu/pYnbw1LdcgmLFp/iLXoWsHIMcKFRgopYkQg==}
+  '@starlove/ui-react@3.3.3':
+    resolution: {integrity: sha512-cFEufnNDwjGL9rX6O12zJm+qU/evRPiqhJi2XX5+Ac8eSTE3xW3RdH/joXt7Ng/xJQgT04iIJoeL7ThklmBczg==}
     peerDependencies:
       react: '>=18'
       sonner: '>=1.7'
@@ -941,8 +941,8 @@ packages:
       sonner:
         optional: true
 
-  '@starlove/ui@3.3.0':
-    resolution: {integrity: sha512-LhQlEpxQ6RmJ/mPlf/IjBvp3xSpmXrPLDsI7PND7HAT3FWVwt8VHwQI3IY92YDbbese9Pa8CLA1OhHNPpSukfw==}
+  '@starlove/ui@3.3.3':
+    resolution: {integrity: sha512-9uh6aoRMCYghORv5rfjqlI82cNjtsr+KSPC0t8/C/8KpSCUWOmDzZlan8AJzM8VDIW9v7aU7kBbREiG1vKy5UQ==}
 
   '@types/babel__core@7.20.5':
     resolution: {integrity: sha512-qoQprZvz5wQFJwMDqeseRXWv3rqMvhgpbXFfVyWhbx9X47POIA6i/+dXefEmZKoAgOaTdaIgNSMqMIU61yRyzA==}
@@ -3255,14 +3255,14 @@ snapshots:
 
   '@standard-schema/spec@1.1.0': {}
 
-  '@starlove/ui-react@3.3.0(react@19.2.6)(sonner@2.0.7(react-dom@19.2.6(react@19.2.6))(react@19.2.6))':
+  '@starlove/ui-react@3.3.3(react@19.2.6)(sonner@2.0.7(react-dom@19.2.6(react@19.2.6))(react@19.2.6))':
     dependencies:
-      '@starlove/ui': 3.3.0
+      '@starlove/ui': 3.3.3
       react: 19.2.6
     optionalDependencies:
       sonner: 2.0.7(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
 
-  '@starlove/ui@3.3.0': {}
+  '@starlove/ui@3.3.3': {}
 
   '@types/babel__core@7.20.5':
     dependencies:

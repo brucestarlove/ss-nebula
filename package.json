@@ -1,6 +1,6 @@
 {
   "name": "@starlove/nebula",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Starscape Nebula - a polished Excalidraw shell for board-scoped visual thinking.",
   "license": "MIT",
   "type": "module",
@@ -82,8 +82,8 @@
   },
   "dependencies": {
     "@excalidraw/excalidraw": "^0.18.1",
-    "@starlove/ui": "^3.3.0",
-    "@starlove/ui-react": "^3.3.0",
+    "@starlove/ui": "^3.3.3",
+    "@starlove/ui-react": "^3.3.3",
     "lz-string": "^1.5.0"
   },
   "devDependencies": {
