@@ -1,0 +1,272 @@
+/* Lane C: what every file view shares. Loaded with the views (each lazy view
+ * imports it), on top of the workspace CSS ported from the sketch
+ * (.ws-page, .ws-board, .ws-btn, .ws-icon-btn and the --ws-* tokens). */
+
+.ws-glyph {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---- Buttons. The app loads @starlove/ui's element-wide button.css, which
+ * makes every bare <button> an ARC primary chip (lift on hover, glow ring).
+ * data-no-arc drops the ring; these rules undo the chip. */
+
+button.ws-view-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 0;
+  margin: 0;
+  padding: 0.5rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--surface-input, var(--subtle-bg));
+  box-shadow: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1.2;
+  text-decoration: none;
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease, color 140ms ease;
+}
+
+button.ws-view-btn:hover,
+a.ws-view-btn:hover {
+  transform: none;
+  filter: none;
+  box-shadow: none;
+  border-color: var(--accent-border, var(--accent));
+}
+
+button.ws-view-btn:active,
+a.ws-view-btn:active {
+  transform: none;
+  background: var(--accent-active, var(--subtle-bg));
+  color: var(--ink);
+  box-shadow: none;
+}
+
+button.ws-view-btn:focus-visible,
+a.ws-view-btn:focus-visible,
+button.ws-view-icon:focus-visible,
+.ws-view-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  box-shadow: none;
+}
+
+a.ws-view-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.5rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--surface-input, var(--subtle-bg));
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.2;
+  text-decoration: none;
+}
+
+button.ws-view-btn[data-quiet] {
+  border-color: transparent;
+  background: transparent;
+  color: var(--ws-muted, var(--muted));
+}
+
+button.ws-view-btn[data-quiet]:hover {
+  border-color: transparent;
+  background: var(--subtle-bg);
+  color: var(--ink);
+}
+
+/* Small square icon buttons, the sketch's .ws-icon-btn. */
+button.ws-view-icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--ws-muted, var(--muted));
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+button.ws-view-icon:hover,
+button.ws-view-icon[aria-pressed='true'] {
+  transform: none;
+  filter: none;
+  box-shadow: none;
+  background: var(--subtle-bg);
+  color: var(--ink);
+}
+
+button.ws-view-icon:active {
+  transform: none;
+  background: var(--accent-active, var(--subtle-bg));
+  color: var(--ink);
+  box-shadow: none;
+}
+
+/* ---- Loading ------------------------------------------------------ */
+
+.ws-view-state {
+  display: grid;
+  place-items: center;
+  min-height: 100%;
+  padding: 3rem 1.5rem;
+  color: var(--ws-muted, var(--muted));
+  font-size: 0.86rem;
+  text-align: center;
+}
+
+/* ---- Changed elsewhere ---------------------------------------------- */
+
+.ws-conflict {
+  position: sticky;
+  top: 0.5rem;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.6rem;
+  width: fit-content;
+  max-width: calc(100% - 1.5rem);
+  margin: 0.5rem auto 0;
+  padding: 0.35rem 0.4rem 0.35rem 0.85rem;
+  border: 1px solid var(--accent-border, var(--line));
+  border-radius: 12px;
+  background: var(--surface-raised);
+  box-shadow: 0 10px 30px -14px rgba(0, 0, 0, 0.5);
+  color: var(--ink);
+  font-size: 0.82rem;
+}
+
+.ws-conflict-text {
+  margin-inline-end: 0.2rem;
+}
+
+.ws-conflict button.ws-view-btn {
+  padding: 0.32rem 0.65rem;
+  font-size: 0.8rem;
+}
+
+/* ---- The info card (other files, and the fallback) ------------------- */
+
+.ws-info {
+  display: grid;
+  place-items: center;
+  min-height: 100%;
+  padding: 2rem 1rem;
+}
+
+:root[data-style='pane'] .ws-info {
+  background: var(--ws-pane-bg, transparent);
+}
+
+.ws-info-card {
+  width: min(26rem, 100%);
+  padding: 1.6rem 1.6rem 1.4rem;
+  border: 1px solid var(--ws-page-line, var(--line));
+  border-radius: 18px;
+  background: var(--ws-page-bg, var(--surface-raised));
+  box-shadow: var(--ws-page-shadow, none);
+  color: var(--ink);
+}
+
+.ws-info-mark {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--subtle-bg);
+  color: var(--ws-muted, var(--muted));
+}
+
+.ws-info-mark .ws-glyph {
+  width: 22px;
+  height: 22px;
+}
+
+.ws-info-card h2 {
+  margin: 0 0 1rem;
+  font-family: var(--ws-display, inherit);
+  font-size: 1.55rem;
+  font-weight: 400;
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+  overflow-wrap: anywhere;
+}
+
+.ws-info-facts {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0 0 1.25rem;
+  font-size: 0.86rem;
+}
+
+.ws-info-facts > div {
+  display: flex;
+  gap: 1rem;
+  padding-bottom: 0.45rem;
+  border-bottom: 1px solid var(--ws-page-line, var(--line));
+}
+
+.ws-info-facts dt {
+  flex: 0 0 5.5rem;
+  color: var(--ws-muted, var(--muted));
+}
+
+.ws-info-facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ws-info-error {
+  margin: 0 0 1.1rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 10px;
+  background: rgba(var(--coral-rgb, 255, 120, 100), 0.12);
+  color: var(--ink);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.ws-info-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+@media (max-width: 768px) {
+  .ws-info {
+    padding: 1.25rem 1rem;
+  }
+
+  button.ws-view-icon {
+    width: 40px;
+    height: 40px;
+  }
+}

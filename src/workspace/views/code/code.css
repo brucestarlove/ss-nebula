@@ -1,0 +1,158 @@
+/* CodeMirror inside Nebula (lane C). The editor's own theme lives in
+ * codeTheme.ts; this file sizes it per variant and keeps the app's global
+ * input and button styles out of CodeMirror's panels. */
+
+.ws-cm {
+  --ws-cm-selection: color-mix(in oklab, var(--accent) 30%, transparent);
+  --ws-cm-selection-blur: color-mix(in oklab, var(--accent) 18%, transparent);
+  --ws-cm-active-line: color-mix(in srgb, var(--ink) 4.5%, transparent);
+  min-width: 0;
+}
+
+/* ---- Token colours ------------------------------------------------------
+ * codeTheme.ts's nebulaHighlightStyle reads these, so the editor takes its
+ * colours from ss-ui's tokens and each theme gets its own: by day the accent
+ * is teal and accent-2 amber, at night starlight blue and violet. Strings and
+ * types are mixed a quarter of the way to the ink, which darkens them on
+ * paper and lightens them on the night page; every token is at least 4.5:1
+ * on the note and code pages in both themes (checked in Sheet and Pane). */
+
+.ws-cm {
+  --ws-code-keyword: var(--accent);
+  --ws-code-string: color-mix(in srgb, var(--accent-2) 75%, var(--ink));
+  --ws-code-number: var(--blue);
+  --ws-code-comment: var(--ws-muted, var(--muted));
+  --ws-code-type: color-mix(in srgb, rgb(var(--indigo-rgb)) 75%, var(--ink));
+  --ws-code-link: var(--accent);
+  --ws-code-invalid: var(--danger);
+}
+
+
+
+/* ---- A note's source: the page's own type, no gutters ----------------- */
+
+.ws-cm-note .cm-scroller {
+  font-family: var(--ws-ui, inherit);
+  font-size: 1rem;
+  line-height: 1.72;
+}
+
+:root[data-body='serif'] .ws-cm-note .cm-scroller {
+  font-family: var(--ws-display, Georgia, serif);
+  font-size: 1.12rem;
+  line-height: 1.6;
+}
+
+.ws-cm-note .cm-gutters {
+  display: none;
+}
+
+.ws-cm-note .cm-content {
+  padding: 0 0 2.5rem;
+}
+
+.ws-cm-note .cm-line {
+  padding: 0;
+}
+
+.ws-cm-note .cm-activeLine {
+  background: transparent;
+}
+
+/* ---- Code and text ------------------------------------------------------ */
+
+.ws-cm-code .cm-scroller {
+  font-size: 0.86rem;
+}
+
+/* ---- The search panel: undo the app's element-wide input, label and
+ * button styles (@starlove/ui), which would make every field full width
+ * and every button an ARC chip. */
+
+.ws-cm .cm-panel.cm-search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.5rem;
+  padding: 0.45rem 2rem 0.45rem 0.6rem;
+  font-size: 0.8rem;
+}
+
+.ws-cm .cm-panel input.cm-textfield,
+.ws-cm .cm-panel input.cm-textfield:hover,
+.ws-cm .cm-panel input.cm-textfield:focus {
+  width: 11rem;
+  min-height: 0;
+  margin: 0;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-input, transparent);
+  box-shadow: none;
+  color: var(--ink);
+  font-size: 0.8rem;
+}
+
+.ws-cm .cm-panel input.cm-textfield:focus {
+  border-color: var(--accent);
+}
+
+.ws-cm .cm-panel input[type='checkbox'],
+.ws-cm .cm-panel input[type='checkbox']:hover,
+.ws-cm .cm-panel input[type='checkbox']:focus {
+  width: auto;
+  margin: 0 0.25rem 0 0;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+  accent-color: var(--accent);
+}
+
+.ws-cm .cm-panel label {
+  display: inline-flex;
+  align-items: center;
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+.ws-cm .cm-panel button,
+.ws-cm .cm-panel button:hover,
+.ws-cm .cm-panel button:active,
+.ws-cm .cm-panel button:focus-visible {
+  display: inline-flex;
+  align-items: center;
+  min-height: 0;
+  margin: 0;
+  padding: 0.22rem 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--subtle-bg);
+  background-image: none;
+  box-shadow: none;
+  transform: none;
+  filter: none;
+  color: var(--ink);
+  font-size: 0.76rem;
+  font-weight: 500;
+  text-transform: none;
+}
+
+.ws-cm .cm-panel button:hover {
+  border-color: var(--accent);
+}
+
+.ws-cm .cm-panel button::after {
+  content: none;
+}
+
+.ws-cm .cm-panel button[name='close'] {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.4rem;
+  border: 0;
+  background: transparent;
+  color: var(--ws-muted, var(--muted));
+  font-size: 1rem;
+}

@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Nebula sessions harness</title>
+    <!-- The sessions lane's harness: the workspace and its real views over the real OPFS registry
+         (in OPFS's sessions-harness/ folder), seeded once per browser profile.
+         Query: ?file=<path>&persistent=0&slow=<ms per write> -->
+    <script>
+      try {
+        var t = localStorage.getItem('nebula:theme');
+        if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./sessions-main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,146 @@
+/* Lane C: PDF, audio and video. A Starscape frame (the board's line and
+ * radius) around the browser's own viewer and controls. */
+
+.ws-media {
+  position: absolute;
+  inset: 0.15rem 0.75rem 0.4rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+}
+
+.ws-pdf {
+  align-items: stretch;
+  justify-content: flex-start;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: var(--surface-raised);
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.06);
+}
+
+:root[data-theme='dark'] .ws-pdf {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 12px 40px rgba(0, 0, 0, 0.3);
+}
+
+.ws-media-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 48px;
+  padding: 0.45rem 0.6rem 0.45rem 1rem;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.ws-media-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-media-hint {
+  color: var(--muted);
+}
+
+.ws-media-actions {
+  display: flex;
+  gap: 0.35rem;
+  margin-inline-start: auto;
+}
+
+.ws-pdf-frame {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  background: #525659;
+}
+
+.ws-pdf > .ws-info-error {
+  margin: 0.5rem 1rem;
+}
+
+.ws-media-frame {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.9rem;
+  max-width: min(100%, 72rem);
+  max-height: 100%;
+  margin: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: color-mix(in srgb, var(--surface-raised) 88%, transparent);
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.06);
+}
+
+:root[data-theme='dark'] .ws-media-frame {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 12px 40px rgba(0, 0, 0, 0.3);
+}
+
+.ws-media-video .ws-media-player {
+  display: block;
+  min-width: min(24rem, 100%);
+  max-width: 100%;
+  max-height: calc(100vh - 16rem);
+  border-radius: 14px;
+  background: #000;
+}
+
+.ws-media-audio .ws-media-frame {
+  width: min(100%, 30rem);
+  padding: 1.6rem 1.4rem 1.2rem;
+}
+
+.ws-media-audio .ws-media-player {
+  width: 100%;
+}
+
+.ws-media-art {
+  display: grid;
+  place-items: center;
+  width: 4.5rem;
+  height: 4.5rem;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+}
+
+.ws-media-art .ws-glyph {
+  width: 2rem;
+  height: 2rem;
+}
+
+.ws-media-caption {
+  color: var(--ink);
+  font-weight: 600;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 768px) {
+  .ws-media {
+    inset: 0;
+    padding: 0.5rem;
+  }
+
+  .ws-pdf {
+    padding: 0;
+    border-width: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .ws-media-video .ws-media-player {
+    max-height: calc(100vh - 14rem);
+  }
+}

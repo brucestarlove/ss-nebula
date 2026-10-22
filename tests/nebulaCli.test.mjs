@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -64,7 +64,45 @@ describe('Nebula CLI', () => {
     expect(result.status).toBe(0)
     expect(result.stderr).toBe('')
     expect(result.stdout).toContain('No Nebula config is required yet.')
-    expect(result.stdout).toContain('browser localStorage')
+    expect(result.stdout).toContain('(OPFS)')
+  })
+
+  it('says where 2.0 keeps projects: in the browser, apart for each address, not in localStorage', () => {
+    const help = runCli(['help']).stdout
+
+    expect(help).toContain('origin private file system (OPFS)')
+    expect(help).toContain('http://127.0.0.1:4321')
+    expect(help).not.toContain('localStorage')
+    expect(runCli(['init']).stdout).not.toContain('localStorage')
+  })
+
+  it('builds the packaged app for the root of the server that serves it, so a file’s address reloads', () => {
+    expect(pkg.scripts['build:cli-app']).toContain('--base=/ ')
+  })
+
+  it('serves the app for a file’s address whatever its extension, as the site does', async () => {
+    const { startNebulaStaticServer } = await import('../cli/nebula-cli.mjs')
+    const staticRoot = mkdtempSync(join(tmpdir(), 'nebula-cli-routes-'))
+    tempDirs.push(staticRoot)
+    writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><title>Nebula Local</title><main>Nebula smoke</main>')
+    mkdirSync(join(staticRoot, 'sample'))
+    writeFileSync(join(staticRoot, 'sample', 'star-chart.pdf'), '%PDF-1.7')
+
+    const server = await startNebulaStaticServer({ host: '127.0.0.1', port: 0, root: staticRoot, silent: true })
+    servers.push(server.server)
+
+    for (const path of ['/p/night-sky/Guides/Observing%20plan.md', '/p/night-sky/Sketches/Winter%20hexagon.excalidraw.md', '/b/ss-nebula/c/main']) {
+      const response = await fetch(`${server.url}${path.slice(1)}`)
+      expect(response.status, path).toBe(200)
+      expect(await response.text(), path).toContain('Nebula smoke')
+    }
+
+    const pdf = await fetch(`${server.url}sample/star-chart.pdf`)
+    expect(pdf.status).toBe(200)
+    expect(pdf.headers.get('content-type')).toBe('application/pdf')
+
+    // A missing file outside those addresses is still missing, not the app.
+    expect((await fetch(`${server.url}assets/missing.js`)).status).toBe(404)
   })
 
   it('serves a local-first static app and falls back app routes to index.html', async () => {

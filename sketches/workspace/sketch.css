@@ -1,0 +1,2292 @@
+/* Nebula workspace sketch (slice 2, round 2). A static study, not production code.
+ *
+ * Built on the real ss-ui layers Nebula installs (@starlove/ui 3.3.3: tokens,
+ * base, backgrounds, the sky engine, the sidebar template ss-docs uses, and the
+ * drawer, dialog, flyout, context-menu, segmented and switch components).
+ * Everything below either extends those or lays out the workspace around them.
+ *
+ * State is a set of attributes on <html>, set from the URL by sketch.js:
+ *   data-style     sheet | pane      preference
+ *   data-width     fixed | stretch   preference (notes)
+ *   data-body      sans | serif      preference (note text)
+ *   data-dock      present           preference, shown only with 2+ projects
+ *   data-projects  1 | 5             sketch only: how many projects exist
+ *   data-view      note | canvas
+ *   data-state     "" | welcome | palette | switcher | context | newproject
+ *                  | settings | collapsed | panel | drawer
+ */
+
+/* ------------------------------------------------------------------ *
+ * Type and workspace tokens
+ * ------------------------------------------------------------------ */
+
+:root {
+  --ws-ui: "Mona Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --ws-display: "Newsreader", "Iowan Old Style", Georgia, serif;
+  --ws-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --ws-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --project: #7c8cff;
+  --np: #fbbf24;
+
+  /* Day (ss-ui light is the :root default). */
+  --ws-muted: #5c6864; /* v3 light muted (#7f8b87) is 3.4:1 on paper; this is 5.6:1 */
+  --ws-rail-bg: rgba(var(--paper-rgb), 0.9);
+  --ws-page-bg: #fffdf8;
+  --ws-page-line: rgba(29, 37, 40, 0.1);
+  --ws-page-shadow: 0 1px 2px rgba(77, 61, 24, 0.06), 0 22px 60px -18px rgba(77, 61, 24, 0.28);
+  --ws-pane-bg: #fbf7ee;
+  --ws-pane-rail: #f6f0e2;
+  --ws-tab-active: rgba(255, 253, 248, 0.92);
+  --ws-window-bg: #f3ead5;
+  --ws-scrim: rgba(44, 38, 26, 0.28);
+  --ws-dock-bg: rgba(var(--paper-rgb), 0.72);
+}
+
+:root[data-theme="dark"] {
+  --ws-muted: var(--muted);
+  --ws-rail-bg: rgba(var(--cosmos-rgb), 0.84);
+  --ws-page-bg: #161b33;
+  --ws-page-line: rgba(255, 255, 255, 0.08);
+  --ws-page-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 28px 80px -24px rgba(0, 0, 0, 0.7);
+  --ws-pane-bg: #141933;
+  --ws-pane-rail: #11152b;
+  --ws-tab-active: rgba(var(--cosmos-rgb), 0.92);
+  --ws-window-bg: #0b1024;
+  --ws-scrim: rgba(3, 6, 18, 0.55);
+  --ws-dock-bg: rgba(10, 14, 32, 0.66);
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Atlas everywhere: Mona Sans for the interface, Newsreader for display. */
+html body {
+  font-family: var(--ws-ui);
+}
+
+/* The app's plain backgrounds (NebulaShell.css), so Settings can show them. */
+:root[data-bg="white"] body {
+  background: #ffffff;
+}
+
+:root[data-bg="black"] body {
+  background: #000000;
+}
+
+[data-bg="white"] .grain,
+[data-bg="black"] .grain {
+  display: none;
+}
+
+/* A quiet reset at zero specificity, so the package's own button classes
+ * (.segmented-option, .flyout-item, .drawer-tab, .welcome-dialog-cta) win. */
+:where(.ws, .ws-surface, .ws-dialog, .ws-settings, .ws-context) button {
+  appearance: none;
+  margin: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+/* Overlays live outside .ws, so glyph sizing is global. */
+svg.g {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* The app's own 24px icons (gear, help) need a thinner stroke to match. */
+svg.g:has(use[href="#i-gear"]),
+svg.g:has(use[href="#i-help"]) {
+  stroke-width: 2;
+}
+
+.only-day { display: none; }
+:root[data-theme="dark"] .only-night { display: revert; }
+:root[data-theme="dark"] .only-day { display: none; }
+:root:not([data-theme="dark"]) .only-night { display: none; }
+:root:not([data-theme="dark"]) .only-day { display: revert; }
+
+/* ------------------------------------------------------------------ *
+ * The frame: dock (optional) | rail | main
+ * ------------------------------------------------------------------ */
+
+.ws.page-sidebar-app {
+  --page-sidebar-w: 276px;
+  --page-sidebar-w-collapsed: 60px;
+  position: relative;
+  z-index: 1;
+  height: 100dvh;
+  min-height: 0;
+}
+
+.ws-dock {
+  display: none;
+}
+
+:root[data-dock] .ws-dock {
+  flex: 0 0 64px;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 0 16px;
+  background: var(--ws-dock-bg);
+  border-inline-end: 1px solid var(--line);
+}
+
+:root[data-style="pane"][data-dock] .ws-dock {
+  background: var(--ws-pane-rail);
+}
+
+.ws-dock-logo {
+  width: 40px;
+  height: 34px;
+  object-fit: contain;
+  filter: drop-shadow(0 0 10px rgba(168, 128, 255, 0.35));
+}
+
+.ws-dock-sep {
+  width: 24px;
+  height: 1px;
+  background: var(--line);
+}
+
+.ws-dock .ws-planet {
+  --size: 34px;
+  position: relative;
+}
+
+.ws-dock .ws-planet[aria-current] {
+  box-shadow:
+    inset -4px -5px 10px rgba(0, 0, 0, 0.35),
+    0 0 0 2px var(--ws-page-bg),
+    0 0 0 3.5px var(--accent);
+}
+
+.ws-dock .ws-planet[aria-current]::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: -15px;
+  top: 50%;
+  translate: 0 -50%;
+  width: 4px;
+  height: 18px;
+  border-radius: 0 4px 4px 0;
+  background: var(--ink);
+}
+
+.ws-dock-add {
+  margin-top: auto;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px dashed var(--line) !important;
+  color: var(--ws-muted);
+}
+
+/* ------------------------------------------------------------------ *
+ * Planets: a project's colour, everywhere it appears
+ * ------------------------------------------------------------------ */
+
+.ws-planet {
+  --size: 30px;
+  --planet: #7c8cff;
+  flex: 0 0 auto;
+  width: var(--size);
+  height: var(--size);
+  padding: 0;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 34% 30%, color-mix(in oklab, var(--planet) 45%, white) 0%, var(--planet) 42%, color-mix(in oklab, var(--planet) 45%, black) 100%);
+  box-shadow:
+    inset -4px -5px 10px rgba(0, 0, 0, 0.32),
+    0 0 14px color-mix(in oklab, var(--planet) 40%, transparent);
+}
+
+.ws-planet[data-current] {
+  --planet: var(--project);
+}
+
+/* ------------------------------------------------------------------ *
+ * The rail: the sidebar template, extended for a file tree
+ * ------------------------------------------------------------------ */
+
+.ws .page-sidebar {
+  height: 100dvh;
+  background: var(--ws-rail-bg);
+}
+
+:root[data-style="pane"] .ws .page-sidebar {
+  background: var(--ws-pane-rail);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* Header becomes the project switcher. */
+.ws-switcher.page-sidebar-header {
+  width: calc(100% - 1rem);
+  margin: 0.5rem 0.5rem 0.15rem;
+  padding: 0.55rem 0.6rem;
+  min-height: 56px;
+  border-radius: 12px;
+  text-align: start;
+  transition: background 160ms ease;
+}
+
+.ws-switcher:hover,
+:root[data-state="switcher"] .ws-switcher,
+:root[data-state="context"] .ws-switcher {
+  background: var(--subtle-bg);
+}
+
+.ws-switcher .page-sidebar-logo.ws-planet {
+  border-radius: 50%;
+  font-size: 0;
+}
+
+:root[data-dock] .ws-switcher .ws-planet {
+  display: none;
+}
+
+/* One project: the Nebula logo stands where its planet would. */
+.ws-switcher-logo,
+.ws-phone-logo {
+  display: none;
+  flex: 0 0 auto;
+  object-fit: contain;
+  filter: drop-shadow(0 0 8px rgba(168, 128, 255, 0.35));
+}
+
+.ws-switcher-logo {
+  width: 32px;
+  height: 28px;
+}
+
+:root[data-projects="1"] .ws-switcher .ws-planet,
+:root[data-projects="1"] .ws-phone-title .ws-planet {
+  display: none;
+}
+
+:root[data-projects="1"] .ws-switcher-logo,
+:root[data-projects="1"] .ws-phone-logo {
+  display: block;
+}
+
+.ws-switcher .page-sidebar-title {
+  font-family: var(--ws-ui);
+  font-size: 0.98rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.ws-switcher .page-sidebar-subtitle {
+  margin-top: 0.15rem;
+  font-size: 0.72rem;
+  color: var(--ws-muted);
+}
+
+.ws-switcher-caret {
+  margin-inline-start: auto;
+  color: var(--ws-muted);
+}
+
+/* Search opens the command palette. */
+.ws-search-field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  height: 34px;
+  padding: 0 0.45rem 0 0.65rem;
+  border: 1px solid var(--line) !important;
+  border-radius: 9px;
+  background: var(--subtle-bg) !important;
+  color: var(--ws-muted) !important;
+  font-size: 0.82rem !important;
+}
+
+.ws-search-field span {
+  flex: 1 1 auto;
+  text-align: start;
+}
+
+.ws kbd,
+.ws-surface kbd,
+.ws-context kbd {
+  font-family: var(--ws-mono);
+  font-size: 0.68rem;
+  line-height: 1;
+  padding: 0.22rem 0.36rem;
+  border-radius: 5px;
+  border: 1px solid var(--line);
+  border-bottom-width: 1px;
+  background: var(--subtle-bg);
+  color: var(--ws-muted);
+  height: auto;
+  min-width: 0;
+  box-shadow: none;
+}
+
+/* Section heads carry their own actions (Obsidian-style, quieter). */
+.ws-section-head {
+  display: flex;
+  align-items: center;
+  padding-inline-end: 0.2rem;
+}
+
+.ws-section-actions {
+  margin-inline-start: auto;
+  display: flex;
+  gap: 1px;
+}
+
+.ws-icon-btn {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  color: var(--ws-muted);
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.ws-icon-btn:hover {
+  background: var(--subtle-bg);
+  color: var(--ink);
+}
+
+.ws-icon-btn:focus-visible,
+.ws-tab:focus-visible,
+.ws-switcher:focus-visible,
+.ws-search-field:focus-visible,
+.ws-card:focus-visible,
+.ws-choice:focus-visible,
+.ws-btn:focus-visible,
+.ws-btn-quiet:focus-visible,
+.ws-menu-item:focus-visible,
+.ws-menu-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Tree density: the template's docs rows measure 35px nested and 40px top
+ * level; these come to about 31px, which a file tree wants. */
+.ws-tree .page-sidebar-nav-item {
+  gap: 0.55rem;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.85rem;
+  color: var(--ws-muted);
+}
+
+.ws-tree .page-sidebar-nav-item:hover {
+  color: var(--ink);
+}
+
+.ws-tree .page-sidebar-nav-item[data-active] {
+  color: var(--ink);
+  font-weight: 560;
+}
+
+.ws-tree .page-sidebar-nav-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.ws-tree .page-sidebar-nav-children-inner {
+  margin: 1px 0 2px 1.08rem;
+  padding-inline-start: 0.35rem;
+}
+
+.ws-tree .page-sidebar-nav-children-inner .page-sidebar-nav-item {
+  font-size: 0.85rem;
+  padding: 0.28rem 0.55rem;
+}
+
+.ws-tree .page-sidebar-section + .page-sidebar-section {
+  margin-top: 0.75rem;
+}
+
+/* Folders put the disclosure where a tree reader looks: before the name. */
+.ws-folder .ws-chevron {
+  transition: transform 200ms var(--ws-ease);
+}
+
+.page-sidebar-nav-group[data-expanded] > .ws-folder .ws-chevron {
+  transform: rotate(90deg);
+}
+
+.ws-folder .page-sidebar-nav-label {
+  color: var(--ink);
+  opacity: 0.86;
+}
+
+.ws-ext {
+  margin-inline-start: auto;
+  font-size: 0.66rem;
+  font-family: var(--ws-mono);
+  color: var(--ws-muted);
+  opacity: 0.72;
+}
+
+/* Footer: where the files live, plus the controls that used to sit top-right. */
+.ws-rail-footer {
+  gap: 0.5rem;
+  padding: 0.6rem 0.65rem 0.6rem 0.9rem;
+}
+
+.ws-rail-footer .page-sidebar-footer-name {
+  font-size: 0.8rem;
+  font-weight: 560;
+}
+
+.ws-rail-footer .page-sidebar-footer-meta {
+  color: var(--ws-muted);
+}
+
+.ws-rail-footer .ws-icon-btn:first-of-type {
+  margin-inline-start: auto;
+}
+
+.ws-store-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #4ade80;
+  box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.16);
+}
+
+:root:not([data-theme="dark"]) .ws-store-dot {
+  background: #15803d;
+  box-shadow: 0 0 0 3px rgba(21, 128, 61, 0.14);
+}
+
+.ws .page-sidebar-toggle {
+  color: var(--ws-muted);
+}
+
+/* Collapsed: a toolbelt, not a column of ambiguous letters. */
+.ws-toolbelt {
+  display: none;
+}
+
+.ws[data-collapsed] .ws-toolbelt {
+  /* Takes the hidden tree's place, so the footer stays at the bottom. */
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 0.35rem 0;
+}
+
+.ws[data-collapsed] .ws-toolbelt .ws-icon-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+}
+
+.ws[data-collapsed] .ws-tree,
+.ws[data-collapsed] .ws-switcher-caret,
+.ws[data-collapsed] .ws-store-dot {
+  display: none;
+}
+
+.ws[data-collapsed] .ws-switcher.page-sidebar-header {
+  width: auto;
+  margin: 0.6rem auto 0.25rem;
+  padding: 0.35rem;
+  min-height: 0;
+}
+
+.ws[data-collapsed] .ws-rail-footer {
+  flex-direction: column;
+  gap: 4px;
+  padding: 0.5rem 0;
+}
+
+.ws[data-collapsed] .ws-rail-footer .ws-icon-btn {
+  margin: 0;
+  width: 38px;
+  height: 38px;
+}
+
+/* ------------------------------------------------------------------ *
+ * Main: tabs, stage, panel, status
+ * ------------------------------------------------------------------ */
+
+.ws .page-sidebar-main.ws-main {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.ws-tabs {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  height: 48px;
+  padding: 0 0.6rem 0 0.75rem;
+}
+
+:root[data-style="pane"] .ws-tabs {
+  background: var(--ws-pane-rail);
+  border-bottom: 1px solid var(--line);
+}
+
+.ws-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  max-width: 14.5rem;
+  height: 32px;
+  padding: 0 0.4rem 0 0.65rem;
+  border-radius: 9px;
+  border: 1px solid transparent !important;
+  color: var(--ws-muted) !important;
+  font-size: 0.83rem !important;
+  white-space: nowrap;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.ws-tab:hover {
+  background: var(--subtle-bg) !important;
+  color: var(--ink) !important;
+}
+
+.ws-tab[aria-selected="true"] {
+  background: var(--ws-tab-active) !important;
+  border-color: var(--line) !important;
+  color: var(--ink) !important;
+  box-shadow: 0 6px 18px -10px rgba(0, 0, 0, 0.45);
+}
+
+:root[data-style="pane"] .ws-tab[aria-selected="true"] {
+  background: var(--ws-pane-bg) !important;
+  box-shadow: none;
+}
+
+.ws-tab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ws-tab-close {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  opacity: 0;
+  color: var(--ws-muted);
+}
+
+.ws-tab[aria-selected="true"] .ws-tab-close,
+.ws-tab:hover .ws-tab-close {
+  opacity: 1;
+}
+
+.ws-tabs-spacer {
+  flex: 1 1 auto;
+}
+
+.ws-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+
+.ws-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
+:root[data-style="pane"][data-view="note"] .ws-stage {
+  background: var(--ws-pane-bg);
+}
+
+.ws-view {
+  display: none;
+}
+
+:root[data-view="note"] .ws-view[data-view-of="note"],
+:root[data-view="canvas"] .ws-view[data-view-of="canvas"] {
+  display: block;
+}
+
+/* --- The note: a page on the sky (Sheet) or in a pane (Pane) ------- */
+
+.ws-page {
+  width: min(46rem, calc(100% - 3rem));
+  margin: 0.35rem auto 2.75rem;
+  padding: 3.4rem clamp(1.5rem, 5vw, 4.5rem) 3.75rem;
+  background: var(--ws-page-bg);
+  border: 1px solid var(--ws-page-line);
+  border-radius: 18px;
+  box-shadow: var(--ws-page-shadow);
+}
+
+/* Stretch: the page takes the width it's given, as many writers prefer. */
+:root[data-width="stretch"] .ws-page {
+  width: calc(100% - 3rem);
+}
+
+:root[data-style="pane"] .ws-page {
+  margin-top: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+:root[data-style="pane"][data-width="stretch"] .ws-page {
+  width: 100%;
+}
+
+.ws-page h1 {
+  margin: 0;
+  font-family: var(--ws-display);
+  font-weight: 400;
+  font-size: clamp(2.1rem, 2.6vw + 1rem, 2.75rem);
+  line-height: 1.08;
+  letter-spacing: -0.022em;
+  color: var(--ink);
+  text-wrap: balance;
+}
+
+.ws-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.6rem;
+  margin: 0.9rem 0 2rem;
+  font-size: 0.78rem;
+  color: var(--ws-muted);
+}
+
+.ws-tag {
+  padding: 0.12rem 0.5rem;
+  border-radius: 999px;
+  background: var(--accent-active);
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 560;
+}
+
+.ws-prose {
+  font-size: 1.04rem;
+  line-height: 1.72;
+  color: var(--ink);
+  text-wrap: pretty;
+}
+
+:root[data-body="serif"] .ws-prose {
+  font-family: var(--ws-display);
+  font-size: 1.2rem;
+  line-height: 1.6;
+}
+
+.ws-prose p {
+  margin: 0 0 1.05rem;
+}
+
+.ws-prose h2 {
+  margin: 2.1rem 0 0.7rem;
+  font-family: var(--ws-display);
+  font-weight: 400;
+  font-size: 1.55rem;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+}
+
+.ws-link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, var(--accent) 40%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.ws-tasks {
+  list-style: none;
+  margin: 0 0 1.1rem;
+  padding: 0;
+}
+
+.ws-tasks li {
+  display: flex;
+  gap: 0.7rem;
+  align-items: baseline;
+  padding: 0.2rem 0;
+}
+
+.ws-check {
+  position: relative;
+  top: 0.18em;
+  flex: 0 0 auto;
+  width: 17px;
+  height: 17px;
+  border-radius: 5px;
+  border: 1.5px solid color-mix(in oklab, var(--ink) 35%, transparent);
+}
+
+.ws-tasks li[data-done] .ws-check {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.ws-tasks li[data-done] .ws-check::after {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 1.5px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--ws-page-bg);
+  border-width: 0 2px 2px 0;
+  rotate: 45deg;
+}
+
+.ws-tasks li[data-done] {
+  color: var(--ws-muted);
+}
+
+.ws-prose blockquote {
+  margin: 1.6rem 0 0;
+  padding: 0.1rem 0 0.1rem 1.1rem;
+  border-inline-start: 2px solid var(--line);
+  font-family: var(--ws-display);
+  font-style: italic;
+  font-size: 1.18rem;
+  line-height: 1.55;
+  color: var(--ws-muted);
+}
+
+/* An embedded canvas is a window onto the sky, so it reads differently from
+ * an image at a glance. */
+.ws-embed {
+  margin: 1.6rem 0 0.4rem;
+  border: 1px solid var(--ws-page-line);
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--ws-window-bg);
+}
+
+:root[data-theme="dark"] .ws-embed {
+  background:
+    radial-gradient(1px 1px at 12% 22%, rgba(255, 255, 255, 0.7), transparent 60%),
+    radial-gradient(1px 1px at 68% 14%, rgba(255, 255, 255, 0.55), transparent 60%),
+    radial-gradient(1.4px 1.4px at 84% 62%, rgba(200, 215, 255, 0.7), transparent 60%),
+    radial-gradient(1px 1px at 30% 78%, rgba(255, 255, 255, 0.5), transparent 60%),
+    radial-gradient(1px 1px at 46% 40%, rgba(255, 255, 255, 0.35), transparent 60%),
+    radial-gradient(120% 90% at 80% 0%, rgba(168, 85, 247, 0.14), transparent 60%),
+    radial-gradient(100% 80% at 0% 100%, rgba(6, 182, 212, 0.1), transparent 60%),
+    var(--ws-window-bg);
+}
+
+.ws-embed img {
+  display: block;
+  width: 100%;
+  height: 250px;
+  object-fit: contain;
+  padding: 1rem 1.25rem 0.5rem;
+}
+
+.ws-embed figcaption {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.85rem;
+  border-top: 1px solid var(--ws-page-line);
+  background: color-mix(in oklab, var(--ws-page-bg) 86%, transparent);
+  font-size: 0.78rem;
+  color: var(--ws-muted);
+}
+
+.ws-embed figcaption b {
+  color: var(--ink);
+  font-weight: 560;
+}
+
+.ws-embed figcaption .ws-open {
+  margin-inline-start: auto;
+  color: var(--accent);
+  font-weight: 560;
+}
+
+/* --- The canvas: today's framed board, inside a tab ---------------- */
+
+.ws-board {
+  position: absolute;
+  inset: 0.15rem 0.75rem 0.4rem;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  overflow: hidden;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.06);
+}
+
+:root[data-theme="dark"] .ws-board {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 12px 40px rgba(0, 0, 0, 0.3);
+}
+
+.ws-drawing {
+  position: absolute;
+  left: 50%;
+  top: 55%;
+  width: min(74%, 860px);
+  max-height: 74%;
+  translate: -50% -50%;
+  object-fit: contain;
+}
+
+.ws-xl-toolbar {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  width: 552px;
+  max-width: calc(100% - 24px);
+  translate: -50% 0;
+}
+
+.ws-xl-footer {
+  position: absolute;
+  left: 16px;
+  bottom: 14px;
+  width: 213px;
+}
+
+/* --- Right panel ---------------------------------------------------- */
+
+.ws-panel {
+  display: none;
+  flex: 0 0 272px;
+  flex-direction: column;
+  gap: 1.4rem;
+  padding: 1rem 1rem 1.5rem;
+  overflow: auto;
+  background: var(--ws-rail-bg);
+  border-inline-start: 1px solid var(--line);
+  backdrop-filter: blur(16px);
+}
+
+:root[data-style="pane"] .ws-panel {
+  background: var(--ws-pane-rail);
+  backdrop-filter: none;
+}
+
+:root[data-state="panel"] .ws-panel {
+  display: flex;
+}
+
+.ws-panel h3 {
+  margin: 0 0 0.55rem;
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ws-muted);
+}
+
+.ws-outline,
+.ws-backlinks {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.84rem;
+}
+
+.ws-outline li {
+  padding: 0.28rem 0.5rem;
+  border-radius: 7px;
+  color: var(--ink);
+}
+
+.ws-outline li[data-depth="2"] {
+  padding-inline-start: 1.25rem;
+  color: var(--ws-muted);
+}
+
+.ws-backlinks li {
+  padding: 0.55rem 0.6rem;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--subtle-bg);
+}
+
+.ws-backlinks b {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 560;
+  color: var(--ink);
+}
+
+.ws-backlinks span {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--ws-muted);
+}
+
+.ws-backlinks mark {
+  background: none;
+  color: var(--accent);
+}
+
+/* --- Status line ---------------------------------------------------- */
+
+.ws-status {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  height: 30px;
+  padding: 0 1rem;
+  font-size: 0.72rem;
+  color: var(--ws-muted);
+}
+
+:root[data-style="pane"] .ws-status {
+  background: var(--ws-pane-rail);
+  border-top: 1px solid var(--line);
+}
+
+.ws-status .ws-store-dot {
+  width: 6px;
+  height: 6px;
+  box-shadow: none;
+}
+
+.ws-sign {
+  margin-inline-start: auto;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+}
+
+.ws-sign b {
+  font-weight: 700;
+  font-size: 0.78rem;
+  color: var(--ink);
+}
+
+.ws-sign em {
+  font-style: italic;
+}
+
+/* ------------------------------------------------------------------ *
+ * Overlays: command palette, project switcher, project context menu
+ * ------------------------------------------------------------------ */
+
+.ws-scrim {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: var(--ws-scrim);
+}
+
+:root[data-state="palette"] .ws-scrim,
+:root[data-state="drawer"] .ws-scrim {
+  display: block;
+}
+
+.ws-surface {
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 30px 90px -20px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+  backdrop-filter: blur(20px);
+}
+
+:root:not([data-theme="dark"]) .ws-surface {
+  background: rgba(255, 253, 248, 0.98);
+  box-shadow: 0 30px 80px -24px rgba(77, 61, 24, 0.35);
+}
+
+.ws-palette {
+  display: none;
+  position: fixed;
+  z-index: 50;
+  top: 13vh;
+  left: 50%;
+  width: min(40rem, calc(100vw - 2rem));
+  translate: -50% 0;
+  overflow: hidden;
+}
+
+:root[data-state="palette"] .ws-palette {
+  display: block;
+}
+
+.ws-palette-input {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  height: 56px;
+  padding: 0 1.1rem;
+  border-bottom: 1px solid var(--line);
+  font-size: 1.05rem;
+  color: var(--ink);
+}
+
+.ws-palette-input .g {
+  width: 18px;
+  height: 18px;
+  color: var(--ws-muted);
+}
+
+.ws-caret {
+  width: 2px;
+  height: 1.25em;
+  margin-inline-start: -0.55rem;
+  background: var(--accent);
+}
+
+.ws-palette-input kbd {
+  margin-inline-start: auto;
+}
+
+.ws-results {
+  max-height: 52vh;
+  overflow: auto;
+  padding: 0.4rem 0.45rem 0.55rem;
+}
+
+.ws-results h4 {
+  margin: 0.55rem 0.65rem 0.3rem;
+  font-size: 0.64rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ws-muted);
+}
+
+.ws-result {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 10px;
+  font-size: 0.88rem;
+  color: var(--ink);
+}
+
+.ws-result[data-active] {
+  background: var(--accent-active);
+  box-shadow: inset 0 0 0 1px var(--accent-border);
+}
+
+.ws-result .g {
+  color: var(--ws-muted);
+}
+
+.ws-result[data-active] .g {
+  color: var(--accent);
+}
+
+.ws-result small {
+  margin-inline-start: auto;
+  font-size: 0.74rem;
+  color: var(--ws-muted);
+}
+
+.ws-result .ws-planet {
+  --size: 16px;
+  box-shadow: inset -2px -2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.ws-result mark {
+  background: none;
+  color: var(--accent);
+  font-weight: 650;
+}
+
+:root[data-projects="1"] .ws-other-projects {
+  display: none;
+}
+
+.ws-palette-foot {
+  display: flex;
+  gap: 1.1rem;
+  padding: 0.55rem 1rem;
+  border-top: 1px solid var(--line);
+  font-size: 0.72rem;
+  color: var(--ws-muted);
+}
+
+.ws-palette-foot kbd {
+  margin-inline-end: 0.3rem;
+}
+
+/* The project switcher: your projects, the dock switch, three actions. */
+.ws-menu {
+  display: none;
+  position: fixed;
+  z-index: 50;
+  top: 66px;
+  left: 10px;
+  width: 300px;
+  padding: 0.4rem;
+}
+
+:root[data-dock] .ws-menu {
+  left: 74px;
+}
+
+:root[data-state="switcher"] .ws-menu {
+  display: block;
+}
+
+.ws-menu-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 32px;
+  padding: 0.15rem 0.35rem 0.1rem 0.6rem;
+}
+
+.ws-menu h4 {
+  margin: 0;
+  font-size: 0.64rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ws-muted);
+}
+
+/* The dock switch: the real ss-ui switch, label first, a size down. */
+.ws-dock-switch {
+  flex-direction: row-reverse;
+  gap: 0.45rem;
+  padding: 0.25rem 0.3rem 0.25rem 0.5rem;
+  border-radius: 8px;
+}
+
+.ws-dock-switch:hover {
+  background: var(--subtle-bg);
+}
+
+.ws-dock-switch .switch-label {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--ws-muted);
+}
+
+.ws-dock-switch:has(input:checked) .switch-label {
+  color: var(--ink);
+}
+
+.ws-dock-switch .switch-track {
+  width: 2rem;
+  height: 1.15rem;
+}
+
+.ws-dock-switch .switch-track::after {
+  left: 0.14rem;
+  width: 0.78rem;
+  height: 0.78rem;
+}
+
+.ws-dock-switch.switch > input:checked + .switch-track::after {
+  transform: translate(0.82rem, -50%);
+}
+
+:root[data-projects="1"] .ws-dock-switch {
+  display: none;
+}
+
+.ws-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border-radius: 10px;
+  text-align: start;
+}
+
+.ws-menu-item:hover,
+.ws-menu-item[aria-current] {
+  background: var(--subtle-bg);
+}
+
+:root[data-projects="1"] .ws-menu-item:not([data-current-project]) {
+  display: none;
+}
+
+.ws-menu-item .ws-planet {
+  --size: 26px;
+}
+
+.ws-menu-item b {
+  display: block;
+  font-size: 0.88rem;
+  font-weight: 560;
+  color: var(--ink);
+}
+
+.ws-menu-item span {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--ws-muted);
+}
+
+.ws-menu-item .ws-tick {
+  margin-inline-start: auto;
+  color: var(--accent);
+}
+
+.ws-menu-sep {
+  height: 1px;
+  margin: 0.35rem 0.4rem;
+  background: var(--line);
+}
+
+.ws-menu-action {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border-radius: 9px;
+  font-size: 0.85rem;
+  color: var(--ws-muted);
+}
+
+.ws-menu-action:hover {
+  background: var(--subtle-bg);
+  color: var(--ink);
+}
+
+.ws-menu-action .g {
+  margin-inline: 5px;
+}
+
+/* Right-click on the project: the ss-ui context menu, with its colour first. */
+.ws-context {
+  display: none;
+  width: 15.25rem;
+  top: 58px;
+  left: 130px;
+}
+
+:root[data-state="context"] .ws-context {
+  display: block;
+}
+
+.ws-context-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.45rem 0.65rem 0.4rem;
+}
+
+.ws-context-head .ws-planet {
+  --size: 22px;
+}
+
+.ws-context-head b {
+  font-size: 0.88rem;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.ws-context .flyout-item .g {
+  color: var(--ws-muted);
+}
+
+.ws-context .flyout-item[data-danger] .g {
+  color: inherit;
+}
+
+.ws-context .flyout-item kbd {
+  margin-inline-start: auto;
+}
+
+/* ------------------------------------------------------------------ *
+ * Colour swatches: small planets, in every place a colour is chosen
+ * ------------------------------------------------------------------ */
+
+.ws-swatches {
+  --sw: 24px;
+  display: grid;
+  grid-template-columns: repeat(6, var(--sw));
+  gap: 10px;
+  padding: 0.25rem 0.65rem 0.55rem;
+}
+
+.ws-swatches-row {
+  --sw: 26px;
+  grid-template-columns: repeat(12, var(--sw));
+  gap: 9px;
+  padding: 0.15rem 0 0.1rem;
+}
+
+.ws-np .ws-swatches {
+  --sw: 26px;
+  gap: 11px;
+  padding: 0.15rem 0 0;
+}
+
+.ws-swatch {
+  --planet: #7c8cff;
+  position: relative;
+  width: var(--sw);
+  height: var(--sw);
+  padding: 0;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 34% 30%, color-mix(in oklab, var(--planet) 45%, white) 0%, var(--planet) 42%, color-mix(in oklab, var(--planet) 45%, black) 100%);
+  box-shadow: inset -3px -3px 6px rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+  transition: transform 140ms var(--ws-ease);
+}
+
+.ws-swatch:hover {
+  transform: scale(1.08);
+}
+
+/* Chosen: a ring with a gap of whatever lies behind, so it reads on any surface. */
+.ws-swatch[aria-checked="true"] {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.ws-swatch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Any colour at all: a colour wheel around the current custom pick. */
+.ws-swatch-custom {
+  --custom: transparent;
+  background:
+    radial-gradient(circle, var(--custom) 0 34%, transparent 36%),
+    conic-gradient(from 20deg, #ff6b6b, #fbbf24, #4ade80, #38d1eb, #7c8cff, #e879f9, #ff6b6b);
+}
+
+.ws-swatch-custom[data-chosen] {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.ws-swatch-custom input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.ws-swatch-custom:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ------------------------------------------------------------------ *
+ * Settings: the app's ss-ui drawer, with Appearance and Project tabs
+ * ------------------------------------------------------------------ */
+
+.ws-settings .drawer-inner {
+  padding-bottom: 1.5rem;
+}
+
+.ws-settings .drawer-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.ws-set-h {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+}
+
+.ws-set-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.ws-set-label {
+  font-size: 0.74rem;
+  font-weight: 650;
+  color: var(--ws-muted);
+}
+
+.ws-set-help {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--ws-muted);
+}
+
+.ws-settings .segmented {
+  align-self: flex-start;
+}
+
+.ws-settings .switch-label {
+  font-size: 0.86rem;
+  color: var(--ink);
+}
+
+:root[data-projects="1"] [data-dock-row] .switch {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.ws-one-help {
+  display: none;
+}
+
+:root[data-projects="1"] .ws-one-help {
+  display: block;
+}
+
+:root[data-projects="1"] .ws-many-help {
+  display: none;
+}
+
+/* Choice cards: a picture of each option, not just its name. */
+.ws-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+}
+
+.ws-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  padding: 0.5rem 0.5rem 0.6rem;
+  border: 1px solid var(--line) !important;
+  border-radius: 12px;
+  background: var(--subtle-bg) !important;
+  text-align: start;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.ws-card:hover {
+  border-color: var(--accent-border) !important;
+}
+
+.ws-card[aria-checked="true"] {
+  border-color: var(--accent-border) !important;
+  background: var(--accent-active) !important;
+  box-shadow: inset 0 0 0 1px var(--accent-border);
+}
+
+.ws-card b {
+  margin-top: 0.45rem;
+  padding-inline: 0.15rem;
+  font-size: 0.84rem;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.ws-card > span:last-child {
+  padding-inline: 0.15rem;
+  font-size: 0.74rem;
+  line-height: 1.35;
+  color: var(--ws-muted);
+}
+
+/* Style thumbnails: the rail and a note, in each style. */
+.ws-thumb {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 68px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+}
+
+.ws-thumb i {
+  position: absolute;
+  display: block;
+}
+
+.ws-thumb i:first-child {
+  inset: 0 auto 0 0;
+  width: 26%;
+}
+
+.ws-thumb i:last-child {
+  top: 16%;
+  bottom: 0;
+  left: 38%;
+  right: 12%;
+  border-radius: 4px 4px 0 0;
+  background-image: repeating-linear-gradient(to bottom, transparent 0 7px, var(--thumb-line) 7px 9px);
+  background-size: 70% 100%;
+  background-repeat: no-repeat;
+  background-position: 22% 9px;
+}
+
+.ws-thumb[data-thumb="sheet"] {
+  --thumb-line: rgba(232, 236, 255, 0.28);
+  background:
+    radial-gradient(1px 1px at 82% 22%, rgba(255, 255, 255, 0.9), transparent 70%),
+    radial-gradient(1px 1px at 93% 62%, rgba(255, 255, 255, 0.7), transparent 70%),
+    radial-gradient(1px 1px at 33% 80%, rgba(255, 255, 255, 0.6), transparent 70%),
+    radial-gradient(90% 90% at 90% 0%, rgba(168, 85, 247, 0.32), transparent 60%),
+    #0b1030;
+}
+
+.ws-thumb[data-thumb="sheet"] i:first-child {
+  background: rgba(20, 26, 56, 0.72);
+  border-inline-end: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ws-thumb[data-thumb="sheet"] i:last-child {
+  background-color: #161b33;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5);
+}
+
+.ws-thumb[data-thumb="pane"] {
+  --thumb-line: rgba(232, 236, 255, 0.28);
+  background: #141933;
+}
+
+.ws-thumb[data-thumb="pane"] i:first-child {
+  background: #11152b;
+  border-inline-end: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ws-thumb[data-thumb="pane"] i:last-child {
+  top: 10%;
+  left: 34%;
+  right: 6%;
+  background-color: transparent;
+}
+
+:root:not([data-theme="dark"]) .ws-thumb[data-thumb="sheet"] {
+  --thumb-line: rgba(29, 37, 40, 0.18);
+  background: radial-gradient(90% 90% at 90% 0%, rgba(232, 200, 140, 0.5), transparent 60%), #efe4c9;
+}
+
+:root:not([data-theme="dark"]) .ws-thumb[data-thumb="sheet"] i:first-child {
+  background: rgba(251, 247, 238, 0.85);
+  border-inline-end: 1px solid rgba(29, 37, 40, 0.08);
+}
+
+:root:not([data-theme="dark"]) .ws-thumb[data-thumb="sheet"] i:last-child {
+  background-color: #fffdf8;
+  box-shadow: 0 6px 14px rgba(77, 61, 24, 0.22);
+}
+
+:root:not([data-theme="dark"]) .ws-thumb[data-thumb="pane"] {
+  --thumb-line: rgba(29, 37, 40, 0.18);
+  background: #fbf7ee;
+}
+
+:root:not([data-theme="dark"]) .ws-thumb[data-thumb="pane"] i:first-child {
+  background: #f6f0e2;
+  border-inline-end: 1px solid rgba(29, 37, 40, 0.08);
+}
+
+.ws-aa {
+  display: block;
+  padding: 0.15rem 0.2rem 0;
+  font-family: var(--ws-ui);
+  font-size: 1.9rem;
+  line-height: 1.1;
+  color: var(--ink);
+}
+
+.ws-aa-serif {
+  font-family: var(--ws-display);
+  font-size: 2.05rem;
+}
+
+/* Fields and buttons, matching ss-ui's input chrome (input.css is
+ * element-wide, so it isn't vendored here). */
+.ws-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.ws-input {
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  color: var(--ink);
+  background: var(--surface-input);
+  font: inherit;
+  font-size: 0.92rem;
+  outline: none;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.ws-input:focus {
+  border-color: var(--accent-border);
+  box-shadow: var(--accent-ring);
+}
+
+.ws-where {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.ws-where .g {
+  width: 20px;
+  height: 20px;
+  color: var(--ws-muted);
+}
+
+.ws-where b {
+  display: block;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.ws-where span span {
+  display: block;
+  font-size: 0.76rem;
+  color: var(--ws-muted);
+}
+
+.ws-set-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.ws-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.5rem 0.8rem;
+  border: 1px solid var(--line) !important;
+  border-radius: 11px;
+  background: var(--surface-input) !important;
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.ws-btn:hover {
+  border-color: var(--accent-border) !important;
+}
+
+.ws-btn-danger {
+  color: var(--danger);
+  border-color: rgba(var(--coral-rgb), 0.4) !important;
+}
+
+.ws-btn-danger:hover {
+  background: rgba(var(--coral-rgb), 0.12) !important;
+  border-color: rgba(var(--coral-rgb), 0.6) !important;
+}
+
+.ws-btn-quiet {
+  padding: 0.62rem 1.05rem;
+  border-radius: 12px;
+  color: var(--ws-muted);
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.ws-btn-quiet:hover {
+  color: var(--ink);
+  background: var(--subtle-bg);
+}
+
+/* ------------------------------------------------------------------ *
+ * Dialogs: ss-ui's <dialog> shell (Orbit's welcome) for Welcome and
+ * New project. Shown non-modally here, over a matching scrim, so the
+ * Tweaks panel stays usable; the app opens them with showModal().
+ * ------------------------------------------------------------------ */
+
+.ws-dialog {
+  z-index: 70;
+  color: var(--ink);
+}
+
+.ws-dialog-scrim {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 65;
+  background: var(--backdrop-bg);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+:root[data-state="welcome"] .ws-dialog-scrim,
+:root[data-state="newproject"] .ws-dialog-scrim {
+  display: block;
+}
+
+.ws-dialog-foot {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+/* Dialogs focus their main control on open (as Orbit's welcome does), so it
+ * gets a deliberate ring rather than the browser's default. */
+.ws-dialog .welcome-dialog-cta:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.ws-welcome .welcome-dialog-logo {
+  width: 2.9rem;
+  height: 2.9rem;
+  filter: drop-shadow(0 0 10px rgba(168, 128, 255, 0.4));
+}
+
+.ws-welcome .welcome-dialog-title {
+  font-family: var(--ws-display);
+  font-weight: 400;
+  font-size: 1.85rem;
+  letter-spacing: -0.02em;
+}
+
+/* New project: a planet comes into being as you name and colour it. */
+.ws-np.dialog {
+  width: min(38rem, calc(100vw - 2rem));
+}
+
+.ws-np-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding: 1.45rem 1.6rem 1.4rem;
+}
+
+.ws-np-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ws-np-head h2 {
+  margin: 0;
+  font-family: var(--ws-display);
+  font-weight: 400;
+  font-size: 1.65rem;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+}
+
+.ws-np-head .ws-icon-btn {
+  width: 32px;
+  height: 32px;
+}
+
+.ws-np-top {
+  display: grid;
+  grid-template-columns: 11.5rem 1fr;
+  gap: 1.3rem;
+}
+
+.ws-np-preview {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  min-height: 11.5rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  overflow: hidden;
+  background:
+    radial-gradient(1px 1px at 14% 20%, rgba(255, 255, 255, 0.8), transparent 70%),
+    radial-gradient(1px 1px at 78% 14%, rgba(255, 255, 255, 0.6), transparent 70%),
+    radial-gradient(1.4px 1.4px at 88% 70%, rgba(200, 215, 255, 0.8), transparent 70%),
+    radial-gradient(1px 1px at 24% 82%, rgba(255, 255, 255, 0.55), transparent 70%),
+    radial-gradient(1px 1px at 60% 90%, rgba(255, 255, 255, 0.4), transparent 70%),
+    radial-gradient(110% 80% at 80% 0%, rgba(168, 85, 247, 0.22), transparent 60%),
+    radial-gradient(90% 70% at 0% 100%, rgba(6, 182, 212, 0.14), transparent 60%),
+    #090d22;
+}
+
+:root:not([data-theme="dark"]) .ws-np-preview {
+  background:
+    radial-gradient(110% 80% at 80% 0%, rgba(232, 200, 140, 0.5), transparent 60%),
+    radial-gradient(90% 70% at 0% 100%, rgba(15, 118, 110, 0.12), transparent 60%),
+    #efe4c9;
+}
+
+.ws-np-planet.ws-planet {
+  --size: 88px;
+  --planet: var(--np);
+  box-shadow:
+    inset -12px -14px 24px rgba(0, 0, 0, 0.4),
+    0 0 46px color-mix(in oklab, var(--planet) 50%, transparent);
+}
+
+.ws-np-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--ws-display);
+  font-size: 1.15rem;
+  color: #e8ecff;
+}
+
+:root:not([data-theme="dark"]) .ws-np-name {
+  color: var(--ink);
+}
+
+.ws-np-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.ws-choices {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.55rem;
+}
+
+.ws-choice {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 0.5rem;
+  row-gap: 0.25rem;
+  align-items: center;
+  padding: 0.7rem 0.75rem 0.75rem;
+  border: 1px solid var(--line) !important;
+  border-radius: 12px;
+  background: var(--subtle-bg) !important;
+  text-align: start;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.ws-choice:hover {
+  border-color: var(--accent-border) !important;
+}
+
+.ws-choice .g {
+  color: var(--ws-muted);
+}
+
+.ws-choice b {
+  font-size: 0.85rem;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.ws-choice span {
+  grid-column: 1 / -1;
+  font-size: 0.74rem;
+  line-height: 1.4;
+  color: var(--ws-muted);
+}
+
+.ws-choice[aria-checked="true"] {
+  border-color: var(--accent-border) !important;
+  background: var(--accent-active) !important;
+  box-shadow: inset 0 0 0 1px var(--accent-border);
+}
+
+.ws-choice[aria-checked="true"] .g {
+  color: var(--accent);
+}
+
+.ws-np-foot {
+  justify-content: flex-end;
+}
+
+/* ------------------------------------------------------------------ *
+ * Phone and narrow tablet: the rail becomes a sheet; thumb-reach bar
+ * ------------------------------------------------------------------ */
+
+.ws-phone-top,
+.ws-phone-bar {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .ws.page-sidebar-app {
+    flex-direction: column;
+  }
+
+  /* Undo the template's phone top bar: a file tree can't live in one row. */
+  .ws .page-sidebar {
+    position: fixed;
+    z-index: 60;
+    top: 0;
+    left: 0;
+    width: min(86vw, 330px);
+    height: 100dvh;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+    border-inline-end: 1px solid var(--line);
+    border-block-end: 0;
+    background: var(--surface-raised);
+    translate: -105% 0;
+    transition: translate 280ms var(--ws-ease);
+  }
+
+  :root:not([data-theme="dark"]) .ws .page-sidebar {
+    background: #fbf6ea;
+  }
+
+  :root[data-state="drawer"] .ws .page-sidebar {
+    translate: 0 0;
+    box-shadow: 24px 0 60px -20px rgba(0, 0, 0, 0.6);
+  }
+
+  .ws .page-sidebar-nav {
+    flex-direction: column;
+    overflow-x: hidden;
+    overflow-y: auto;
+    gap: 1px;
+    padding: 0.35rem 0.65rem 0.65rem;
+  }
+
+  .ws .page-sidebar-section {
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .ws .ws-tree .page-sidebar-section + .page-sidebar-section {
+    margin-top: 0.75rem;
+  }
+
+  .ws .page-sidebar-nav-group {
+    display: flex;
+  }
+
+  .ws .page-sidebar-search {
+    display: block;
+  }
+
+  .ws .page-sidebar-section-label {
+    display: block;
+  }
+
+  .ws .page-sidebar-footer {
+    display: flex;
+  }
+
+  .ws .page-sidebar-toggle-wrap,
+  .ws-dock,
+  :root[data-dock] .ws-dock,
+  .ws-tabs,
+  .ws-status {
+    display: none;
+  }
+
+  .ws-tree .page-sidebar-nav-item,
+  .ws-tree .page-sidebar-nav-children-inner .page-sidebar-nav-item {
+    padding-block: 0.5rem;
+    font-size: 0.95rem;
+  }
+
+  .ws .page-sidebar-main.ws-main {
+    height: 100dvh;
+  }
+
+  .ws-phone-top {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    height: calc(54px + env(safe-area-inset-top));
+    padding: env(safe-area-inset-top) 0.4rem 0;
+    background: var(--ws-tab-active);
+    border-bottom: 1px solid var(--line);
+    backdrop-filter: blur(16px);
+  }
+
+  .ws-phone-top .ws-icon-btn,
+  .ws-phone-bar .ws-icon-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+  }
+
+  .ws-phone-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--ink);
+  }
+
+  .ws-phone-title .ws-planet {
+    --size: 16px;
+  }
+
+  .ws-phone-logo {
+    width: 22px;
+    height: 19px;
+  }
+
+  .ws-phone-bar {
+    flex: 0 0 auto;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    padding: 0.3rem 0.5rem calc(0.3rem + env(safe-area-inset-bottom));
+    background: var(--ws-tab-active);
+    border-top: 1px solid var(--line);
+    backdrop-filter: blur(16px);
+  }
+
+  .ws-phone-bar button {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    padding: 0.35rem 0;
+    min-height: 48px;
+    font-size: 0.66rem;
+    color: var(--ws-muted);
+  }
+
+  .ws-phone-bar button[aria-current] {
+    color: var(--accent);
+  }
+
+  .ws-phone-bar .g {
+    width: 20px;
+    height: 20px;
+  }
+
+  .ws-phone-new {
+    width: 40px !important;
+    height: 40px !important;
+    min-height: 0 !important;
+    margin: 0 auto;
+    justify-content: center;
+    border-radius: 50%;
+    background: var(--accent) !important;
+    color: var(--ws-page-bg) !important;
+  }
+
+  .ws-page,
+  :root[data-width="stretch"] .ws-page {
+    width: 100%;
+    margin: 0;
+    padding: 2rem 1.35rem 3rem;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    min-height: 100%;
+  }
+
+  .ws-page h1 {
+    font-size: 2rem;
+  }
+
+  .ws-embed img {
+    height: 190px;
+  }
+
+  .ws-menu {
+    left: 10px;
+    width: calc(100vw - 20px);
+  }
+
+  .ws-swatches-row {
+    grid-template-columns: repeat(6, var(--sw));
+  }
+}
+
+@media (max-width: 560px) {
+  /* Thumb-sized buttons, the main one on top. */
+  .ws-dialog-foot {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .ws-dialog-foot > button {
+    width: 100%;
+    min-height: 46px;
+  }
+
+  .ws-np-inner {
+    padding: 1.2rem 1.1rem 1.15rem;
+  }
+
+  .ws-np-top {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .ws-np-preview {
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 1rem;
+    min-height: 0;
+    padding: 0.9rem 1rem;
+  }
+
+  .ws-np-planet.ws-planet {
+    --size: 56px;
+  }
+
+  .ws-choices {
+    grid-template-columns: 1fr;
+  }
+
+  .ws-choice span {
+    grid-column: 2;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Tweaks panel (sketch only; hidden in ?shot captures)
+ * ------------------------------------------------------------------ */
+
+.tweaks {
+  position: fixed;
+  z-index: 80;
+  right: 14px;
+  bottom: 40px;
+  width: 268px;
+  max-height: calc(100dvh - 60px);
+  overflow: auto;
+  padding: 0.7rem 0.75rem 0.8rem;
+  font-size: 0.74rem;
+  color: var(--ink);
+}
+
+/* Step aside for the settings drawer. */
+:root[data-state="settings"] .tweaks {
+  right: calc(min(34rem, 100vw - 1rem) + 1.75rem);
+}
+
+.tweaks[hidden],
+:root[data-shot] .tweaks {
+  display: none;
+}
+
+.tweaks summary {
+  cursor: pointer;
+  font-weight: 650;
+  font-size: 0.78rem;
+  list-style: none;
+}
+
+.tweaks summary small {
+  margin-inline-start: 0.4rem;
+  font-weight: 400;
+  color: var(--ws-muted);
+}
+
+.tweaks-row {
+  margin-top: 0.6rem;
+}
+
+.tweaks-row > span {
+  display: block;
+  margin-bottom: 0.3rem;
+  font-size: 0.64rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ws-muted);
+}
+
+.tweaks-row div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.tweaks-note {
+  margin: 0.75rem 0 0;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--line);
+  font-size: 0.7rem;
+  line-height: 1.4;
+  color: var(--ws-muted);
+}
+
+.tweaks button {
+  padding: 0.3rem 0.55rem !important;
+  border-radius: 7px !important;
+  border: 1px solid var(--line) !important;
+  background: var(--subtle-bg) !important;
+  color: var(--ws-muted) !important;
+  font-size: 0.72rem !important;
+}
+
+.tweaks button[aria-pressed="true"] {
+  background: var(--accent-active) !important;
+  border-color: var(--accent-border) !important;
+  color: var(--ink) !important;
+}
+
+@media (max-width: 768px) {
+  .tweaks {
+    bottom: 84px;
+  }
+}
+
+/* Captures: no motion, no half-finished transitions. */
+:root[data-shot] *,
+:root[data-shot] *::before,
+:root[data-shot] *::after {
+  transition: none !important;
+  animation: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ws *,
+  .ws *::before,
+  .ws *::after {
+    transition-duration: 0s !important;
+    transition-delay: 0s !important;
+  }
+}

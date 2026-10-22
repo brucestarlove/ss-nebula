@@ -1,0 +1,81 @@
+/* Lane C: text and code. A sheet like the note's page, wider, with the
+ * file's name and language on top and CodeMirror below. */
+
+.ws-text {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  padding: 0.35rem 0.75rem 0.75rem;
+}
+
+:root[data-style='pane'] .ws-text {
+  padding: 0;
+  background: var(--ws-pane-bg);
+}
+
+.ws-code-sheet {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  width: min(68rem, 100%);
+  margin: 0 auto;
+  overflow: hidden;
+  border: 1px solid var(--ws-page-line, var(--line));
+  border-radius: 18px;
+  background: var(--ws-page-bg, var(--surface-raised));
+  box-shadow: var(--ws-page-shadow, none);
+}
+
+:root[data-width='stretch'] .ws-code-sheet {
+  width: 100%;
+}
+
+:root[data-style='pane'] .ws-code-sheet {
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.ws-code-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  padding: 0.55rem 1rem;
+  border-bottom: 1px solid var(--ws-page-line, var(--line));
+  color: var(--ws-muted, var(--muted));
+  font-size: 0.8rem;
+}
+
+.ws-code-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-code-lang {
+  margin-inline-start: auto;
+  white-space: nowrap;
+}
+
+.ws-code-sheet .ws-cm {
+  flex: 1 1 auto;
+}
+
+@media (max-width: 768px) {
+  .ws-text {
+    padding: 0;
+  }
+
+  .ws-code-sheet {
+    width: 100%;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+}

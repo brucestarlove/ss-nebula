@@ -1,5 +1,40 @@
-import { defineConfig } from 'vite'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { dirname, isAbsolute, relative } from 'node:path'
+import { defineConfig, type Plugin } from 'vite'
+import { configDefaults } from 'vitest/config'
 import react from '@vitejs/plugin-react'
+import { excalidrawFonts } from './scripts/excalidrawFonts'
+
+/**
+ * Records which modules each output chunk holds and which chunks it imports,
+ * in the file named by NEBULA_CHUNK_REPORT. scripts/build-site.mjs asks for
+ * dist/site-chunks.json, outside the deployed folder, and
+ * e2e/app-budget.spec.ts reads it to prove what the first load carries.
+ */
+function chunkReport(): Plugin {
+  return {
+    name: 'nebula-chunk-report',
+    apply: 'build',
+    generateBundle(_options, bundle) {
+      const target = process.env.NEBULA_CHUNK_REPORT
+      if (!target) return
+      const name = (id: string) => (isAbsolute(id) ? relative(process.cwd(), id) : id).replaceAll('\\', '/')
+      const chunks: Record<string, unknown> = {}
+      for (const [fileName, output] of Object.entries(bundle)) {
+        if (output.type !== 'chunk') continue
+        chunks[fileName] = {
+          isEntry: output.isEntry,
+          isDynamicEntry: output.isDynamicEntry,
+          imports: output.imports,
+          dynamicImports: output.dynamicImports,
+          modules: Object.fromEntries(Object.entries(output.modules).map(([id, module]) => [name(id), module.renderedLength])),
+        }
+      }
+      mkdirSync(dirname(target), { recursive: true })
+      writeFileSync(target, `${JSON.stringify({ chunks }, null, 1)}\n`)
+    },
+  }
+}
 
 function manualChunks(id: string): string | undefined {
   const moduleId = id.replaceAll('\\', '/')
@@ -16,15 +51,12 @@ function manualChunks(id: string): string | undefined {
     return 'starscape-ui'
   }
 
-  // Preserve the lazy canvas shell as a debuggable production chunk without
-  // pulling it into the initial standalone app shell.
-  if (
-    moduleId.endsWith('/src/nebula/NebulaExcalidrawShell.tsx') ||
-    moduleId.includes('/src/nebula/excalidraw/') ||
-    moduleId.includes('/src/nebula/storage/')
-  ) {
-    return 'nebula-canvas-shell'
-  }
+  // The canvas (Excalidraw, src/nebula/excalidraw, src/nebula/storage) has no
+  // manual chunk of its own: a manual chunk takes in its modules' shared
+  // dependencies too (the theme hooks, the context, ss-ui-react), and the
+  // workspace's first load then had to fetch all 1.2 MB of it. Left alone,
+  // Rollup gives each lazy view its own chunk (NebulaExcalidrawShell-*.js,
+  // CanvasView-*.js) and shares only what they share.
 
   return undefined
 }
@@ -32,7 +64,11 @@ function manualChunks(id: string): string | undefined {
 // https://vite.dev/config/
 export default defineConfig({
   base: './',
-  plugins: [react()],
+  plugins: [react(), excalidrawFonts(), chunkReport()],
+  test: {
+    // Playwright owns e2e/ (playwright.config.ts).
+    exclude: [...configDefaults.exclude, 'e2e/**'],
+  },
   server: {
     port: 13702,
   },

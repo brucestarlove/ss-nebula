@@ -121,7 +121,7 @@ export function LibraryControls({
             <span className="nebula-library-trigger__caret" aria-hidden="true">▾</span>
           </>
         }
-        ariaLabel="Switch or manage libraries"
+        ariaLabel={`${activeName}: switch or manage libraries`}
         triggerClassName="nebula-library-trigger nebula-library-trigger--switch"
       >
         {(close) => (

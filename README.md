@@ -1,69 +1,95 @@
 # Starscape Nebula
 
-Nebula is a fancy Excalidraw shell for Starscape projects: an infinite sketching surface with Starscape chrome, local-first storage, multiple canvases per project, color modes, canvas text search, and Excalidraw library management.
+Nebula is a workspace for notes, drawings and media, kept in projects in your browser. A project is a folder of real files: Markdown notes, Excalidraw canvases, images, PDFs, audio, video, text and code, each opening in a tab with its own view. There is no account and no server: the files stay on your device.
 
-It is built to feel like a clean visual-thinking room inside Orbit or any React host. Excalidraw owns the drawing engine; Nebula owns the project context, canvas switching, persistence boundary, themed shell, export/import flows, and library controls.
+It runs at [nebula.starscape.app](https://nebula.starscape.app), and the same canvas ships as a React package for Orbit and other hosts.
 
-## What You Get
+## What you get
 
-- Excalidraw drawing with shapes, arrows, text, freehand, images, selection, transforms, undo/redo, zoom, and pan.
-- Multiple named canvases per board/project, persisted under the project context.
-- Light and dark modes with rich Starscape backgrounds, plus plain white/black canvas-room modes.
-- Search button that opens Excalidraw's native "find on canvas" panel for text in the scene.
-- Export/import for `.excalidraw`, Nebula's wrapped JSON document, and Obsidian Excalidraw Markdown.
-- Excalidraw Libraries with named collections, "add selection to library", download as `.excalidrawlib`, and a submission path for uploading to the shared Excalidraw libraries catalog.
+- **Projects** with a switcher, an optional dock, and a planet colour each. A first visit opens Night Sky, a small sample project, under a welcome.
+- **Files:** a tree with folders, inline rename, drag to move, delete, upload, star, and ⌘K quick open by name. Download a file, or a whole project as a `.zip`.
+- **Notes** render from Markdown (task boxes tick in place) and edit in CodeMirror; text and code open in CodeMirror too.
+- **Canvases** are Excalidraw drawings saved as `.excalidraw.md`, the format the Obsidian Excalidraw plugin writes; plain `.excalidraw` files open and save too. Excalidraw libraries work as before, with named collections.
+- **Images, PDFs, audio and video** open in their own views; anything else gets an info card with Download.
+- **Settings:** night or day (or the system's), the page style (Sheet or Pane), page width, note text (Mona Sans or Newsreader) and the dock. They survive a reload.
+- **Phones:** a top bar, a thumb bar and the files as a sheet.
 
-## Install
+## Run it
 
-Nebula now has two product paths:
+```sh
+pnpm install
+pnpm dev
+```
 
-- Hosted Nebula is for normal end users: open the URL, no install, no npm, and keep canvases in browser-local storage.
-- Self-hosted Nebula CLI is for people who want local/private operation: install the package and run the browser-local app from your own machine.
+Then open the URL Vite prints. Node 20.19+ or 22.12+ and pnpm 10.
 
-The CLI starts as a launcher/static-server helper. It does not include Orbit's board engine, database, MCP server, or project daemon machinery.
+## Where your files live
 
-## Hosted no-install app
+In the browser's origin private file system (OPFS), under `nebula/`:
 
-Use the hosted Nebula URL when you just want the app. The hosted app still uses browser-local storage by default; there is no required account or backend persistence path in the MVP.
+- `nebula/registry.json` lists the projects;
+- `nebula/projects/<folder>/` holds each project's files, with its name and colour in `.nebula/project.json` and what was open in `.nebula/workspace.json`.
+
+Nebula asks the browser to keep them (persistent storage) after your first edit. A browser that can't keep files here (a private window, for one) runs Nebula in memory and says so: everything is gone when the tab closes, unless you download it.
+
+**From Nebula 1.x:** canvases saved in `localStorage` (`nebula:excalidraw:<board>:<canvas>`) are copied into projects on the first visit, one project per board (the default board becomes "My First Project"), and the originals stay where they are. Old links (`/b/<board>/c/<canvas>` and `?board=&canvas=`) open the file each canvas became. A file's own address is `/p/<project>/<path>`.
+
+## Security headers
+
+`vercel.json` sends a Content-Security-Policy with every response, and `serve-site.mjs` sends the same headers locally, so the end-to-end suite runs under it. Nothing a project holds can reach another site, and opening a note or a canvas contacts no one: Excalidraw's fonts come from this site (`/fonts/`, copied from the package into every build) rather than esm.sh.
+
+| Directive | Allows | Why |
+|---|---|---|
+| `default-src` | `'self'` | Everything else comes from this site. |
+| `script-src` | `'self'`, one `sha256-` hash, `'wasm-unsafe-eval'` | The hash is `index.html`'s inline script, which applies the saved theme before first paint (`tests/nebulaSite.test.mjs` checks it matches). WebAssembly is how Excalidraw subsets fonts when it exports. No `eval`. |
+| `style-src` | `'self'`, `'unsafe-inline'` | Excalidraw's *Mermaid to Excalidraw* lays out the diagram with `<style>` elements and style attributes; with them blocked, its boxes and labels come out the wrong size (measured: 102 blocked, every shape off). Its SVG export also sets style attributes. A hash for the splash's `<style>` would switch `'unsafe-inline'` off, so there is none. |
+| `img-src` | `'self'`, `data:`, `blob:`, `https:` | Excalidraw keeps images as `data:` URLs, the image view shows a file through a `blob:` URL, and the stylesheets use `data:` icons. `https:` is for web images in notes, which the note view loads only when its reader clicks Load images, so a note can't carry a tracking pixel. |
+| `media-src` | `'self'`, `blob:` | Audio and video play from `blob:` URLs of their files. |
+| `frame-src` | `blob:` | The PDF view frames the file's `blob:` URL, which the browser's viewer opens. Excalidraw's web embeds (YouTube, Figma and the like) are blocked. |
+| `worker-src` | `'self'`, `blob:` | Excalidraw's font-subsetting worker is a file of this site; its image resizer (pica) starts workers from `blob:` URLs. |
+| `connect-src` | `'self'`, `https://libraries.excalidraw.com`, `https://raw.githubusercontent.com` | The sample's image and PDF come from this site; the two hosts are the only ones the canvas accepts an Excalidraw library from (`#addLibrary=` links). |
+| `font-src` | `'self'` | Nebula's own fonts and Excalidraw's, all served here. |
+| `object-src` | `'none'` | No plugins. Chromium's PDF viewer still works in the PDF view (checked in full Chromium). |
+| `base-uri`, `form-action`, `frame-ancestors` | `'self'` | No `<base>` or form posting elsewhere, and no framing by other sites. |
+
+## Checks
+
+```sh
+pnpm run verify          # typecheck, unit tests, build, lint
+pnpm run build:site      # the deployable site in dist/site, plus dist/site-chunks.json
+```
+
+The end-to-end suite runs on the production build, served by `serve-site.mjs` with `vercel.json`'s routing and headers, in Chromium and WebKit:
+
+```sh
+NEBULA_E2E_BUILT=1 pnpm exec playwright test --project=chromium e2e/app-
+NEBULA_E2E_BUILT=1 pnpm exec playwright test --project=webkit e2e/app-
+```
+
+Each test gets a fresh browser profile (WebKit keeps OPFS only in a persistent one) and fails if the policy blocks anything or a request leaves the site. `e2e/app-budget.spec.ts` checks the first load against `dist/site-chunks.json`: Excalidraw, CodeMirror, react-markdown, the migration and the sample each load only when a visit needs them. Tests marked fixme wait on bugs in another lane's code (`docs/lanes/integration-findings.md`); `NEBULA_E2E_FIXME=1` runs them anyway.
+
+Without `NEBULA_E2E_BUILT`, Playwright starts the dev server for the lane specs (`e2e/files-*`, `shell-*`, `views-*`), whose harness pages live in `e2e/harness/`. `NEBULA_E2E_PORT` picks the port.
 
 ## Self-hosted CLI
-
-Install or run the package locally, then start Nebula:
 
 ```sh
 npm install -g @starlove/nebula
 nebula run
 ```
 
-`nebula run` serves the packaged local-first web app and prints the local URL. `nebula serve` is an alias for the same flow; it serves the built static app rather than starting an Orbit-style service.
+`nebula run` (or `nebula serve`) serves the packaged app from your own machine and prints the local URL; `nebula run --port 4321` picks the port. `nebula init` checks there's nothing to configure. The CLI is a static server: no Orbit board engine, database or daemon.
 
-Useful CLI commands:
+Projects made there live in the browser that opens it, for that address: the ones at `http://127.0.0.1:4321` aren't the ones at nebula.starscape.app. Download a project as a `.zip` to move it.
 
-```sh
-nebula --help
-nebula help
-nebula -v
-nebula --version
-nebula run --port 4321
-nebula serve
-nebula init
-```
+What changed in each version: [CHANGELOG.md](CHANGELOG.md).
 
-`nebula init` currently validates the no-config posture and prints that no config is required. It should only create files if Nebula grows a real configuration need.
-
-## React package install
+## React package
 
 ```sh
 pnpm add @starlove/nebula react react-dom
 ```
 
-React and React DOM are peer dependencies. Excalidraw and the Starscape UI packages are installed through `@starlove/nebula`.
-
-## Storage
-
-By default Nebula uses browser `localStorage`, scoped by board and canvas. That makes it easy to drop into a project without a backend.
-
-For host-owned persistence, pass a custom `SceneStore`:
+React and React DOM are peer dependencies. The package is the canvas (Nebula's Excalidraw shell, its library controls and themes), with `localStorage` storage by default. For host-owned persistence, pass a custom `SceneStore`:
 
 ```ts
 import type { SceneStore } from '@starlove/nebula';
@@ -87,41 +113,11 @@ const store: SceneStore = {
 };
 ```
 
-Then pass `store` to `mountNebula` or `LazyNebulaExcalidrawShell`.
+Then pass `store` to `mountNebula` or `LazyNebulaExcalidrawShell`. A host serving the canvas should also serve Excalidraw's fonts (`node_modules/@excalidraw/excalidraw/dist/prod/fonts`) and set `window.EXCALIDRAW_ASSET_PATH` to where they are, or Excalidraw fetches them from esm.sh.
 
-## Library Assets
+## Builds
 
-Nebula adds named collections on top of Excalidraw's library system.
-
-- Select shapes on the canvas and use `Add` to save them into a library.
-- Switch between named libraries from the top-right library control.
-- Save a library to `.excalidrawlib` when you want a portable asset pack.
-- Use the shared-library submission action to open Excalidraw's public library guidelines and upload flow.
-
-Libraries are stored per board in the browser unless your host provides its own persistence around Nebula documents.
-
-## Local Development
-
-```sh
-pnpm install
-pnpm dev
-```
-
-Useful checks:
-
-```sh
-pnpm run typecheck
-pnpm test
-pnpm run lint
-pnpm run build
-pnpm run build:site
-pnpm run build:cli-app
-pnpm run build:lib
-pnpm run build:package
-pnpm run pack:dry-run
-```
-
-`pnpm run build` builds the standalone Vite app for local validation. `pnpm run build:site` builds the deployable marketing site into `dist/site`, with the local-first app mounted at `/app/`. `pnpm run dev:site` serves that Vercel-style site locally after rebuilding it. `pnpm run build:lib` builds the npm library package into `dist`. `pnpm run build:cli-app` adds the packaged static app at `dist/app`, and `pnpm run build:package` combines the library build with the CLI app build for npm packing.
+`pnpm run build` builds the standalone app for local checks. `pnpm run build:site` builds the deployable site into `dist/site` (the app at `/`; `vercel.json` sends old `/app` links to the same paths) and `pnpm run dev:site` serves it locally with the same routing and headers. `pnpm run build:lib` builds the npm library into `dist`, `pnpm run build:cli-app` adds the packaged app at `dist/app`, and `pnpm run build:package` does both for npm packing (`pnpm run pack:dry-run` to check).
 
 ## License
 

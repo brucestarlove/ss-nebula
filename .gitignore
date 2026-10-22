@@ -28,3 +28,7 @@ dist-ssr
 
 starscape-landing/*
 starlove-dev/*
+
+# Playwright
+test-results/
+playwright-report/

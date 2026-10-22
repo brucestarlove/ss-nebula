@@ -1,0 +1,89 @@
+/* Lane C: the canvas tab. The sketch's .ws-board (a framed board, ported by
+ * the shell lane) holds Nebula's chrome-less Excalidraw; the canvas is
+ * transparent, so the sky or the parchment shows through the frame. */
+
+.ws-board.ws-canvas {
+  /* The sketch positions the board absolutely inside .ws-stage; keep that,
+   * but make sure it also fills a stage that isn't positioned. */
+  position: absolute;
+  inset: 0.15rem 0.75rem 0.4rem;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: transparent;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.06);
+}
+
+:root[data-theme='dark'] .ws-board.ws-canvas {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 12px 40px rgba(0, 0, 0, 0.3);
+}
+
+.ws-canvas > .nebula-canvas {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 21px;
+  touch-action: none;
+}
+
+.ws-canvas > .nebula-canvas .excalidraw {
+  height: 100%;
+}
+
+.ws-canvas > .nebula-loading,
+.ws-canvas > .ws-view-state {
+  margin: auto;
+}
+
+.ws-canvas-bar {
+  position: absolute;
+  inset: 0.6rem 0.6rem auto;
+  z-index: 5;
+}
+
+/* Excalidraw's own canvas background stays transparent; its island
+ * menus keep their surfaces. */
+.ws-canvas .excalidraw .excalidraw__canvas {
+  background: transparent;
+}
+
+@media (max-width: 768px) {
+  .ws-board.ws-canvas {
+    inset: 0;
+    border-width: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .ws-canvas > .nebula-canvas {
+    border-radius: 0;
+  }
+}
+
+/* A tab is narrower than the window the old shell had: below ~1380px of
+ * window the library switch shrinks to its icon (as the shell does on
+ * phones), so the toolbar, Add and Library still fit with a selection. */
+@media (min-width: 769px) and (max-width: 1380px) {
+  .ws-canvas .excalidraw .nebula-library-trigger--switch {
+    display: inline-grid;
+    place-items: center;
+    width: 2.6rem !important;
+    min-width: 2.6rem !important;
+    max-width: 2.6rem;
+    padding: 0 !important;
+  }
+
+  .ws-canvas .excalidraw .nebula-library-trigger--switch .nebula-library-trigger__icon {
+    display: inline-flex;
+  }
+
+  .ws-canvas .excalidraw .nebula-library-trigger--switch .nebula-library-trigger__label,
+  .ws-canvas .excalidraw .nebula-library-trigger--switch .nebula-library-trigger__caret {
+    display: none;
+  }
+}

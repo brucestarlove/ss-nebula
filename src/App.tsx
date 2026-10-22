@@ -1,6 +1,13 @@
-import { Component, useEffect, useMemo, type ErrorInfo, type ReactNode } from 'react'
-import { LazyNebulaExcalidrawShell } from './nebula/LazyNebulaExcalidrawShell'
-import { getNebulaOrbitContext } from './nebula/orbitContext'
+import { Component, useCallback, useEffect, useMemo, useState, type ErrorInfo, type ReactNode } from 'react'
+import { bootNebula, hasLegacyCanvases, readLegacyRoutes, type Boot } from './app/boot'
+import { askToKeepOnFirstEdit } from './app/keepOnEdit'
+import { fileUrl, parseRoute, resolveLegacyRoute, type OpenTarget } from './app/routes'
+import { openBrowserRegistry } from './files/opfsRegistry'
+import { requestPersistentStorage } from './files/persist'
+import type { BrowserRegistry } from './files/registry'
+import { scopedStore } from './files/scopedStore'
+import { Workspace, type OlderTabOffer } from './workspace/Workspace'
+import { saveBlob } from './workspace/download'
 
 type AppErrorBoundaryState = {
   error: Error | null;
@@ -14,7 +21,7 @@ class AppErrorBoundary extends Component<{ children: ReactNode }, AppErrorBounda
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('Nebula shell failed to render', error, errorInfo);
+    console.error('Nebula failed to render', error, errorInfo);
   }
 
   render() {
@@ -23,11 +30,11 @@ class AppErrorBoundary extends Component<{ children: ReactNode }, AppErrorBounda
     return (
       <main className="nebula-error-state" role="alert">
         <div className="nebula-error-card">
-          <p className="nebula-error-eyebrow">Nebula paused before the canvas loaded</p>
-          <h1>Something in the local shell failed.</h1>
+          <p className="nebula-error-eyebrow">Nebula paused before your files opened</p>
+          <h1>Something in Nebula failed.</h1>
           <p>
-            Your browser-stored canvases are still local data. Reload Nebula, or open DevTools and share
-            this error if it repeats.
+            Nothing was deleted: your files stay in this browser. Reload Nebula, or open DevTools and share this
+            error if it repeats.
           </p>
           <pre>{this.state.error.message}</pre>
           <button type="button" className="btn-secondary" onClick={() => window.location.reload()}>
@@ -39,29 +46,155 @@ class AppErrorBoundary extends Component<{ children: ReactNode }, AppErrorBounda
   }
 }
 
-function App() {
-  const orbitContext = useMemo(() => getNebulaOrbitContext(), [])
+/** Throws during render, so a startup failure lands in the error boundary. */
+function Fail({ error }: { error: Error }): never {
+  throw error
+}
 
-  // Fade out the boot splash (index.html) once the standalone app shell is
-  // ready, but keep it up for a minimum of 786ms (measured from navigation
-  // start) so a fast load doesn't flash the splash in and out.
+function localStorageOrNull(): Storage | null {
+  try {
+    return window.localStorage
+  } catch {
+    return null
+  }
+}
+
+type Ready = {
+  boot: Boot
+  /** The registry the workspace uses: asks the browser to keep files after the first edit. */
+  registry: BrowserRegistry
+  /** What the address asked to open. */
+  initialFile: OpenTarget | null
+}
+
+// One start per page, whatever React does with effects (StrictMode runs them
+// twice in development).
+let starting: Promise<Ready> | null = null
+
+function start(): Promise<Ready> {
+  starting ??= (async () => {
+    const storage = localStorageOrNull()
+    const route = parseRoute(window.location)
+    const boot = await bootNebula({
+      storage,
+      openRegistry: () => openBrowserRegistry(),
+      migrate: async (input) => (await import('./files/migration')).migrateLegacyCanvases(input),
+      seed: async (registry) => (await import('./files/sample')).seedSampleProject(registry),
+    })
+    let initialFile: OpenTarget | null = null
+    if (route?.type === 'file') initialFile = { projectId: route.projectId, path: route.path }
+    else if (route?.type === 'legacy') {
+      initialFile = await resolveLegacyRoute(route, { registry: boot.registry, routes: readLegacyRoutes(storage) }).catch(() => null)
+    }
+    const registry = boot.persistent ? askToKeepOnFirstEdit(boot.registry, requestPersistentStorage) : boot.registry
+    return { boot, registry, initialFile }
+  })()
+  return starting
+}
+
+/** The address follows the open file, so a reload (or a bookmark) returns to it. */
+function followInAddress(projectId: string | null, path: string | null) {
+  const url = projectId ? fileUrl(projectId, path) : '/'
+  if (window.location.pathname + window.location.search + window.location.hash === url) return
+  window.history.replaceState(window.history.state, '', url)
+}
+
+// Fade out the boot splash (index.html) once the workspace is ready, but keep
+// it up for a minimum of 786ms (measured from navigation start) so a fast load
+// doesn't flash the splash in and out.
+function hideSplash() {
+  const splash = document.getElementById('loader')
+  if (!splash) return
+  const SPLASH_MIN_MS = 786
+  const wait = Math.max(0, SPLASH_MIN_MS - performance.now())
+  setTimeout(() => {
+    splash.classList.add('is-hiding')
+    setTimeout(() => {
+      splash.remove()
+    }, 400)
+  }, wait)
+}
+
+function App() {
+  const [ready, setReady] = useState<Ready | null>(null)
+  const [error, setError] = useState<Error | null>(null)
+
   useEffect(() => {
-    const splash = document.getElementById('loader')
-    if (splash) {
-      const SPLASH_MIN_MS = 786
-      const wait = Math.max(0, SPLASH_MIN_MS - performance.now())
-      setTimeout(() => {
-        splash.classList.add('is-hiding')
-        setTimeout(() => {
-          splash.remove()
-        }, 400)
-      }, wait)
+    let cancelled = false
+    start().then(
+      (value) => {
+        if (!cancelled) setReady(value)
+      },
+      (reason: unknown) => {
+        if (!cancelled) setError(reason instanceof Error ? reason : new Error(String(reason)))
+      },
+    )
+    return () => {
+      cancelled = true
     }
   }, [])
 
+  useEffect(() => {
+    if (ready || error) hideSplash()
+  }, [ready, error])
+
+  const registry = ready?.registry ?? null
+  // This device's own files sit beside the projects, never in one: a
+  // background image (src/workspace/useBackdrop.ts).
+  const tree = ready?.boot.registry.tree
+  const deviceStore = useMemo(() => (tree ? scopedStore(tree, 'appearance') : undefined), [tree])
+  const downloadProject = useCallback(
+    async (id: string) => {
+      if (!registry) return
+      const [{ projectToZip, zipFileName }, store, projects] = await Promise.all([import('./files/zip'), registry.files(id), registry.list()])
+      const name = projects.find((project) => project.id === id)?.name ?? id
+      saveBlob(await projectToZip(store), zipFileName(name))
+    },
+    [registry],
+  )
+  // A 1.x canvas the move left behind, as an .excalidraw file (re-review R3).
+  const downloadLeftBehind = useCallback((key: string) => {
+    void import('./app/legacyCanvases').then(({ legacyCanvasAsExcalidraw }) => {
+      const file = legacyCanvasAsExcalidraw(localStorageOrNull(), key)
+      if (file) saveBlob(new Blob([file.text], { type: 'application/json' }), file.filename)
+    })
+  }, [])
+  // Canvases a Nebula 1.x tab saved after the move, offered once per visit
+  // (re-review R6). The browser tier only, where 1.x ran in this browser,
+  // and not on the visit that moved them: its note offers what stayed behind.
+  const olderTabCanvases = useMemo<OlderTabOffer | null>(() => {
+    if (!ready?.boot.persistent || ready.boot.migration?.status === 'migrated') return null
+    const storage = localStorageOrNull()
+    if (!hasLegacyCanvases(storage)) return null
+    const target = ready.registry
+    const load = () => import('./app/legacyCanvases')
+    return {
+      find: async () => (await load()).findOlderTabCanvases(storage, target),
+      importCopy: async (key, projectId) => (await load()).importOlderTabCopy({ storage, registry: target, key, projectId }),
+      download: downloadLeftBehind,
+      // Put away: not offered again until an older tab saves it again (round 4, F8).
+      dismiss: (canvases) => void load().then(({ recordOlderTabHandled }) => recordOlderTabHandled(storage, canvases)),
+    }
+  }, [ready, downloadLeftBehind])
+
   return (
     <AppErrorBoundary>
-      <LazyNebulaExcalidrawShell context={orbitContext} />
+      {error ? <Fail error={error} /> : null}
+      {ready ? (
+        <Workspace
+          registry={ready.registry}
+          persistent={ready.boot.persistent}
+          intro={ready.boot.intro}
+          leftBehind={ready.boot.leftBehind}
+          onDownloadLeftBehind={downloadLeftBehind}
+          olderTabCanvases={olderTabCanvases}
+          notice={ready.boot.notice}
+          initialFile={ready.initialFile}
+          onActiveFileChange={followInAddress}
+          downloadProject={downloadProject}
+          deviceStore={deviceStore}
+        />
+      ) : null}
     </AppErrorBoundary>
   )
 }

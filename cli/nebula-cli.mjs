@@ -21,6 +21,8 @@ const MIME = {
   '.woff': 'font/woff',
   '.woff2': 'font/woff2',
   '.map': 'application/json; charset=utf-8',
+  '.md': 'text/markdown; charset=utf-8',
+  '.pdf': 'application/pdf',
 }
 
 function readPackageJson() {
@@ -50,7 +52,7 @@ function findDefaultStaticRoot() {
 }
 
 function helpText() {
-  return `Nebula CLI — local-first whiteboard launcher
+  return `Nebula CLI — Nebula's workspace, served from your own machine
 
 Usage: nebula <command> [options]
 
@@ -69,8 +71,10 @@ Options for run/serve:
   -p, --port <port>       Port to bind. Default: ${DEFAULT_PORT}
   --root <path>           Static app root. Default: packaged dist/app when available.
 
-Nebula stores canvases in browser localStorage by default. There is no board engine,
-database, MCP server, or Orbit-style project daemon in this CLI path.
+Projects live in the browser that opens the app, in its origin private file system (OPFS),
+apart for each address: the projects at http://${DEFAULT_HOST}:${DEFAULT_PORT} aren't the ones at
+nebula.starscape.app. Download a project as a .zip to move it. There is no database,
+MCP server, or project daemon in this CLI path.
 `
 }
 
@@ -107,6 +111,9 @@ function resolveStaticPath(root, requestUrl) {
   let pathname = decodeURIComponent(new URL(requestUrl ?? '/', 'http://nebula.local').pathname)
 
   if (pathname === '/app' || pathname === '/app/') pathname = '/index.html'
+  // A file's address (/p/<project>/<path>) and an old canvas link (/b/…) are
+  // the app's, whatever their extension, as vercel.json rewrites them.
+  if (pathname.startsWith('/p/') || pathname.startsWith('/b/')) pathname = '/index.html'
   if (pathname.endsWith('/')) pathname += 'index.html'
 
   let filePath = resolve(join(root, pathname))
@@ -158,7 +165,7 @@ async function startNebulaStaticServer({ host = DEFAULT_HOST, port = DEFAULT_POR
   if (!silent) {
     console.log(`Nebula local app: ${url}`)
     console.log(`Serving ${staticRoot}`)
-    console.log('Storage: browser localStorage only')
+    console.log("Storage: the browser's origin private file system (OPFS), for this address")
   }
 
   return { server, url, root: staticRoot, port: actualPort }
@@ -179,7 +186,7 @@ async function runNebulaCli(argv = process.argv.slice(2), io = { stdout: process
     }
 
     if (command === 'init') {
-      io.stdout.write('No Nebula config is required yet. Nebula uses browser localStorage for the self-hosted local app flow.\n')
+      io.stdout.write('No Nebula config is required yet. Projects live in the browser that opens the app (OPFS).\n')
       return 0
     }
 

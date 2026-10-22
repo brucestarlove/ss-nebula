@@ -146,7 +146,7 @@ describe('Nebula runtime smoke paths', () => {
     vi.restoreAllMocks();
   });
 
-  it('boots the production standalone entrypoint through the lazy canvas shell and retires the splash', async () => {
+  it('boots the production standalone entrypoint into the workspace and retires the splash', async () => {
     localStorage.setItem('nebula:theme', 'dark');
     localStorage.setItem('nebula:motion', 'full');
     localStorage.setItem('nebula:bg-dark', 'plain');
@@ -158,11 +158,16 @@ describe('Nebula runtime smoke paths', () => {
     await act(async () => {
       await import('../main');
     });
+    // Since slice 3 the app opens on the workspace (jsdom has no OPFS, so it
+    // runs on the in-memory registry), not straight onto a canvas.
     await waitFor(() => {
-      expect(document.querySelector('[data-nebula-smoke-excalidraw="ready"]')).not.toBeNull();
+      expect(document.querySelector('aside.ws-rail')).not.toBeNull();
     });
+    expect(document.querySelector('.nebula-error-state')).toBeNull();
 
     expect(startStarscape).toHaveBeenCalledTimes(1);
+    // Excalidraw's fonts come from this site, not esm.sh (finding 20).
+    expect((window as Window & { EXCALIDRAW_ASSET_PATH?: unknown }).EXCALIDRAW_ASSET_PATH).toBe(import.meta.env.BASE_URL);
     expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
     expect(document.documentElement.getAttribute('data-motion')).toBe('full');
     expect(document.documentElement.getAttribute('data-bg')).toBe('black');

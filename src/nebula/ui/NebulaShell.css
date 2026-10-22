@@ -173,13 +173,15 @@ body {
 /* Rich flavors (parchment / starfield) are owned by the package backgrounds —
  * no override needed. Plain flavors swap <body> to a flat fill (winning over
  * the package's body rules via the :root prefix) and hide the starfield; the
- * transparent canvas then shows the flat color through the framed board. */
+ * transparent canvas then shows the flat color through the framed board. The
+ * workspace picks that colour (--nebula-bg-color, src/workspace/backdrop.ts);
+ * the 1.x shell never sets it, so it stays black or white there. */
 :root[data-bg="white"] body {
-  background: #ffffff;
+  background: var(--nebula-bg-color, #ffffff);
 }
 
 :root[data-bg="black"] body {
-  background: #000000;
+  background: var(--nebula-bg-color, #000000);
 }
 
 [data-bg="white"] .grain,

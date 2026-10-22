@@ -1,0 +1,2859 @@
+/* Nebula workspace (slice 3). Ported from the approved round-2 sketch
+ * (sketches/workspace/sketch.css); the ws-* class names are kept.
+ *
+ * It extends the real ss-ui layers the app installs (@starlove/ui 3.3.3:
+ * tokens, base, backgrounds, the sidebar template ss-docs uses, and the
+ * drawer, dialog, flyout, context-menu, segmented, switch and kbd parts).
+ *
+ * State lives in attributes:
+ *   <html data-style>        sheet | pane      preference (usePreferences)
+ *   <html data-width>        fixed | stretch   preference (notes)
+ *   <html data-body>         sans | serif      preference (note text)
+ *   <html data-dock>         present when the dock preference is on
+ *   .ws-root[data-night]     the resolved theme is night (follows System too)
+ *   .ws-root[data-dock-shown] the dock is on screen (preference on, 2+ projects)
+ *   .ws-root[data-sheet]     phone: the rail is open as a sheet
+ *   .ws[data-collapsed]      the rail is folded to its toolbelt
+ *   .ws-stage[data-kind]     the active file's kind (note, canvas, …)
+ *
+ * The app also loads ss-ui's element-wide button.css, button-arc.css and
+ * input.css (src/nebula/style.ts), which the sketch left out: every bare
+ * <button> becomes the ARC primary chip, sweep ring included, and every
+ * <input> gets the field chrome. The resets below neutralise them for the
+ * workspace's own controls; style.ts imports nebula/style first, so this
+ * file always comes after them. */
+
+/* ------------------------------------------------------------------ *
+ * Type and workspace tokens
+ * ------------------------------------------------------------------ */
+
+.ws-root {
+  --ws-ui: "Mona Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --ws-display: "Newsreader", "Iowan Old Style", Georgia, serif;
+  --ws-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --ws-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --project: #7c8cff;
+
+  /* ss-ui components read these, so they set in Atlas too. */
+  --font-stack: var(--ws-ui);
+  --font-mono: var(--ws-mono);
+
+  /* Day (ss-ui light is the default). */
+  --ws-muted: #5c6864; /* v3 light muted (#7f8b87) is 3.4:1 on paper; this is 5.6:1 */
+  --ws-tag-ink: #0c655e; /* the day accent (#0f766e) is 4.36:1 on a tag in Pane; this is 5.5:1 */
+  --ws-rail-bg: rgba(var(--paper-rgb), 0.9);
+  --ws-page-bg: #fffdf8;
+  --ws-page-line: rgba(29, 37, 40, 0.1);
+  --ws-page-shadow: 0 1px 2px rgba(77, 61, 24, 0.06), 0 22px 60px -18px rgba(77, 61, 24, 0.28);
+  --ws-pane-bg: #fbf7ee;
+  --ws-pane-rail: #f6f0e2;
+  --ws-tab-active: rgba(255, 253, 248, 0.92);
+  --ws-window-bg: #f3ead5;
+  --ws-scrim: rgba(44, 38, 26, 0.28);
+  --ws-dock-bg: rgba(var(--paper-rgb), 0.72);
+  --ws-surface-bg: rgba(255, 253, 248, 0.98);
+  --ws-surface-shadow: 0 30px 80px -24px rgba(77, 61, 24, 0.35);
+  --ws-sheet-bg: #fbf6ea;
+  --ws-store-dot: #15803d;
+  --ws-store-ring: rgba(21, 128, 61, 0.14);
+  --ws-warn-dot: #b45309;
+  --ws-warn-ring: rgba(180, 83, 9, 0.14);
+  --ws-embed-bg: var(--ws-window-bg);
+  --ws-board-shadow: 0 2px 16px rgba(0, 0, 0, 0.06);
+  --ws-np-bg:
+    radial-gradient(110% 80% at 80% 0%, rgba(232, 200, 140, 0.5), transparent 60%),
+    radial-gradient(90% 70% at 0% 100%, rgba(15, 118, 110, 0.12), transparent 60%),
+    #efe4c9;
+  --ws-np-name: var(--ink);
+  --ws-thumb-line: rgba(29, 37, 40, 0.18);
+  --ws-thumb-edge: rgba(29, 37, 40, 0.08);
+  --ws-thumb-sheet-bg: radial-gradient(90% 90% at 90% 0%, rgba(232, 200, 140, 0.5), transparent 60%), #efe4c9;
+  --ws-thumb-sheet-rail: rgba(251, 247, 238, 0.85);
+  --ws-thumb-sheet-page: #fffdf8;
+  --ws-thumb-sheet-page-shadow: 0 6px 14px rgba(77, 61, 24, 0.22);
+  --ws-thumb-pane-bg: #fbf7ee;
+  --ws-thumb-pane-rail: #f6f0e2;
+
+  font-family: var(--ws-ui);
+}
+
+.ws-root[data-night] {
+  --ws-muted: var(--muted);
+  --ws-tag-ink: var(--accent);
+  --ws-rail-bg: rgba(var(--cosmos-rgb), 0.84);
+  --ws-page-bg: #161b33;
+  --ws-page-line: rgba(255, 255, 255, 0.08);
+  --ws-page-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 28px 80px -24px rgba(0, 0, 0, 0.7);
+  --ws-pane-bg: #141933;
+  --ws-pane-rail: #11152b;
+  --ws-tab-active: rgba(var(--cosmos-rgb), 0.92);
+  --ws-window-bg: #0b1024;
+  --ws-scrim: rgba(3, 6, 18, 0.55);
+  --ws-dock-bg: rgba(10, 14, 32, 0.66);
+  --ws-surface-bg: var(--surface-raised);
+  --ws-surface-shadow: 0 30px 90px -20px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+  --ws-sheet-bg: var(--surface-raised);
+  --ws-store-dot: #4ade80;
+  --ws-store-ring: rgba(74, 222, 128, 0.16);
+  --ws-warn-dot: #fbbf24;
+  --ws-warn-ring: rgba(251, 191, 36, 0.16);
+  --ws-embed-bg:
+    radial-gradient(1px 1px at 12% 22%, rgba(255, 255, 255, 0.7), transparent 60%),
+    radial-gradient(1px 1px at 68% 14%, rgba(255, 255, 255, 0.55), transparent 60%),
+    radial-gradient(1.4px 1.4px at 84% 62%, rgba(200, 215, 255, 0.7), transparent 60%),
+    radial-gradient(1px 1px at 30% 78%, rgba(255, 255, 255, 0.5), transparent 60%),
+    radial-gradient(1px 1px at 46% 40%, rgba(255, 255, 255, 0.35), transparent 60%),
+    radial-gradient(120% 90% at 80% 0%, rgba(168, 85, 247, 0.14), transparent 60%),
+    radial-gradient(100% 80% at 0% 100%, rgba(6, 182, 212, 0.1), transparent 60%),
+    var(--ws-window-bg);
+  --ws-board-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 12px 40px rgba(0, 0, 0, 0.3);
+  --ws-np-bg:
+    radial-gradient(1px 1px at 14% 20%, rgba(255, 255, 255, 0.8), transparent 70%),
+    radial-gradient(1px 1px at 78% 14%, rgba(255, 255, 255, 0.6), transparent 70%),
+    radial-gradient(1.4px 1.4px at 88% 70%, rgba(200, 215, 255, 0.8), transparent 70%),
+    radial-gradient(1px 1px at 24% 82%, rgba(255, 255, 255, 0.55), transparent 70%),
+    radial-gradient(1px 1px at 60% 90%, rgba(255, 255, 255, 0.4), transparent 70%),
+    radial-gradient(110% 80% at 80% 0%, rgba(168, 85, 247, 0.22), transparent 60%),
+    radial-gradient(90% 70% at 0% 100%, rgba(6, 182, 212, 0.14), transparent 60%),
+    #090d22;
+  --ws-np-name: #e8ecff;
+  --ws-thumb-line: rgba(232, 236, 255, 0.28);
+  --ws-thumb-edge: rgba(255, 255, 255, 0.08);
+  --ws-thumb-sheet-bg:
+    radial-gradient(1px 1px at 82% 22%, rgba(255, 255, 255, 0.9), transparent 70%),
+    radial-gradient(1px 1px at 93% 62%, rgba(255, 255, 255, 0.7), transparent 70%),
+    radial-gradient(1px 1px at 33% 80%, rgba(255, 255, 255, 0.6), transparent 70%),
+    radial-gradient(90% 90% at 90% 0%, rgba(168, 85, 247, 0.32), transparent 60%),
+    #0b1030;
+  --ws-thumb-sheet-rail: rgba(20, 26, 56, 0.72);
+  --ws-thumb-sheet-page: #161b33;
+  --ws-thumb-sheet-page-shadow: 0 6px 16px rgba(0, 0, 0, 0.5);
+  --ws-thumb-pane-bg: #141933;
+  --ws-thumb-pane-rail: #11152b;
+}
+
+/* ------------------------------------------------------------------ *
+ * Neutralising ss-ui's element-wide button and input chrome
+ * ------------------------------------------------------------------ */
+
+/* Zero-specificity scope, so every ws-* and ss-ui class below still wins.
+ * A control that wants a shadow sets --ws-shadow, which survives the
+ * hover, press and focus resets. */
+:where(.ws-root) button {
+  appearance: none;
+  display: inline-block;
+  align-items: normal;
+  justify-content: normal;
+  gap: normal;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: var(--ws-shadow, none);
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: none;
+  cursor: pointer;
+  transition: none;
+}
+
+/* button.css lifts, brightens and re-shadows every button on hover, press
+ * and focus; button-arc.css hangs a sweeping ring on ::after. */
+:where(.ws-root) button:is(:hover, :active, :focus-visible) {
+  transform: none;
+  filter: none;
+  box-shadow: var(--ws-shadow, none);
+}
+
+:where(.ws-root) button::after {
+  content: none;
+}
+
+:where(.ws-root) input:not([type="checkbox"], [type="radio"], [type="color"]) {
+  font: inherit;
+}
+
+/* input.css also sets every <label> as a small bold field label. */
+:where(.ws-root) label {
+  display: revert;
+  margin: 0;
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+.ws-visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+/* Glyphs: small monochrome marks, sized once for the rail and overlays
+ * (scoped without weight, so any .x .g rule can resize them). */
+:where(.ws-root) svg.g {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* The app's own 24px icons (gear, help) need a thinner stroke to match. */
+:where(.ws-root) svg.g.g-24 {
+  stroke-width: 2;
+}
+
+/* ------------------------------------------------------------------ *
+ * The frame: dock (optional) | rail | main
+ * ------------------------------------------------------------------ */
+
+.ws.page-sidebar-app {
+  --page-sidebar-w: 276px;
+  --page-sidebar-w-collapsed: 60px;
+  position: relative;
+  z-index: 1;
+  height: 100dvh;
+  min-height: 0;
+}
+
+.ws-dock {
+  flex: 0 0 64px;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 0 16px;
+  background: var(--ws-dock-bg);
+  border-inline-end: 1px solid var(--line);
+}
+
+:root[data-style="pane"] .ws-dock {
+  background: var(--ws-pane-rail);
+}
+
+.ws-dock-logo {
+  width: 40px;
+  height: 34px;
+  object-fit: contain;
+  filter: drop-shadow(0 0 10px rgba(168, 128, 255, 0.35));
+}
+
+.ws-dock-sep {
+  width: 24px;
+  height: 1px;
+  background: var(--line);
+}
+
+.ws-dock .ws-planet {
+  --size: 34px;
+  position: relative;
+}
+
+.ws-dock .ws-planet[aria-current] {
+  --ws-shadow:
+    inset -4px -5px 10px rgba(0, 0, 0, 0.35),
+    0 0 0 2px var(--ws-page-bg),
+    0 0 0 3.5px var(--accent);
+}
+
+.ws-dock .ws-planet[aria-current]::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: -15px;
+  top: 50%;
+  translate: 0 -50%;
+  width: 4px;
+  height: 18px;
+  border-radius: 0 4px 4px 0;
+  background: var(--ink);
+}
+
+.ws-dock .ws-planet:focus-visible,
+.ws-dock-add:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.ws-dock-add {
+  margin-top: auto;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px dashed var(--line);
+  color: var(--ws-muted);
+}
+
+.ws-dock-add:hover {
+  color: var(--ink);
+  border-color: var(--accent-border);
+}
+
+/* ------------------------------------------------------------------ *
+ * Planets: a project's colour, everywhere it appears
+ * ------------------------------------------------------------------ */
+
+.ws-planet {
+  --size: 30px;
+  --planet: #7c8cff;
+  --ws-shadow:
+    inset -4px -5px 10px rgba(0, 0, 0, 0.32),
+    0 0 14px color-mix(in oklab, var(--planet) 40%, transparent);
+  display: block;
+  flex: 0 0 auto;
+  width: var(--size);
+  height: var(--size);
+  padding: 0;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 34% 30%, color-mix(in oklab, var(--planet) 45%, white) 0%, var(--planet) 42%, color-mix(in oklab, var(--planet) 45%, black) 100%);
+  box-shadow: var(--ws-shadow);
+}
+
+/* ------------------------------------------------------------------ *
+ * The rail: the sidebar template, extended for a file tree
+ * ------------------------------------------------------------------ */
+
+.ws .page-sidebar {
+  height: 100dvh;
+  background: var(--ws-rail-bg);
+}
+
+:root[data-style="pane"] .ws .page-sidebar {
+  background: var(--ws-pane-rail);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* Header becomes the project switcher. */
+.ws-switcher.page-sidebar-header {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  width: calc(100% - 1rem);
+  margin: 0.5rem 0.5rem 0.15rem;
+  padding: 0.55rem 0.6rem;
+  min-height: 56px;
+  border-radius: 12px;
+  text-align: start;
+  transition: background 160ms ease;
+}
+
+.ws-switcher:hover,
+.ws-switcher[aria-expanded="true"],
+.ws-switcher[data-context-open] {
+  background: var(--subtle-bg);
+}
+
+.ws-switcher .page-sidebar-logo.ws-planet {
+  border-radius: 50%;
+  font-size: 0;
+}
+
+.ws-root[data-dock-shown] .ws-switcher .ws-planet {
+  display: none;
+}
+
+/* One project: the Nebula logo stands where its planet would. */
+.ws-switcher-logo,
+.ws-phone-logo {
+  display: block;
+  flex: 0 0 auto;
+  object-fit: contain;
+  filter: drop-shadow(0 0 8px rgba(168, 128, 255, 0.35));
+}
+
+.ws-switcher-logo {
+  width: 32px;
+  height: 28px;
+}
+
+.ws-switcher .page-sidebar-titles {
+  min-width: 0;
+}
+
+.ws-switcher .page-sidebar-title {
+  font-family: var(--ws-ui);
+  font-size: 0.98rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.ws-switcher .page-sidebar-subtitle {
+  margin-top: 0.15rem;
+  font-size: 0.72rem;
+  color: var(--ws-muted);
+}
+
+.ws-switcher-caret {
+  margin-inline-start: auto;
+  color: var(--ws-muted);
+}
+
+/* Search opens quick open. */
+.ws-search-field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  height: 34px;
+  padding: 0 0.45rem 0 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--subtle-bg);
+  color: var(--ws-muted);
+  font-size: 0.82rem;
+}
+
+.ws-search-field:hover {
+  border-color: var(--accent-border);
+  color: var(--ink);
+}
+
+.ws-search-field span {
+  flex: 1 1 auto;
+  text-align: start;
+}
+
+.ws-root kbd {
+  display: inline-block;
+  font-family: var(--ws-mono);
+  font-size: 0.68rem;
+  font-weight: 500;
+  line-height: 1;
+  padding: 0.22rem 0.36rem;
+  border-radius: 5px;
+  border: 1px solid var(--line);
+  border-bottom-width: 1px;
+  background: var(--subtle-bg);
+  color: var(--ws-muted);
+  height: auto;
+  min-width: 0;
+  box-shadow: none;
+}
+
+/* Section heads carry their own actions (Obsidian-style, quieter). */
+.ws-section-head {
+  display: flex;
+  align-items: center;
+  padding-inline-end: 0.2rem;
+}
+
+.ws-section-actions {
+  margin-inline-start: auto;
+  display: flex;
+  gap: 1px;
+}
+
+.ws-icon-btn {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  color: var(--ws-muted);
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.ws-icon-btn:hover,
+.ws-icon-btn[aria-pressed="true"],
+.ws-icon-btn[aria-expanded="true"] {
+  background: var(--subtle-bg);
+  color: var(--ink);
+}
+
+.ws-icon-btn:focus-visible,
+.ws-tab:focus-visible,
+.ws-switcher:focus-visible,
+.ws-search-field:focus-visible,
+.ws-card:focus-visible,
+.ws-choice:focus-visible,
+.ws-btn:focus-visible,
+.ws-btn-quiet:focus-visible,
+.ws-menu-item:focus-visible,
+.ws-menu-action:focus-visible,
+.ws-dock-switch:focus-visible,
+.ws-outline button:focus-visible,
+.ws-starred .page-sidebar-nav-item:focus-visible,
+.page-sidebar-toggle:focus-visible,
+.ws-phone-bar button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Tree density: the template's docs rows measure 35px nested and 40px top
+ * level; these come to about 31px, which a file tree wants. */
+.ws-tree .page-sidebar-nav-item {
+  gap: 0.55rem;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.85rem;
+  color: var(--ws-muted);
+}
+
+.ws-tree .page-sidebar-nav-item:hover {
+  color: var(--ink);
+}
+
+.ws-tree .page-sidebar-nav-item[data-active] {
+  color: var(--ink);
+  font-weight: 560;
+}
+
+.ws-tree .page-sidebar-nav-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.ws-tree .page-sidebar-nav-children-inner {
+  margin: 1px 0 2px 1.08rem;
+  padding-inline-start: 0.35rem;
+}
+
+.ws-tree .page-sidebar-nav-children-inner .page-sidebar-nav-item {
+  font-size: 0.85rem;
+  padding: 0.28rem 0.55rem;
+}
+
+.ws-tree .page-sidebar-section + .page-sidebar-section {
+  margin-top: 0.75rem;
+}
+
+.ws-starred .page-sidebar-nav-item {
+  text-decoration: none;
+}
+
+/* Starred is a list (its items are buttons), spaced like the template's rows. */
+.ws-starred ul {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ws-starred .page-sidebar-nav-item {
+  width: 100%;
+  text-align: start;
+}
+
+/* The rows are the treeitems (aria-level gives the nesting), so the ring
+ * goes on the row. */
+.ws-filetree {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-height: 3rem;
+  border-radius: var(--radius-control);
+}
+
+.ws-filetree [role="treeitem"] {
+  outline: none;
+}
+
+.ws-filetree [role="treeitem"]:focus-visible {
+  outline: none;
+  box-shadow: var(--accent-ring);
+}
+
+.ws-filetree .page-sidebar-nav-item {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Drag and drop: a folder (or the whole tree) lights up as a target. */
+.ws-filetree[data-drop-root],
+.ws-filetree .ws-folder[data-drop-target] {
+  background: var(--accent-hover);
+  box-shadow: inset 0 0 0 1px var(--accent-border);
+}
+
+.ws-filetree .page-sidebar-nav-item[data-dragging] {
+  opacity: 0.5;
+}
+
+/* Folders put the disclosure where a tree reader looks: before the name. */
+.ws-folder .ws-chevron {
+  transition: transform 200ms var(--ws-ease);
+}
+
+.page-sidebar-nav-group[data-expanded] > .ws-folder .ws-chevron {
+  transform: rotate(90deg);
+}
+
+.ws-folder .page-sidebar-nav-label {
+  color: var(--ink);
+  opacity: 0.86;
+}
+
+.ws-ext {
+  margin-inline-start: auto;
+  font-size: 0.66rem;
+  font-family: var(--ws-mono);
+  color: var(--ws-muted);
+  opacity: 0.72;
+}
+
+/* By day the faded tags and the template's faded section labels fall
+ * below 4.5:1 on paper; the workspace's muted ink alone clears it. */
+.ws-root:not([data-night]) .ws-ext {
+  opacity: 1;
+}
+
+.ws-root:not([data-night]) .ws-tree .page-sidebar-section-label {
+  color: var(--ws-muted);
+  opacity: 1;
+}
+
+.ws-root:not([data-night]) .ws-search-field kbd {
+  color: #4a5551; /* 5.4:1 on the field */
+}
+
+.ws-star-mark {
+  margin-inline-start: auto;
+  color: var(--ws-muted);
+  opacity: 0.7;
+}
+
+.ws-ext + .ws-star-mark {
+  margin-inline-start: 0.25rem;
+}
+
+/* Inline rename: the row turns into a field, in the row's own type. */
+.ws-tree .ws-rename-input,
+.ws-tree .ws-rename-input:hover,
+.ws-tree .ws-rename-input:focus {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  margin: -2px 0;
+  padding: 1px 6px;
+  border: 1px solid var(--accent-border);
+  border-radius: 6px;
+  background: var(--surface-input);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.85rem;
+  box-shadow: var(--accent-ring);
+  outline: none;
+}
+
+.ws-tree .ws-rename-input[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.ws-tree-empty {
+  margin: 0.35rem 0.75rem;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--ws-muted);
+}
+
+/* Footer: where the files live, plus the controls that used to sit top-right. */
+.ws-rail-footer {
+  gap: 0.5rem;
+  padding: 0.6rem 0.65rem 0.6rem 0.9rem;
+}
+
+.ws-rail-footer .page-sidebar-footer-name {
+  font-size: 0.8rem;
+  font-weight: 560;
+}
+
+.ws-rail-footer .page-sidebar-footer-meta {
+  color: var(--ws-muted);
+}
+
+.ws-rail-footer .ws-icon-btn:first-of-type {
+  margin-inline-start: auto;
+}
+
+.ws-store-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--ws-store-dot);
+  box-shadow: 0 0 0 3px var(--ws-store-ring);
+}
+
+/* Amber: kept only for this tab, or a line that asks for attention.
+ * Green means kept in this browser. */
+.ws-store-dot[data-ephemeral],
+.ws-store-dot[data-attention] {
+  background: var(--ws-warn-dot);
+  box-shadow: 0 0 0 3px var(--ws-warn-ring);
+}
+
+.ws .page-sidebar-toggle {
+  color: var(--ws-muted);
+}
+
+.ws .page-sidebar-toggle-icon {
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+/* Collapsed: a toolbelt, not a column of ambiguous letters. */
+.ws-toolbelt {
+  display: none;
+}
+
+.ws[data-collapsed] .ws-toolbelt {
+  /* Takes the hidden tree's place, so the footer stays at the bottom. */
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 0.35rem 0;
+}
+
+.ws[data-collapsed] .ws-toolbelt .ws-icon-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+}
+
+.ws[data-collapsed] .ws-tree,
+.ws[data-collapsed] .ws-switcher-caret,
+.ws[data-collapsed] .ws-store-dot {
+  display: none;
+}
+
+.ws[data-collapsed] .ws-switcher.page-sidebar-header {
+  width: auto;
+  margin: 0.6rem auto 0.25rem;
+  padding: 0.35rem;
+  min-height: 0;
+}
+
+.ws[data-collapsed] .ws-rail-footer {
+  flex-direction: column;
+  gap: 4px;
+  padding: 0.5rem 0;
+}
+
+.ws[data-collapsed] .ws-rail-footer .ws-icon-btn {
+  margin: 0;
+  width: 38px;
+  height: 38px;
+}
+
+/* ------------------------------------------------------------------ *
+ * Main: tabs, stage, panel, status
+ * ------------------------------------------------------------------ */
+
+.ws .page-sidebar-main.ws-main {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.ws-tabs {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  height: 48px;
+  padding: 0 0.6rem 0 0.75rem;
+}
+
+:root[data-style="pane"] .ws-tabs {
+  background: var(--ws-pane-rail);
+  border-bottom: 1px solid var(--line);
+}
+
+.ws-tablist {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  /* Room for the focus ring inside the scroller, without moving the tabs. */
+  padding: 3px 2px;
+  margin-inline-start: -2px;
+}
+
+.ws-tablist::-webkit-scrollbar {
+  display: none;
+}
+
+.ws-tab {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  max-width: 14.5rem;
+  height: 32px;
+  padding: 0 0.4rem 0 0.65rem;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  color: var(--ws-muted);
+  font-size: 0.83rem;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.ws-tab:hover {
+  background: var(--subtle-bg);
+  color: var(--ink);
+}
+
+.ws-tab[aria-selected="true"] {
+  background: var(--ws-tab-active);
+  border-color: var(--line);
+  color: var(--ink);
+  box-shadow: 0 6px 18px -10px rgba(0, 0, 0, 0.45);
+}
+
+:root[data-style="pane"] .ws-tab[aria-selected="true"] {
+  background: var(--ws-pane-bg);
+  box-shadow: none;
+}
+
+.ws-tab[data-dragging] {
+  opacity: 0.5;
+}
+
+.ws-tab[data-drop-before] {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.ws-tab[data-drop-after] {
+  box-shadow: inset -2px 0 0 var(--accent);
+}
+
+.ws-tab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Unsaved edits: a dot where the close mark will be. */
+.ws-tab-dirty {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.ws-tab-close {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  opacity: 0;
+  color: var(--ws-muted);
+}
+
+.ws-tab-close:hover {
+  background: var(--subtle-bg);
+  color: var(--ink);
+}
+
+.ws-tab-close .g {
+  width: 14px;
+  height: 14px;
+}
+
+.ws-tab[aria-selected="true"] .ws-tab-close,
+.ws-tab:hover .ws-tab-close,
+.ws-tab:focus-visible .ws-tab-close {
+  opacity: 1;
+}
+
+.ws-tabs-spacer {
+  flex: 1 1 auto;
+}
+
+/* A calm notice when this browser keeps nothing (docs/slice-3.md, decision 8). */
+.ws-ephemeral {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0 0.75rem 0.5rem;
+  padding: 0.45rem 0.5rem 0.45rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--ws-tab-active);
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--ink);
+}
+
+.ws-ephemeral p {
+  flex: 1 1 auto;
+  margin: 0;
+}
+
+.ws-ephemeral .ws-btn {
+  flex: 0 0 auto;
+  padding: 0.3rem 0.65rem;
+}
+
+.ws-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+
+.ws-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
+.ws-stage:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+:root[data-style="pane"] .ws-stage[data-kind="note"],
+:root[data-style="pane"] .ws-stage[data-kind="text"] {
+  background: var(--ws-pane-bg);
+}
+
+/* A view's loading line, while its code arrives. */
+.ws-view-loading {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  font-size: 0.8rem;
+  color: var(--ws-muted);
+}
+
+/* Nothing open: the stage says what to do next. */
+.ws-empty {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 0.75rem;
+  min-height: 100%;
+  padding: 2rem 1.5rem 4rem;
+  text-align: center;
+}
+
+.ws-empty h2 {
+  margin: 0;
+  font-family: var(--ws-display);
+  font-weight: 400;
+  font-size: 1.85rem;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+.ws-empty p {
+  max-width: 26rem;
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--ws-muted);
+}
+
+.ws-empty .ws-set-actions {
+  justify-content: center;
+  margin-top: 0.4rem;
+}
+
+/* --- The note: a page on the sky (Sheet) or in a pane (Pane) ------- */
+/* Shared by the views (src/workspace/views); kept here with the frame
+ * because the page width and style preferences shape it. */
+
+.ws-page {
+  width: min(46rem, calc(100% - 3rem));
+  margin: 0.35rem auto 2.75rem;
+  padding: 3.4rem clamp(1.5rem, 5vw, 4.5rem) 3.75rem;
+  background: var(--ws-page-bg);
+  border: 1px solid var(--ws-page-line);
+  border-radius: 18px;
+  box-shadow: var(--ws-page-shadow);
+}
+
+/* Stretch: the page takes the width it's given, as many writers prefer. */
+:root[data-width="stretch"] .ws-page {
+  width: calc(100% - 3rem);
+}
+
+:root[data-style="pane"] .ws-page {
+  margin-top: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+:root[data-style="pane"][data-width="stretch"] .ws-page {
+  width: 100%;
+}
+
+.ws-page h1 {
+  max-width: none;
+  margin: 0;
+  font-family: var(--ws-display);
+  font-weight: 400;
+  font-size: clamp(2.1rem, 2.6vw + 1rem, 2.75rem);
+  line-height: 1.08;
+  letter-spacing: -0.022em;
+  color: var(--ink);
+  text-wrap: balance;
+}
+
+.ws-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.6rem;
+  margin: 0.9rem 0 2rem;
+  font-size: 0.78rem;
+  color: var(--ws-muted);
+}
+
+.ws-tag {
+  padding: 0.12rem 0.5rem;
+  border-radius: 999px;
+  background: var(--accent-active);
+  color: var(--ws-tag-ink);
+  font-size: 0.72rem;
+  font-weight: 560;
+}
+
+.ws-prose {
+  font-size: 1.04rem;
+  line-height: 1.72;
+  color: var(--ink);
+  text-wrap: pretty;
+}
+
+:root[data-body="serif"] .ws-prose {
+  font-family: var(--ws-display);
+  font-size: 1.2rem;
+  line-height: 1.6;
+}
+
+.ws-prose p {
+  margin: 0 0 1.05rem;
+}
+
+.ws-prose h2 {
+  margin: 2.1rem 0 0.7rem;
+  font-family: var(--ws-display);
+  font-weight: 400;
+  font-size: 1.55rem;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+}
+
+.ws-link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, var(--accent) 40%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.ws-tasks {
+  list-style: none;
+  margin: 0 0 1.1rem;
+  padding: 0;
+}
+
+.ws-tasks li {
+  display: flex;
+  gap: 0.7rem;
+  align-items: baseline;
+  padding: 0.2rem 0;
+}
+
+.ws-check {
+  position: relative;
+  top: 0.18em;
+  flex: 0 0 auto;
+  width: 17px;
+  height: 17px;
+  border-radius: 5px;
+  border: 1.5px solid color-mix(in oklab, var(--ink) 35%, transparent);
+}
+
+.ws-tasks li[data-done] .ws-check {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.ws-tasks li[data-done] .ws-check::after {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 1.5px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--ws-page-bg);
+  border-width: 0 2px 2px 0;
+  rotate: 45deg;
+}
+
+.ws-tasks li[data-done] {
+  color: var(--ws-muted);
+}
+
+.ws-prose blockquote {
+  margin: 1.6rem 0 0;
+  padding: 0.1rem 0 0.1rem 1.1rem;
+  border-inline-start: 2px solid var(--line);
+  font-family: var(--ws-display);
+  font-style: italic;
+  font-size: 1.18rem;
+  line-height: 1.55;
+  color: var(--ws-muted);
+}
+
+/* An embedded canvas is a window onto the sky, so it reads differently from
+ * an image at a glance. */
+.ws-embed {
+  margin: 1.6rem 0 0.4rem;
+  border: 1px solid var(--ws-page-line);
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--ws-embed-bg);
+}
+
+.ws-embed img {
+  display: block;
+  width: 100%;
+  height: 250px;
+  object-fit: contain;
+  padding: 1rem 1.25rem 0.5rem;
+}
+
+.ws-embed figcaption {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.85rem;
+  border-top: 1px solid var(--ws-page-line);
+  background: color-mix(in oklab, var(--ws-page-bg) 86%, transparent);
+  font-size: 0.78rem;
+  color: var(--ws-muted);
+}
+
+.ws-embed figcaption b {
+  color: var(--ink);
+  font-weight: 560;
+}
+
+.ws-embed figcaption .ws-open {
+  margin-inline-start: auto;
+  color: var(--accent);
+  font-weight: 560;
+}
+
+/* --- The canvas: today's framed board, inside a tab ---------------- */
+
+.ws-board {
+  position: absolute;
+  inset: 0.15rem 0.75rem 0.4rem;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  overflow: hidden;
+  box-shadow: var(--ws-board-shadow);
+}
+
+/* --- Right panel ---------------------------------------------------- */
+
+.ws-panel {
+  display: flex;
+  flex: 0 0 272px;
+  flex-direction: column;
+  gap: 1.4rem;
+  padding: 1rem 1rem 1.5rem;
+  overflow: auto;
+  background: var(--ws-rail-bg);
+  border-inline-start: 1px solid var(--line);
+  backdrop-filter: blur(16px);
+}
+
+:root[data-style="pane"] .ws-panel {
+  background: var(--ws-pane-rail);
+  backdrop-filter: none;
+}
+
+.ws-panel h3 {
+  margin: 0 0 0.55rem;
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ws-muted);
+}
+
+.ws-panel-empty {
+  margin: 0;
+  padding: 0 0.5rem;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--ws-muted);
+}
+
+.ws-outline {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.84rem;
+}
+
+.ws-outline button {
+  display: block;
+  width: 100%;
+  padding: 0.28rem 0.5rem;
+  border-radius: 7px;
+  color: var(--ink);
+  text-align: start;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-outline button:hover {
+  background: var(--subtle-bg);
+}
+
+.ws-outline li[data-depth="2"] button {
+  padding-inline-start: 1.25rem;
+  color: var(--ws-muted);
+}
+
+.ws-outline li[data-depth="3"] button,
+.ws-outline li[data-depth="4"] button,
+.ws-outline li[data-depth="5"] button,
+.ws-outline li[data-depth="6"] button {
+  padding-inline-start: 2rem;
+  color: var(--ws-muted);
+}
+
+.ws-outline li[data-depth] button:hover {
+  color: var(--ink);
+}
+
+/* --- Status line ---------------------------------------------------- */
+
+.ws-status {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  height: 30px;
+  padding: 0 1rem;
+  font-size: 0.72rem;
+  color: var(--ws-muted);
+  white-space: nowrap;
+}
+
+:root[data-style="pane"] .ws-status {
+  background: var(--ws-pane-rail);
+  border-top: 1px solid var(--line);
+}
+
+.ws-status .ws-store-dot {
+  width: 6px;
+  height: 6px;
+  box-shadow: none;
+}
+
+.ws-status-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ws-sign {
+  margin-inline-start: auto;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+}
+
+.ws-sign b {
+  font-weight: 700;
+  font-size: 0.78rem;
+  color: var(--ink);
+}
+
+.ws-sign em {
+  font-style: italic;
+}
+
+/* ------------------------------------------------------------------ *
+ * Overlays: quick open, project switcher, menus
+ * ------------------------------------------------------------------ */
+
+.ws-scrim {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: var(--ws-scrim);
+}
+
+.ws-surface {
+  background: var(--ws-surface-bg);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--ws-surface-shadow);
+  backdrop-filter: blur(20px);
+  color: var(--ink);
+}
+
+/* Quick open: a native <dialog>, so focus stays inside and Escape closes. */
+.ws-palette {
+  position: fixed;
+  inset: 13vh auto auto 50%;
+  width: min(40rem, calc(100vw - 2rem));
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  translate: -50% 0;
+  overflow: hidden;
+}
+
+.ws-palette::backdrop {
+  background: var(--ws-scrim);
+}
+
+.ws-palette-input {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  height: 56px;
+  padding: 0 1.1rem;
+  border-bottom: 1px solid var(--line);
+  font-size: 1.05rem;
+  color: var(--ink);
+}
+
+.ws-palette-input .g {
+  width: 18px;
+  height: 18px;
+  color: var(--ws-muted);
+}
+
+.ws-palette .ws-palette-field,
+.ws-palette .ws-palette-field:hover,
+.ws-palette .ws-palette-field:focus {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+  color: var(--ink);
+  font-size: 1.05rem;
+  caret-color: var(--accent);
+}
+
+.ws-palette .ws-palette-field::placeholder {
+  color: var(--ws-muted);
+  opacity: 1;
+}
+
+.ws-palette-input kbd {
+  margin-inline-start: auto;
+}
+
+.ws-results {
+  max-height: 52vh;
+  overflow: auto;
+  padding: 0.4rem 0.45rem 0.55rem;
+}
+
+.ws-results h4,
+.ws-results-h {
+  margin: 0.55rem 0.65rem 0.3rem;
+  font-size: 0.64rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ws-muted);
+}
+
+.ws-result {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 10px;
+  font-size: 0.88rem;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.ws-result > span:first-of-type {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-result[aria-selected="true"] {
+  background: var(--accent-active);
+  box-shadow: inset 0 0 0 1px var(--accent-border);
+}
+
+.ws-result .g {
+  color: var(--ws-muted);
+}
+
+.ws-result[aria-selected="true"] .g {
+  color: var(--accent);
+}
+
+.ws-result small {
+  flex: 0 0 auto;
+  margin-inline-start: auto;
+  font-size: 0.74rem;
+  color: var(--ws-muted);
+}
+
+.ws-result .ws-planet {
+  --size: 16px;
+  --ws-shadow: inset -2px -2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.ws-result mark {
+  background: none;
+  color: var(--accent);
+  font-weight: 650;
+}
+
+.ws-results-empty {
+  margin: 0.6rem 0.65rem 0.5rem;
+  font-size: 0.85rem;
+  color: var(--ws-muted);
+}
+
+.ws-palette-foot {
+  display: flex;
+  gap: 1.1rem;
+  padding: 0.55rem 1rem;
+  border-top: 1px solid var(--line);
+  font-size: 0.72rem;
+  color: var(--ws-muted);
+}
+
+.ws-palette-foot kbd {
+  margin-inline-end: 0.3rem;
+}
+
+/* The project switcher: your projects, the dock switch, then the actions. */
+.ws-menu {
+  position: fixed;
+  z-index: 50;
+  top: 66px;
+  left: 10px;
+  width: 300px;
+  max-height: calc(100dvh - 80px);
+  overflow: auto;
+  padding: 0.4rem;
+}
+
+.ws-root[data-dock-shown] .ws-menu {
+  left: 74px;
+}
+
+.ws-menu-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 32px;
+  padding: 0.15rem 0.35rem 0.1rem 0.6rem;
+}
+
+.ws-menu-label {
+  margin: 0;
+  font-size: 0.64rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ws-muted);
+}
+
+/* The dock switch: ss-ui's switch, label first, a size down. It's a
+ * menuitemcheckbox, so the switch's look follows aria-checked here. */
+.ws-dock-switch.switch {
+  display: inline-flex;
+  flex-direction: row-reverse;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.25rem 0.3rem 0.25rem 0.5rem;
+  border-radius: 8px;
+}
+
+.ws-dock-switch:hover {
+  background: var(--subtle-bg);
+}
+
+.ws-dock-switch .switch-label {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--ws-muted);
+}
+
+.ws-dock-switch[aria-checked="true"] .switch-label {
+  color: var(--ink);
+}
+
+.ws-dock-switch .switch-track {
+  width: 2rem;
+  height: 1.15rem;
+}
+
+.ws-dock-switch .switch-track::after {
+  left: 0.14rem;
+  width: 0.78rem;
+  height: 0.78rem;
+}
+
+.ws-dock-switch[aria-checked="true"] .switch-track {
+  border-color: var(--accent-border);
+  background: rgba(var(--accent-rgb), 0.32);
+  box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), 0.25);
+}
+
+.ws-root[data-night] .ws-dock-switch[aria-checked="true"] .switch-track {
+  background: rgba(var(--starlight-rgb), 0.32);
+  box-shadow: inset 0 0 0 1px rgba(var(--starlight-rgb), 0.3);
+}
+
+.ws-dock-switch[aria-checked="true"] .switch-track::after {
+  transform: translate(0.82rem, -50%);
+  background: var(--accent);
+}
+
+.ws-root[data-night] .ws-dock-switch[aria-checked="true"] .switch-track::after {
+  background: rgb(var(--starlight-rgb));
+}
+
+.ws-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border-radius: 10px;
+  text-align: start;
+}
+
+.ws-menu-item:hover,
+.ws-menu-item[aria-checked="true"] {
+  background: var(--subtle-bg);
+}
+
+.ws-menu-item .ws-planet {
+  --size: 26px;
+}
+
+.ws-menu-item-text {
+  min-width: 0;
+}
+
+.ws-menu-item b {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.88rem;
+  font-weight: 560;
+  color: var(--ink);
+}
+
+.ws-menu-item-text > span {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--ws-muted);
+}
+
+.ws-menu-item .ws-tick {
+  margin-inline-start: auto;
+  color: var(--accent);
+}
+
+.ws-menu-sep {
+  height: 1px;
+  margin: 0.35rem 0.4rem;
+  background: var(--line);
+}
+
+.ws-menu-action {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border-radius: 9px;
+  font-size: 0.85rem;
+  color: var(--ws-muted);
+  text-align: start;
+}
+
+.ws-menu-action:hover {
+  background: var(--subtle-bg);
+  color: var(--ink);
+}
+
+.ws-menu-action .g {
+  margin-inline: 5px;
+}
+
+/* Right-click menus: the ss-ui context menu. The project's has its colour first. */
+.ws-root .context-menu {
+  z-index: 60;
+  color: var(--ink);
+}
+
+.ws-context {
+  width: 15.25rem;
+}
+
+.ws-filemenu {
+  min-width: 13rem;
+}
+
+.ws-context-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.45rem 0.65rem 0.4rem;
+}
+
+.ws-context-head .ws-planet {
+  --size: 22px;
+}
+
+.ws-context-head b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.88rem;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.ws-root .context-menu .flyout-item .g {
+  color: var(--ws-muted);
+}
+
+.ws-root .context-menu .flyout-item[data-danger] .g {
+  color: inherit;
+}
+
+.ws-root .context-menu .flyout-item kbd {
+  margin-inline-start: auto;
+}
+
+.ws-root .context-menu .flyout-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* ------------------------------------------------------------------ *
+ * Colour swatches: small planets, in every place a colour is chosen
+ * ------------------------------------------------------------------ */
+
+.ws-swatches {
+  --sw: 24px;
+  display: grid;
+  grid-template-columns: repeat(6, var(--sw));
+  gap: 10px;
+  padding: 0.25rem 0.65rem 0.55rem;
+}
+
+.ws-swatches-row {
+  --sw: 26px;
+  grid-template-columns: repeat(12, var(--sw));
+  gap: 9px;
+  padding: 0.15rem 0 0.1rem;
+}
+
+.ws-np .ws-swatches {
+  --sw: 26px;
+  gap: 11px;
+  padding: 0.15rem 0 0;
+}
+
+.ws-swatch {
+  --planet: #7c8cff;
+  --ws-shadow: inset -3px -3px 6px rgba(0, 0, 0, 0.3);
+  position: relative;
+  display: block;
+  width: var(--sw);
+  height: var(--sw);
+  padding: 0;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 34% 30%, color-mix(in oklab, var(--planet) 45%, white) 0%, var(--planet) 42%, color-mix(in oklab, var(--planet) 45%, black) 100%);
+  box-shadow: var(--ws-shadow);
+  cursor: pointer;
+  transition: transform 140ms var(--ws-ease);
+}
+
+.ws-swatch:hover {
+  transform: scale(1.08);
+}
+
+/* Chosen: a ring with a gap of whatever lies behind, so it reads on any surface. */
+.ws-swatch[aria-checked="true"] {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.ws-swatch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Any colour at all: a colour wheel around the current custom pick. */
+.ws-swatch-custom {
+  --custom: transparent;
+  background:
+    radial-gradient(circle, var(--custom) 0 34%, transparent 36%),
+    conic-gradient(from 20deg, #ff6b6b, #fbbf24, #4ade80, #38d1eb, #7c8cff, #e879f9, #ff6b6b);
+}
+
+.ws-swatch-custom[data-chosen] {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.ws-swatch-custom input,
+.ws-swatch-custom input:hover,
+.ws-swatch-custom input:focus {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  box-shadow: none;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.ws-swatch-custom:has(input:focus-visible),
+.ws-swatch-custom[role="menuitemradio"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The menu's colour wheel opens this input's picker; it stays out of sight. */
+.ws-root .ws-swatch-picker {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ------------------------------------------------------------------ *
+ * Settings: the app's ss-ui drawer, with Appearance and Project tabs
+ * ------------------------------------------------------------------ */
+
+.ws-settings .drawer-inner {
+  padding-bottom: 1.5rem;
+}
+
+.ws-settings .drawer-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.ws-settings .drawer-title {
+  font-family: var(--ws-ui);
+  font-weight: 700;
+}
+
+.ws-set-h {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+}
+
+.ws-set-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.ws-set-label {
+  font-size: 0.74rem;
+  font-weight: 650;
+  color: var(--ws-muted);
+}
+
+.ws-set-help {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--ws-muted);
+}
+
+.ws-settings .segmented {
+  align-self: flex-start;
+}
+
+.ws-settings .switch {
+  align-self: flex-start;
+}
+
+.ws-settings .switch-label {
+  font-size: 0.86rem;
+  color: var(--ink);
+}
+
+/* Choice cards: a picture of each option, not just its name. */
+.ws-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+}
+
+.ws-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  padding: 0.5rem 0.5rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--subtle-bg);
+  text-align: start;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.ws-card:hover {
+  border-color: var(--accent-border);
+}
+
+.ws-card[aria-checked="true"] {
+  --ws-shadow: inset 0 0 0 1px var(--accent-border);
+  border-color: var(--accent-border);
+  background: var(--accent-active);
+}
+
+.ws-card b {
+  margin-top: 0.45rem;
+  padding-inline: 0.15rem;
+  font-size: 0.84rem;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.ws-card > span:last-child {
+  padding-inline: 0.15rem;
+  font-size: 0.74rem;
+  line-height: 1.35;
+  color: var(--ws-muted);
+}
+
+/* Style thumbnails: the rail and a note, in each style. */
+.ws-thumb {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 68px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+}
+
+.ws-thumb i {
+  position: absolute;
+  display: block;
+}
+
+.ws-thumb i:first-child {
+  inset: 0 auto 0 0;
+  width: 26%;
+  border-inline-end: 1px solid var(--ws-thumb-edge);
+}
+
+.ws-thumb i:last-child {
+  top: 16%;
+  bottom: 0;
+  left: 38%;
+  right: 12%;
+  border-radius: 4px 4px 0 0;
+  background-image: repeating-linear-gradient(to bottom, transparent 0 7px, var(--ws-thumb-line) 7px 9px);
+  background-size: 70% 100%;
+  background-repeat: no-repeat;
+  background-position: 22% 9px;
+}
+
+.ws-thumb[data-thumb="sheet"] {
+  background: var(--ws-thumb-sheet-bg);
+}
+
+.ws-thumb[data-thumb="sheet"] i:first-child {
+  background-color: var(--ws-thumb-sheet-rail);
+}
+
+.ws-thumb[data-thumb="sheet"] i:last-child {
+  background-color: var(--ws-thumb-sheet-page);
+  box-shadow: var(--ws-thumb-sheet-page-shadow);
+}
+
+.ws-thumb[data-thumb="pane"] {
+  background: var(--ws-thumb-pane-bg);
+}
+
+.ws-thumb[data-thumb="pane"] i:first-child {
+  background-color: var(--ws-thumb-pane-rail);
+}
+
+.ws-thumb[data-thumb="pane"] i:last-child {
+  top: 10%;
+  left: 34%;
+  right: 6%;
+  background-color: transparent;
+}
+
+.ws-aa {
+  display: block;
+  padding: 0.15rem 0.2rem 0;
+  font-family: var(--ws-ui);
+  font-size: 1.9rem;
+  line-height: 1.1;
+  color: var(--ink);
+}
+
+.ws-aa-serif {
+  font-family: var(--ws-display);
+  font-size: 2.05rem;
+}
+
+/* Fields and buttons, matching ss-ui's input chrome. */
+.ws-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.ws-root .ws-input {
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  color: var(--ink);
+  background: var(--surface-input);
+  font: inherit;
+  font-size: 0.92rem;
+  outline: none;
+  box-shadow: none;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.ws-root .ws-input:hover {
+  border-color: rgba(var(--accent-rgb), 0.35);
+}
+
+.ws-root .ws-input:focus {
+  border-color: var(--accent-border);
+  box-shadow: var(--accent-ring);
+}
+
+.ws-field-error {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--danger);
+}
+
+.ws-where {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.ws-where .g {
+  width: 20px;
+  height: 20px;
+  color: var(--ws-muted);
+}
+
+.ws-where b {
+  display: block;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.ws-where span span {
+  display: block;
+  font-size: 0.76rem;
+  color: var(--ws-muted);
+}
+
+.ws-set-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.ws-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.5rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--surface-input);
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.ws-btn:hover {
+  border-color: var(--accent-border);
+}
+
+.ws-btn-danger {
+  color: var(--danger);
+  border-color: rgba(var(--coral-rgb), 0.4);
+}
+
+.ws-btn-danger:hover {
+  background: rgba(var(--coral-rgb), 0.12);
+  border-color: rgba(var(--coral-rgb), 0.6);
+}
+
+.ws-btn-quiet {
+  padding: 0.62rem 1.05rem;
+  border-radius: 12px;
+  color: var(--ws-muted);
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.ws-btn-quiet:hover {
+  color: var(--ink);
+  background: var(--subtle-bg);
+}
+
+/* ------------------------------------------------------------------ *
+ * Dialogs: ss-ui's <dialog> shell (Orbit's welcome) for Welcome, New
+ * project, Rename and Confirm, opened with showModal().
+ * ------------------------------------------------------------------ */
+
+.ws-dialog {
+  color: var(--ink);
+}
+
+.ws-dialog-foot {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.ws-dialog .welcome-dialog-cta {
+  --ws-shadow: var(--btn-shadow);
+  padding: 0.65rem 2.25rem;
+  border-radius: 12px;
+  border: 1px solid var(--btn-border);
+  background: var(--btn-gradient);
+  color: var(--btn-color);
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.ws-dialog .welcome-dialog-cta:hover {
+  filter: brightness(1.06);
+}
+
+.ws-dialog .welcome-dialog-cta[data-danger] {
+  --ws-shadow: none;
+  border-color: rgba(var(--coral-rgb), 0.5);
+  background: rgba(var(--coral-rgb), 0.14);
+  color: var(--danger);
+}
+
+/* Dialogs focus their main control on open (as Orbit's welcome does), so it
+ * gets a deliberate ring rather than the browser's default. */
+.ws-dialog .welcome-dialog-cta:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.ws-welcome .welcome-dialog-logo {
+  width: 2.9rem;
+  height: 2.9rem;
+  filter: drop-shadow(0 0 10px rgba(168, 128, 255, 0.4));
+}
+
+.ws-welcome .welcome-dialog-title {
+  font-family: var(--ws-display);
+  font-weight: 400;
+  font-size: 1.85rem;
+  letter-spacing: -0.02em;
+}
+
+/* Small dialogs: rename and confirm. */
+.ws-small.dialog {
+  width: min(26rem, calc(100vw - 2rem));
+}
+
+.ws-small-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  padding: 1.4rem 1.5rem 1.3rem;
+}
+
+.ws-small-inner h2 {
+  margin: 0;
+  font-family: var(--ws-display);
+  font-weight: 400;
+  font-size: 1.5rem;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+}
+
+.ws-small-inner p {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--ws-muted);
+}
+
+.ws-small .ws-dialog-foot {
+  justify-content: flex-end;
+}
+
+/* New project: a planet comes into being as you name and colour it. */
+.ws-np.dialog {
+  width: min(38rem, calc(100vw - 2rem));
+}
+
+.ws-np-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding: 1.45rem 1.6rem 1.4rem;
+}
+
+.ws-np-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ws-np-head h2 {
+  margin: 0;
+  font-family: var(--ws-display);
+  font-weight: 400;
+  font-size: 1.65rem;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+}
+
+.ws-np-head .ws-icon-btn {
+  width: 32px;
+  height: 32px;
+}
+
+.ws-np-top {
+  display: grid;
+  grid-template-columns: 11.5rem 1fr;
+  gap: 1.3rem;
+}
+
+.ws-np-preview {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  min-height: 11.5rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--ws-np-bg);
+}
+
+.ws-np-planet.ws-planet {
+  --size: 88px;
+  --ws-shadow:
+    inset -12px -14px 24px rgba(0, 0, 0, 0.4),
+    0 0 46px color-mix(in oklab, var(--planet) 50%, transparent);
+}
+
+.ws-np-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--ws-display);
+  font-size: 1.15rem;
+  color: var(--ws-np-name);
+}
+
+.ws-np-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.ws-np-note {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--ws-muted);
+}
+
+.ws-np-foot {
+  justify-content: flex-end;
+}
+
+/* ------------------------------------------------------------------ *
+ * Settings drawer and phone sheet scrims
+ * ------------------------------------------------------------------ */
+
+.ws-root .drawer.ws-settings {
+  color: var(--ink);
+}
+
+/* ------------------------------------------------------------------ *
+ * The background: a colour or an image of your own (Settings →
+ * Appearance; src/workspace/backdrop.ts and useBackdrop.ts). A colour
+ * reuses 1.x's plain rules (NebulaShell.css) with --nebula-bg-color.
+ * ------------------------------------------------------------------ */
+
+:root[data-bg="image"] .grain {
+  display: none;
+}
+
+/* The veil over an image: the theme's own colour, as much as Fade says. */
+:root[data-bg="image"] {
+  --ws-bg-veil: rgba(var(--paper-rgb), var(--nebula-bg-fade, 0.3));
+}
+
+:root[data-bg="image"][data-theme="dark"] {
+  --ws-bg-veil: rgba(var(--cosmos-rgb), var(--nebula-bg-fade, 0.3));
+}
+
+/* The preview paints at once (kept in localStorage); the image itself
+ * fades in over it once it has loaded. */
+:root[data-bg="image"] body {
+  background:
+    linear-gradient(var(--ws-bg-veil), var(--ws-bg-veil)),
+    var(--nebula-bg-thumb, none) center / cover no-repeat,
+    var(--nebula-bg-color, #000000);
+}
+
+:root[data-bg="image"] body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(var(--ws-bg-veil), var(--ws-bg-veil)),
+    var(--nebula-bg-image, none) center / cover no-repeat;
+  opacity: 0;
+  transition: opacity 420ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+:root[data-bg="image"][data-bg-ready] body::before {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-bg="image"] body::before {
+    transition: none;
+  }
+}
+
+/* Each choice's own settings sit under it. */
+.ws-bg-option {
+  margin-top: 0.7rem;
+}
+
+/* Background colours are flat chips, not planets. */
+.ws-swatches-flat .ws-swatch:not(.ws-swatch-custom) {
+  border-radius: 9px;
+  background: var(--planet);
+  box-shadow: inset 0 0 0 1px var(--ws-thumb-line);
+}
+
+.ws-swatches-flat .ws-swatch-custom {
+  border-radius: 9px;
+}
+
+.ws-bg-image {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.ws-root .ws-bg-tile {
+  position: relative;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 0.2rem;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  padding: 0.75rem;
+  border: 1px dashed var(--ws-thumb-line);
+  border-radius: 12px;
+  background: var(--subtle-bg);
+  color: var(--ws-muted);
+  box-shadow: none;
+  font: inherit;
+  font-size: 0.84rem;
+  text-align: center;
+  overflow: hidden;
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease;
+}
+
+.ws-root .ws-bg-tile:hover,
+.ws-root .ws-bg-tile[data-dropping] {
+  border-color: var(--accent-border);
+  background-color: var(--accent-active);
+}
+
+.ws-root .ws-bg-tile:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.ws-bg-tile svg.g {
+  width: 1.35rem;
+  height: 1.35rem;
+  margin-bottom: 0.2rem;
+  color: var(--ink);
+}
+
+.ws-bg-tile > span {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.ws-bg-tile small {
+  font-size: 0.75rem;
+}
+
+/* With an image: the image under its veil, as the window shows it. */
+.ws-root .ws-bg-tile:not([data-empty]) {
+  --tile-veil: rgba(var(--paper-rgb), var(--tile-fade, 0.3));
+  border-style: solid;
+  border-color: var(--line);
+  background:
+    linear-gradient(var(--tile-veil), var(--tile-veil)),
+    var(--tile-image) center / cover no-repeat;
+}
+
+.ws-root[data-night] .ws-bg-tile:not([data-empty]) {
+  --tile-veil: rgba(var(--cosmos-rgb), var(--tile-fade, 0.3));
+}
+
+.ws-bg-tile-hint {
+  position: absolute;
+  right: 0.5rem;
+  bottom: 0.5rem;
+  padding: 0.2rem 0.65rem;
+  border-radius: 999px;
+  background: rgba(8, 11, 26, 0.74);
+  color: #f4f5ff;
+  font-size: 0.75rem;
+  font-weight: 600;
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+
+.ws-bg-tile:hover .ws-bg-tile-hint,
+.ws-bg-tile:focus-visible .ws-bg-tile-hint {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .ws-bg-tile-hint {
+    opacity: 1;
+  }
+}
+
+/* Remove moves under Fade where both won't fit (a phone). */
+.ws-bg-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 0.75rem;
+}
+
+.ws-bg-fade {
+  display: flex;
+  flex: 1 1 14rem;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+  font-size: 0.82rem;
+  color: var(--ws-muted);
+}
+
+.ws-bg-fade input {
+  flex: 1;
+  min-width: 0;
+}
+
+.ws-bg-fade output {
+  min-width: 2.6rem;
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.ws-set-help.ws-bg-problem {
+  color: var(--danger);
+}
+
+/* ss-ui's drawer tab reads the base muted, 3.1:1 by day; the workspace's
+ * own muted is 5.2:1 (integration finding 2). */
+.ws-root .drawer-tab:not([aria-selected="true"]):not(:hover) {
+  color: var(--ws-muted);
+}
+
+.ws-root .drawer-close:focus-visible,
+.ws-root .drawer-tab:focus-visible,
+.ws-root .segmented-option:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ------------------------------------------------------------------ *
+ * Phone and narrow tablet: the rail becomes a sheet; thumb-reach bar
+ * ------------------------------------------------------------------ */
+
+.ws-phone-top,
+.ws-phone-bar {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .ws.page-sidebar-app {
+    flex-direction: column;
+  }
+
+  /* Undo the template's phone top bar: a file tree can't live in one row. */
+  .ws .page-sidebar {
+    position: fixed;
+    z-index: 60;
+    top: 0;
+    left: 0;
+    width: min(86vw, 330px);
+    height: 100dvh;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+    border-inline-end: 1px solid var(--line);
+    border-block-end: 0;
+    background: var(--ws-sheet-bg);
+    translate: -105% 0;
+    visibility: hidden;
+    transition: translate 280ms var(--ws-ease), visibility 0s linear 280ms;
+  }
+
+  .ws-root[data-sheet] .ws .page-sidebar {
+    translate: 0 0;
+    visibility: visible;
+    box-shadow: 24px 0 60px -20px rgba(0, 0, 0, 0.6);
+    transition: translate 280ms var(--ws-ease), visibility 0s;
+  }
+
+  .ws-root[data-sheet] .ws-scrim {
+    display: block;
+  }
+
+  .ws .page-sidebar-nav {
+    flex-direction: column;
+    overflow-x: hidden;
+    overflow-y: auto;
+    gap: 1px;
+    padding: 0.35rem 0.65rem 0.65rem;
+  }
+
+  .ws .page-sidebar-section {
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .ws .ws-tree .page-sidebar-section + .page-sidebar-section {
+    margin-top: 0.75rem;
+  }
+
+  .ws .page-sidebar-nav-group {
+    display: flex;
+  }
+
+  .ws .page-sidebar-search {
+    display: block;
+  }
+
+  .ws .page-sidebar-section-label {
+    display: block;
+  }
+
+  .ws .page-sidebar-footer {
+    display: flex;
+  }
+
+  .ws .page-sidebar-toggle-wrap,
+  .ws-dock,
+  .ws-tabs,
+  .ws-status {
+    display: none;
+  }
+
+  /* Thumb-sized rows and buttons: 44px or more. */
+  .ws-tree .page-sidebar-nav-item,
+  .ws-tree .page-sidebar-nav-children-inner .page-sidebar-nav-item {
+    min-height: 44px;
+    padding-block: 0.5rem;
+    font-size: 0.95rem;
+  }
+
+  .ws .page-sidebar .ws-icon-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+  }
+
+  .ws-section-head .ws-section-actions {
+    gap: 0;
+  }
+
+  .ws .page-sidebar-search .ws-search-field {
+    height: 44px;
+  }
+
+  .ws .page-sidebar-main.ws-main {
+    height: 100dvh;
+  }
+
+  .ws-phone-top {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    height: calc(54px + env(safe-area-inset-top));
+    padding: env(safe-area-inset-top) 0.4rem 0;
+    background: var(--ws-tab-active);
+    border-bottom: 1px solid var(--line);
+    backdrop-filter: blur(16px);
+  }
+
+  .ws-phone-top .ws-icon-btn,
+  .ws-phone-bar .ws-icon-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+  }
+
+  .ws-phone-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--ink);
+  }
+
+  .ws-phone-title > span:last-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ws-phone-title .ws-planet {
+    --size: 16px;
+  }
+
+  .ws-phone-logo {
+    width: 22px;
+    height: 19px;
+  }
+
+  .ws-phone-bar {
+    flex: 0 0 auto;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    padding: 0.3rem 0.5rem calc(0.3rem + env(safe-area-inset-bottom));
+    background: var(--ws-tab-active);
+    border-top: 1px solid var(--line);
+    backdrop-filter: blur(16px);
+  }
+
+  .ws-phone-bar button {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    padding: 0.35rem 0;
+    min-height: 48px;
+    font-size: 0.66rem;
+    color: var(--ws-muted);
+    border-radius: 12px;
+  }
+
+  .ws-phone-bar button[aria-expanded="true"]:not(.ws-phone-new) {
+    color: var(--accent);
+  }
+
+  .ws-phone-bar .g {
+    width: 20px;
+    height: 20px;
+  }
+
+  .ws-phone-bar .ws-phone-new {
+    --ws-shadow: 0 6px 18px -6px rgba(var(--accent-rgb), 0.6);
+    width: 44px;
+    height: 44px;
+    min-height: 0;
+    margin: auto;
+    justify-content: center;
+    border-radius: 50%;
+    background: var(--accent);
+    color: var(--ws-page-bg);
+  }
+
+  .ws-ephemeral {
+    margin: 0.5rem 0.75rem;
+  }
+
+  .ws-page,
+  :root[data-width="stretch"] .ws-page {
+    width: 100%;
+    margin: 0;
+    padding: 2rem 1.35rem 3rem;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    min-height: 100%;
+  }
+
+  .ws-page h1 {
+    font-size: 2rem;
+  }
+
+  .ws-embed img {
+    height: 190px;
+  }
+
+  .ws-panel {
+    display: none;
+  }
+
+  .ws-menu,
+  .ws-root[data-dock-shown] .ws-menu {
+    left: 10px;
+    width: calc(100vw - 20px);
+  }
+
+  .ws-swatches-row {
+    grid-template-columns: repeat(6, var(--sw));
+  }
+
+  /* A background's six colours and any colour: one row of seven. */
+  .ws-swatches-row.ws-swatches-flat {
+    grid-template-columns: repeat(7, var(--sw));
+  }
+
+  .ws-root .context-menu .flyout-item,
+  .ws-menu-item,
+  .ws-menu-action {
+    min-height: 44px;
+  }
+
+  .ws-swatches {
+    --sw: 32px;
+    gap: 12px;
+  }
+}
+
+@media (max-width: 560px) {
+  /* Thumb-sized buttons, the main one on top. */
+  .ws-dialog-foot {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .ws-dialog-foot > button {
+    width: 100%;
+    min-height: 46px;
+  }
+
+  .ws-np-inner {
+    padding: 1.2rem 1.1rem 1.15rem;
+  }
+
+  .ws-np-top {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .ws-np-preview {
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 1rem;
+    min-height: 0;
+    padding: 0.9rem 1rem;
+  }
+
+  .ws-np-planet.ws-planet {
+    --size: 56px;
+  }
+
+  .ws-cards {
+    gap: 0.5rem;
+  }
+}
+
+/* Reduced motion: transitions end at once (never a 0.01ms duration, which
+ * WebKit can hold mid-way), and nothing animates. */
+@media (prefers-reduced-motion: reduce) {
+  .ws-root *,
+  .ws-root *::before,
+  .ws-root *::after {
+    transition-duration: 0s !important;
+    transition-delay: 0s !important;
+  }
+
+  .ws-root .dialog,
+  .ws-root .dialog::backdrop {
+    animation: none;
+  }
+}
+
+/* Shown but can't be changed: a project list from a newer Nebula (re-review
+   R5): New project, a project's rename, colour and remove. */
+.ws-cta:disabled,
+.ws-dock-add:disabled,
+.ws-menu-action:disabled,
+.ws-context button:disabled,
+.ws-swatch:disabled,
+.ws-swatches input:disabled,
+.ws-settings .ws-input:disabled,
+.ws-settings .ws-btn-danger:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ws-swatch:disabled {
+  box-shadow: none;
+}
+
+/* The canvases a move left behind, each with its download (re-review R3),
+   and the older tab's saves (R6). */
+.ws-left-behind {
+  list-style: none;
+  margin: 0.45rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.ws-left-behind li {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.ws-left-behind li > span {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.ws-left-behind .ws-btn {
+  flex: 0 0 auto;
+  padding: 0.25rem 0.6rem;
+}
+
+.ws-older {
+  align-items: flex-start;
+}
+
+.ws-older-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ws-older-body > p {
+  margin: 0;
+}
+
+/* On a phone a name gets its own line, its buttons below it. */
+@media (max-width: 768px) {
+  .ws-left-behind li {
+    flex-wrap: wrap;
+    gap: 0.35rem 0.5rem;
+  }
+
+  .ws-left-behind li > span {
+    flex-basis: 100%;
+    white-space: normal;
+  }
+}

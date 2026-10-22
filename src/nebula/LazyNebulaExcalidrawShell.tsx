@@ -14,6 +14,9 @@ export type LazyNebulaExcalidrawShellProps = {
   store?: SceneStore;
   fallback?: ReactNode;
   onReady?: () => void;
+  /** `false` renders the canvas alone, without Nebula's chrome; see
+   * NebulaExcalidrawShellProps.chrome. Defaults to `true`. */
+  chrome?: boolean;
 };
 
 export function LazyNebulaExcalidrawShell(props: LazyNebulaExcalidrawShellProps) {

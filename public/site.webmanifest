@@ -2,6 +2,8 @@
   "name": "Starscape Nebula",
   "short_name": "Nebula",
   "description": "A local-first Excalidraw canvas wrapped in the Starscape shell.",
+  "start_url": "/",
+  "scope": "/",
   "icons": [
     {
       "src": "/ss-nebula-192x192.png",

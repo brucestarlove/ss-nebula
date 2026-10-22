@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Nebula workspace harness</title>
+    <!-- Lane B's harness: the workspace over an in-memory registry (src/workspace/dev).
+         Query: ?projects=1|5&intro=welcome|migrated&persistent=0&latency=ms&empty=1&help=link&download=0&view=probe -->
+    <script>
+      try {
+        var t = localStorage.getItem('nebula:theme');
+        if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./shell-main.tsx"></script>
+  </body>
+</html>

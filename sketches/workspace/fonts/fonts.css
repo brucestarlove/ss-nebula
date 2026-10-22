@@ -1,0 +1,6 @@
+/* Starscape's "Atlas" type (from starscape.biz; self-hosted, OFL, subset).
+ * ss-ui 3.4's blend brings the same faces into @starlove/ui. */
+@font-face { font-family: "Mona Sans"; src: url("mona-sans.woff2") format("woff2"); font-weight: 400 700; font-stretch: 100%; font-style: normal; font-display: swap; }
+@font-face { font-family: "Newsreader"; src: url("newsreader.woff2") format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Newsreader"; src: url("newsreader-italic.woff2") format("woff2"); font-weight: 400; font-style: italic; font-display: swap; }
+@font-face { font-family: "JetBrains Mono"; src: url("jetbrains-mono.woff2") format("woff2"); font-weight: 400 500; font-style: normal; font-display: swap; }
