@@ -5,7 +5,7 @@ import { createBrowserRegistry, type BrowserRegistry } from '../files/registry';
 import { createEmptyNebulaMetadata } from '../nebula/excalidraw/metadata';
 import { createEmptyExcalidrawScene } from '../nebula/excalidraw/scene';
 import type { LegacyRoutes } from './boot';
-import { fileUrl, parseRoute, resolveLegacyRoute } from './routes';
+import { appBase, appHome, fileUrl, parseRoute, resolveLegacyRoute } from './routes';
 
 function at(url: string) {
   const parsed = new URL(url, 'https://nebula.starscape.app');
@@ -54,6 +54,39 @@ describe('parseRoute', () => {
   it('ignores queries that aren’t board links', () => {
     expect(parseRoute(at('/?utm_source=mastodon'))).toBeNull();
   });
+
+  it('reads every address the same inside /app, where the site mounts the app', () => {
+    expect(parseRoute(at('/app'))).toBeNull();
+    expect(parseRoute(at('/app/'))).toBeNull();
+    expect(parseRoute(at('/app/p/k3v9x2m1qa/Guides/Observing%20plan.md'))).toEqual({
+      type: 'file',
+      projectId: 'k3v9x2m1qa',
+      path: 'Guides/Observing plan.md',
+    });
+    expect(parseRoute(at('/app/p/k3v9x2m1qa'))).toEqual({ type: 'file', projectId: 'k3v9x2m1qa', path: null });
+    expect(parseRoute(at('/app/b/ss-nebula/c/launch-map'))).toEqual({ type: 'legacy', board: 'ss-nebula', canvas: 'launch-map' });
+    expect(parseRoute(at('/app#/b/demo/c/sketch'))).toEqual({ type: 'legacy', board: 'demo', canvas: 'sketch' });
+    expect(parseRoute(at('/app?board=demo&canvas=sketch'))).toEqual({ type: 'legacy', board: 'demo', canvas: 'sketch' });
+  });
+
+  it('doesn’t mistake a path that only starts with “app” for the mount', () => {
+    expect(appBase('/apple/p/x')).toBe('');
+    expect(parseRoute(at('/apple/p/x'))).toBeNull();
+  });
+});
+
+describe('appBase and appHome', () => {
+  it('finds the mount from the address the app was opened at', () => {
+    expect(appBase('/app')).toBe('/app');
+    expect(appBase('/app/p/k3v9x2m1qa/README.md')).toBe('/app');
+    expect(appBase('/')).toBe('');
+    expect(appBase('/p/k3v9x2m1qa')).toBe('');
+  });
+
+  it('names the app’s front door under each', () => {
+    expect(appHome('/app')).toBe('/app');
+    expect(appHome('')).toBe('/');
+  });
 });
 
 describe('fileUrl', () => {
@@ -72,6 +105,13 @@ describe('fileUrl', () => {
 
   it('links a project with nothing open', () => {
     expect(fileUrl('k3v9x2m1qa', null)).toBe('/p/k3v9x2m1qa');
+  });
+
+  it('writes links inside the mount that read back the same', () => {
+    expect(fileUrl('k3v9x2m1qa', 'Concept art', '/app')).toBe('/app/p/k3v9x2m1qa/Concept%20art');
+    expect(fileUrl('k3v9x2m1qa', null, '/app')).toBe('/app/p/k3v9x2m1qa');
+    const url = fileUrl('k3v9x2m1qa', 'Sessions/2026-10-26 14.55 Deploy.md', '/app');
+    expect(parseRoute(at(url))).toEqual({ type: 'file', projectId: 'k3v9x2m1qa', path: 'Sessions/2026-10-26 14.55 Deploy.md' });
   });
 });
 
@@ -132,7 +172,7 @@ describe('resolveLegacyRoute', () => {
   });
 });
 
-describe('resolveLegacyRoute, from the migration’s own record (review finding 19)', () => {
+describe('resolveLegacyRoute, from the migration’s own record', () => {
   // Not a safe id, so its project gets a new one; and no localStorage map,
   // as when localStorage was full.
   const BOARD = 'Field Board/2026';

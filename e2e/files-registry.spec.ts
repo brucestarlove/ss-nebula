@@ -1,6 +1,6 @@
 // The browser registry in real browsers: projects kept in OPFS across reloads,
 // heard across tabs, and, when OPFS can't keep anything (WebKit's ephemeral
-// contexts), the memory fallback that says so (docs/slice-3.md, decision 8).
+// contexts), the memory fallback that says so.
 import { unzipSync } from 'fflate';
 import { readFileSync, statSync, writeFileSync } from 'node:fs';
 import { expect, openHarness, test } from './harness/files-fixtures';

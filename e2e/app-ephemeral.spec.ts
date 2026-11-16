@@ -1,7 +1,7 @@
 import type { BrowserContext, Page } from '@playwright/test';
 import { expect, failOpfs, openApp, test } from './app-fixtures';
 
-// A browser that keeps nothing (docs/slice-3.md, decision 8): Playwright's
+// A browser that keeps nothing: Playwright's
 // ephemeral WebKit has no OPFS, as private windows don't. Nebula runs on
 // memory, says so, offers Download, and nothing claims to be saved.
 

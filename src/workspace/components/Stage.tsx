@@ -1,8 +1,9 @@
-import { Component, Suspense, useEffect, useMemo, type ComponentType, type ErrorInfo, type ReactNode } from 'react';
+import { Component, Suspense, useEffect, useMemo, useRef, type ComponentType, type ErrorInfo, type ReactNode } from 'react';
 import type { FileEntry, FileKind, FileStore, FileViewProps } from '../../files/types';
 import type { Heading } from '../outline';
 import { ViewActionsContext, type ViewActions } from '../views/shared/viewActions';
 import { Button } from './Button';
+import { findHeading, HEADING_JUMP_MS, type HeadingJump } from './headings';
 import { prefersReducedMotion } from './ui';
 
 class ViewBoundary extends Component<{ children: ReactNode; name: string }, { error: Error | null }> {
@@ -42,11 +43,19 @@ type StageProps = {
   onDirty: (path: string, dirty: boolean) => void;
   /** Shows the open file in another kind's view. */
   onOpenAs?: (path: string, kind: FileKind) => void;
+  /** Scrolls the open file to a heading once its view has drawn it. */
+  jump?: HeadingJump | null;
 };
+
+function scrollToHeading(target: HTMLElement) {
+  target.scrollIntoView({ block: 'start', behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+  if (!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
+  target.focus({ preventScroll: true });
+}
 
 /** The open file, in the view for its kind (src/workspace/views, loaded on
  * demand), or what to do next when nothing is open. */
-export function Stage({ viewFor, projectId, store, entry, kind, labelledBy, empty, onStatus, onDirty, onOpenAs }: StageProps) {
+export function Stage({ viewFor, projectId, store, entry, kind, labelledBy, empty, onStatus, onDirty, onOpenAs, jump }: StageProps) {
   const View = useMemo(() => (kind ? viewFor(kind) : null), [viewFor, kind]);
   const path = entry?.path ?? null;
   const handlers = useMemo(
@@ -64,6 +73,32 @@ export function Stage({ viewFor, projectId, store, entry, kind, labelledBy, empt
     if (!path) return undefined;
     return () => onDirty(path, false);
   }, [path, onDirty]);
+
+  // A link to a heading: scroll to it now if the view has drawn it, else as
+  // soon as it does (the note may still be loading, or only just opened). A
+  // heading that never comes leaves the file open at its top.
+  const jumped = useRef(0);
+  useEffect(() => {
+    if (!jump || !path || jump.path !== path || jumped.current === jump.n) return undefined;
+    jumped.current = jump.n;
+    const stage = document.getElementById('ws-stage');
+    if (!stage) return undefined;
+    const attempt = () => {
+      const target = findHeading(stage, jump.heading);
+      if (target) scrollToHeading(target);
+      return target !== null;
+    };
+    if (attempt()) return undefined;
+    const observer = new MutationObserver(() => {
+      if (attempt()) observer.disconnect();
+    });
+    observer.observe(stage, { childList: true, subtree: true, characterData: true });
+    const giveUp = window.setTimeout(() => observer.disconnect(), HEADING_JUMP_MS);
+    return () => {
+      observer.disconnect();
+      window.clearTimeout(giveUp);
+    };
+  }, [jump, path]);
 
   if (!entry || !store) {
     return <section className="ws-stage" aria-label="No file open">{empty}</section>;
@@ -89,21 +124,13 @@ export function Stage({ viewFor, projectId, store, entry, kind, labelledBy, empt
 /** Scrolls the stage to the nth heading with this text, if the view drew one. */
 function jumpTo(heading: Heading, nth: number) {
   const stage = document.getElementById('ws-stage');
-  if (!stage) return;
-  const matches = [...stage.querySelectorAll<HTMLElement>('h1, h2, h3, h4, h5, h6')].filter(
-    (element) => element.textContent?.trim() === heading.text,
-  );
-  const target = matches[nth] ?? matches[0];
-  if (!target) return;
-  target.scrollIntoView({ block: 'start', behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
-  if (!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
-  target.focus({ preventScroll: true });
+  const target = stage ? findHeading(stage, heading.text, nth, true) : null;
+  if (target) scrollToHeading(target);
 }
 
 type OutlineProps = { headings: Heading[] | null; isNote: boolean };
 
-/** The right panel: the active note's outline. Backlinks arrive with search
- * (docs/slice-3.md, decision 7). */
+/** The right panel: the active note's outline. Backlinks arrive with search. */
 export function OutlinePanel({ headings, isNote }: OutlineProps) {
   const seen = new Map<string, number>();
   return (
@@ -132,15 +159,24 @@ export function OutlinePanel({ headings, isNote }: OutlineProps) {
   );
 }
 
-type StatusLineProps = { ephemeral: boolean; saving: boolean; status: string | null; message: string | null };
+type StatusLineProps = {
+  ephemeral: boolean;
+  /** The open project lives in a folder on this computer. */
+  inFolder?: boolean;
+  /** Its folder can't be opened now: nothing is being saved. */
+  folderClosed?: boolean;
+  saving: boolean;
+  status: string | null;
+  message: string | null;
+};
 
 /** Where the files are kept, whether they're saved, the view's own status
  * ('76 words'), and the signature. */
-export function StatusLine({ ephemeral, saving, status, message }: StatusLineProps) {
-  const kept = ephemeral ? 'Kept in this tab only' : 'Saved in this browser';
+export function StatusLine({ ephemeral, inFolder = false, folderClosed = false, saving, status, message }: StatusLineProps) {
+  const kept = folderClosed ? 'The folder isn’t open' : inFolder ? 'Saved on this computer' : ephemeral ? 'Kept in this tab only' : 'Saved in this browser';
   return (
     <footer className="ws-status">
-      <span className="ws-store-dot" data-ephemeral={ephemeral ? '' : undefined} aria-hidden="true" />
+      <span className="ws-store-dot" data-ephemeral={ephemeral ? '' : undefined} data-attention={folderClosed ? '' : undefined} aria-hidden="true" />
       <span>{saving ? 'Saving…' : kept}</span>
       {message ? (
         <>

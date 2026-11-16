@@ -30,5 +30,10 @@ starscape-landing/*
 starlove-dev/*
 
 # Playwright
-test-results/
+test-results*/
 playwright-report/
+
+# Cloudflare (wrangler dev state, local secrets)
+.wrangler/
+.dev.vars
+.dev.vars.*

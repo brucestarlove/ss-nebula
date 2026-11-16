@@ -1,13 +1,14 @@
 import { blobToBytes } from '../../../files/bytes';
 import { errorName, type FileChangedError } from '../../../files/errors';
-import { isInside } from '../../../files/paths';
+import { basename, isInside } from '../../../files/paths';
 import type { FileChange, FileEntry, FileStore } from '../../../files/types';
 import { conflictCopyName, writeConflictCopy } from './conflictCopy';
-import { heldHere, openFileSession, reportKeptCopy, writeAllowed, writesSettled, type OpenFileSession, type SessionScope } from './fileSessions';
+import { FolderUnreachableError, carryEdit, claimCarried, heldHere, openFileSession, reportKeptCopy, writeAllowed, writesSettled, type OpenFileSession, type SessionScope } from './fileSessions';
+export { unreachableMessage } from './fileSessions';
 
 /**
  * One open text file: what the editor holds, what's on disk, and the rules
- * between them (docs/slice-3.md, lane C):
+ * between them:
  *
  * - edits save 500 ms after the last keystroke, and at once on flush();
  * - a change made elsewhere (store.watch) reloads when nothing is unsaved,
@@ -30,6 +31,12 @@ export type TextSessionState = {
   conflict: boolean;
   /** The file was deleted; nothing more is written. */
   removed: boolean;
+  /** The folder the file is in can't be reached right now (S2): its name
+   * ('' when unknown), or null. Edits stay unsaved and are saved once it's
+   * back. */
+  unreachable: string | null;
+  /** Another tab is moving the project to a folder (S3): saves wait. */
+  moving: boolean;
   /** The file isn't UTF-8 text: `text` shows it as well as it can, and
    * nothing is ever written, since saving would change its bytes. */
   readOnly: boolean;
@@ -68,9 +75,16 @@ export type TextSessionOptions = {
    * file, and the workspace's renames and deletes, find each other. Defaults
    * to the store. */
   scope?: SessionScope;
+  /** How long a save that found its file gone waits for the rename before
+   * it looks again, and, still gone, shows the file as deleted elsewhere
+   * (H7). */
+  goneCheckMs?: number;
 };
 
 export const SAVE_DELAY_MS = 500;
+/** Another tab's rename reaches this one within milliseconds; a file still
+ * gone after this long was deleted or moved out of reach (H7). */
+export const GONE_CHECK_MS = 2000;
 
 const strictUtf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 const lossyUtf8 = new TextDecoder('utf-8', { ignoreBOM: true });
@@ -97,9 +111,10 @@ export function lineBreakOf(text: string): '\r\n' | '\n' {
 
 export function createTextSession(store: FileStore, initialPath: string, options: TextSessionOptions = {}): TextSession {
   const saveDelayMs = options.saveDelayMs ?? SAVE_DELAY_MS;
+  const goneCheckMs = options.goneCheckMs ?? GONE_CHECK_MS;
   const scope = options.scope ?? store;
   let path = initialPath;
-  let state: TextSessionState = { status: 'loading', text: '', dirty: false, conflict: false, removed: false, readOnly: false, revision: 0 };
+  let state: TextSessionState = { status: 'loading', text: '', dirty: false, conflict: false, removed: false, unreachable: null, moving: false, readOnly: false, revision: 0 };
   /** The text known to be on disk. */
   let saved = '';
   /** The file's line end: edits come back with it (an editor hands back \n). */
@@ -107,7 +122,7 @@ export function createTextSession(store: FileStore, initialPath: string, options
   /** The text being written right now, so its echo isn't mistaken for a change. */
   let inFlight: string | null = null;
   /** The file's text as this session last saw it at its path: written, or
-   * read and accepted. Every write expects exactly this (round 5), so a save
+   * read and accepted. Every write expects exactly this, so a save
    * from another tab landing after the check is refused, never overwritten. */
   let known = '';
   /** The text a write put at the path the file was renamed from, which the
@@ -126,6 +141,8 @@ export function createTextSession(store: FileStore, initialPath: string, options
    * null when it doesn't know. */
   let seen: Pick<FileEntry, 'size' | 'modified'> | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
+  /** Looks again at a file a save found gone (H7). */
+  let goneTimer: ReturnType<typeof setTimeout> | null = null;
   /** Every write, one after another; it never rejects. */
   let writing: Promise<void> = Promise.resolve();
   /** dispose() has begun: changes made elsewhere aren't taken any more, but
@@ -133,8 +150,20 @@ export function createTextSession(store: FileStore, initialPath: string, options
   let closing = false;
   /** Removed by another tab (not by this one, nor with its project): an
    * edit not saved yet is written beside where the file was when the view
-   * goes (round 4, F5). */
+   * goes. */
   let deletedElsewhere = false;
+  /** The folder is out of reach (S2): nothing is written until it's back. */
+  let paused = false;
+  /** `removed` was set by the gone check, not by a delete heard: a folder
+   * going out of reach looks the same to a stat, so it's undone if
+   * `unreachable` follows. */
+  let removedByGoneCheck = false;
+  /** The project is moving to a folder (S3): nothing is written meanwhile. */
+  let moving = false;
+  /** It moved: an edit still unsaved goes with it (carryEdit). */
+  let movedAway = false;
+  /** Writes wait: the folder is out of reach, or the project is moving. */
+  const waiting = () => paused || moving;
   const listeners = new Set<() => void>();
 
   const session: OpenFileSession = {
@@ -158,6 +187,34 @@ export function createTextSession(store: FileStore, initialPath: string, options
     timer = null;
   };
 
+  const cancelGoneTimer = () => {
+    if (goneTimer !== null) clearTimeout(goneTimer);
+    goneTimer = null;
+  };
+
+  /** A write found the file gone, and no rename has been heard: the edit
+   * waits for one. If none comes and the file is still gone a little later,
+   * it was deleted (or moved out of reach) elsewhere: say so, and keep the
+   * edit for a copy where it was. */
+  const awaitMove = () => {
+    awaitingMove = true;
+    if (goneTimer !== null) return;
+    goneTimer = setTimeout(() => {
+      goneTimer = null;
+      void (async () => {
+        if (!awaitingMove || closing || state.removed || waiting()) return;
+        const target = path;
+        const now = await store.stat(target).catch(() => undefined);
+        if (now !== null || !awaitingMove || closing || state.removed || waiting() || path !== target) return;
+        awaitingMove = false;
+        deletedElsewhere = true;
+        removedByGoneCheck = true;
+        cancelTimer();
+        update({ removed: true });
+      })();
+    }, goneCheckMs);
+  };
+
   // Another session of this file may still be saving it (a tab closed and
   // opened again at once): read what that save writes, not what was there.
   const ready = writesSettled(scope, path, session)
@@ -172,6 +229,15 @@ export function createTextSession(store: FileStore, initialPath: string, options
         known = text;
         lineBreak = lineBreakOf(text);
         update({ status: 'ready', text, readOnly: !utf8, error: undefined, revision: state.revision + 1 });
+        // An edit that came with the project from where it was (S3): saved
+        // over the bytes it was made on, else asked about.
+        const brought = utf8 ? claimCarried(scope, path) : null;
+        if (brought) {
+          update({ text: brought.text });
+          if (text === brought.base) schedule();
+          else startConflict(text);
+          brought.done();
+        }
       },
       (error: unknown) => {
         update({ status: 'error', error });
@@ -180,6 +246,14 @@ export function createTextSession(store: FileStore, initialPath: string, options
 
   const checkDisk = async () => {
     await ready;
+    // A change heard while this session's own write is in flight is judged
+    // once that write has landed or failed: landed, and nothing else unsaved,
+    // the change is simply taken, never a conflict with nothing to keep (round
+    // 6, found by the long interleaving run).
+    for (let last = writing; ; last = writing) {
+      await last;
+      if (last === writing) break;
+    }
     if (closing || state.status !== 'ready' || state.removed) return;
     let disk: string;
     let utf8: boolean;
@@ -188,8 +262,9 @@ export function createTextSession(store: FileStore, initialPath: string, options
     } catch {
       return;
     }
+    if (closing) return;
     // Its own write's echo, also when the rename carried it (G5).
-    if (closing || disk === saved || disk === inFlight || disk === carried) return;
+    if (disk === saved || disk === inFlight || disk === carried) return;
     seen = null;
     if (disk === state.text) {
       saved = disk;
@@ -201,10 +276,20 @@ export function createTextSession(store: FileStore, initialPath: string, options
       saved = disk;
       known = disk;
       lineBreak = lineBreakOf(disk);
-      update({ text: disk, readOnly: !utf8, modified: Date.now(), revision: state.revision + 1 });
+      // Nothing of this session's is unsaved: there's nothing to ask about.
+      theirs = null;
+      update({ text: disk, readOnly: !utf8, conflict: false, modified: Date.now(), revision: state.revision + 1 });
       return;
     }
     startConflict(disk);
+  };
+
+  /** Every check of the disk, one after another, so an older read never
+   * applies after a newer one. */
+  let checking: Promise<void> = Promise.resolve();
+  const check = () => {
+    const run = () => checkDisk();
+    checking = checking.then(run, run);
   };
 
   /** Changed elsewhere while edits are unsaved: ask. `disk` is the file's
@@ -218,13 +303,61 @@ export function createTextSession(store: FileStore, initialPath: string, options
   };
 
   const onChange = (change: FileChange) => {
+    if (change.type === 'unreachable') {
+      // Not removed (S2): the edit stays, unsaved, until the folder is back.
+      paused = true;
+      cancelTimer();
+      if (removedByGoneCheck) {
+        // That "gone" was this folder going out of reach.
+        removedByGoneCheck = false;
+        deletedElsewhere = false;
+        awaitingMove = true;
+        update({ removed: false, unreachable: change.folder ?? '' });
+      } else update({ unreachable: change.folder ?? '' });
+      return;
+    }
+    if (change.type === 'reachable') {
+      if (!paused) return;
+      paused = false;
+      awaitingMove = false;
+      cancelGoneTimer();
+      update({ unreachable: null });
+      // Through the normal path: a file changed on disk meanwhile is a conflict.
+      if (state.dirty && !closing && !waiting()) void queueWrite();
+      return;
+    }
+    if (change.type === 'moving') {
+      moving = true;
+      cancelTimer();
+      update({ moving: true });
+      return;
+    }
+    if (change.type === 'move-failed') {
+      if (!moving) return;
+      moving = false;
+      update({ moving: false });
+      if (state.dirty && !closing && !waiting()) void queueWrite();
+      return;
+    }
+    if (change.type === 'moved') {
+      // The workspace opens the project again from the folder; this view
+      // goes, and what it holds unsaved goes with it.
+      movedAway = true;
+      return;
+    }
     if (change.type === 'rename') {
       // The file itself, or a folder above it.
       if (isInside(path, change.from)) {
         path = change.to + path.slice(change.from.length);
+        // A change heard just before it may have failed its read at the old
+        // path: look at the file where it is now (N2). Only look: after an
+        // ABA landing the change stays in the new file at the old path, and
+        // nothing is written here on a guess (N5, R7-1).
+        check();
         // A write that found the file gone was waiting for this.
         if (awaitingMove) {
           awaitingMove = false;
+          cancelGoneTimer();
           void queueWrite();
         }
       }
@@ -232,10 +365,13 @@ export function createTextSession(store: FileStore, initialPath: string, options
       // A delete made here holds this session's writes, and means to drop
       // the edit; so does the project going.
       deletedElsewhere = change.path !== '' && !heldHere(scope, path);
+      removedByGoneCheck = false;
+      awaitingMove = false;
+      cancelGoneTimer();
       cancelTimer();
       update({ removed: true });
     } else if (change.type === 'write' && change.path === path) {
-      void checkDisk();
+      check();
     }
   };
   const unwatch = store.watch(onChange);
@@ -269,19 +405,19 @@ export function createTextSession(store: FileStore, initialPath: string, options
 
   /** One write, decided when its turn comes: where the file is then, and
    * nothing at all once it's deleted or changed elsewhere. It writes only
-   * over the text its check accepted (round 5). */
+   * over the text its check accepted. */
   const writeOnce = async (): Promise<void> => {
     // A rename, move or delete in this workspace holds writes until it's done.
     await writeAllowed(scope, () => path);
     for (let attempt = 1; ; attempt += 1) {
-      if (reloading || state.status !== 'ready' || state.removed || state.conflict || state.readOnly) return;
+      if (waiting() || reloading || state.status !== 'ready' || state.removed || state.conflict || state.readOnly) return;
       if (state.text === saved) return;
       const target = path;
       const disk = await changedElsewhere(target);
       if (disk === null && !closing && !state.removed && path === target) {
         // Moved or deleted elsewhere, not heard about yet: the edit waits
         // for the rename (or is kept for a copy on the delete).
-        awaitingMove = true;
+        awaitMove();
         return;
       }
       if (disk !== undefined && path === target) {
@@ -308,8 +444,10 @@ export function createTextSession(store: FileStore, initialPath: string, options
             return;
           }
           if ((saveError as FileChangedError).absent) {
-            // Moved or deleted elsewhere, not heard about yet.
-            awaitingMove = true;
+            // Moved or deleted elsewhere, not heard about yet. Closing, it
+            // can't wait: it's kept as a copy now.
+            if (closing) startConflict(null);
+            else awaitMove();
             return;
           }
           // The check decides again: its own text in other hands, or a conflict.
@@ -326,7 +464,7 @@ export function createTextSession(store: FileStore, initialPath: string, options
         // Renamed while the write was in flight, so it landed where the file
         // was: write it again where the file is now. A rename in another tab
         // waits for this write and carries the text there: it's this
-        // session's own, not a change made elsewhere (round 4, F6).
+        // session's own, not a change made elsewhere.
         carried = text;
         void queueWrite();
         return;
@@ -375,16 +513,25 @@ export function createTextSession(store: FileStore, initialPath: string, options
       reportKeptCopy(state.removed ? { scope, path: original, copy, deleted: true } : { scope, path: original, copy });
       return true;
     } catch (error: unknown) {
-      // Not written: hand the edit to the user as a download (round 4, F2).
+      // Not written: hand the edit to the user as a download.
       const download = { filename: conflictCopyName(path, [], new Date()), text };
       reportKeptCopy({ scope, path, copy: null, error, download, release: () => handle.close() });
       return false;
     }
   };
 
+  /** On dispose, an edit still unsaved after the flush, with no conflict and
+   * no delete elsewhere: its write failed (a full store, an I/O error). It's
+   * handed to the user as a download under the file's own name, and the
+   * page keeps warning until they take it or let it go (H3). */
+  const offerFailedSave = () => {
+    const error = paused ? new FolderUnreachableError(state.unreachable ?? '') : (state.saveError ?? new Error('The change could not be saved.'));
+    reportKeptCopy({ scope, path, copy: null, error, download: { filename: basename(path), text: state.text }, failedSave: true, release: () => handle.close() });
+  };
+
   const schedule = () => {
     cancelTimer();
-    if (!state.dirty || state.conflict || state.removed) return;
+    if (!state.dirty || state.conflict || state.removed || waiting()) return;
     timer = setTimeout(() => {
       timer = null;
       void queueWrite();
@@ -415,6 +562,7 @@ export function createTextSession(store: FileStore, initialPath: string, options
       // queued meanwhile (a rename's re-aim, a flush) writes the edit Reload
       // drops.
       reloading = true;
+      let failed = false;
       try {
         for (let last = writing; ; last = writing) {
           await last;
@@ -425,6 +573,7 @@ export function createTextSession(store: FileStore, initialPath: string, options
         try {
           ({ text: disk, utf8 } = await readFileText(store, path));
         } catch (error) {
+          failed = true;
           update({ saveError: error });
           return;
         }
@@ -436,15 +585,19 @@ export function createTextSession(store: FileStore, initialPath: string, options
         carried = null;
         seen = null;
         awaitingMove = false;
+        cancelGoneTimer();
         update({ text: disk, readOnly: !utf8, conflict: false, modified: Date.now(), revision: state.revision + 1 });
       } finally {
         reloading = false;
+        // An edit made while it read is saved as any other: its own timer
+        // came while Reload held writes (N7).
+        if (failed) schedule();
       }
     },
 
     async keepMine() {
       // Mine goes over the change the bar showed, and only that: a change
-      // landing after it is asked about again (round 5).
+      // landing after it is asked about again.
       if (theirs !== null) {
         saved = theirs;
         known = theirs;
@@ -458,6 +611,7 @@ export function createTextSession(store: FileStore, initialPath: string, options
     async dispose() {
       if (closing) return;
       closing = true;
+      cancelGoneTimer();
       await flush();
       // An edit held in a conflict isn't dropped: it goes beside the file
       // (re-review R1). Nothing unsaved (Reload, say), no copy.
@@ -465,7 +619,20 @@ export function createTextSession(store: FileStore, initialPath: string, options
       unwatch();
       listeners.clear();
       // A copy that couldn't be written stays unsaved, so the page still asks.
-      if (kept) handle.close();
+      if (!kept) return;
+      // The project moved to a folder with this edit unsaved: it goes with
+      // it, to the session that opens the file there (S3).
+      if (movedAway && typeof scope === 'string' && state.dirty && !state.readOnly && !state.removed && !state.conflict) {
+        carryEdit(scope, path, { text: state.text, base: known });
+        handle.close();
+        return;
+      }
+      // Still unsaved with no conflict and no delete elsewhere: the write failed.
+      if (state.dirty && !state.readOnly && !state.removed && !state.conflict) {
+        offerFailedSave();
+        return;
+      }
+      handle.close();
     },
   };
 }

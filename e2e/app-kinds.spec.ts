@@ -1,6 +1,6 @@
 import { closeIntro, expect, openApp, openFromTree, pngFile, test, uploadFiles, videoFile, wavFile } from './app-fixtures';
 
-// Every kind of file opens in a tab with its own view (PLAN §5.4): the
+// Every kind of file opens in a tab with its own view: the
 // sample's note, canvas, image and PDF, and uploaded text, code, audio,
 // video and a file Nebula has no view for.
 

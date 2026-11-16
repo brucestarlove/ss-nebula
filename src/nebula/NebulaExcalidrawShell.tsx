@@ -257,6 +257,19 @@ function ChromeNebulaShell(props: NebulaExcalidrawShellProps) {
   );
 }
 
+/** A store over one file (the workspace's canvas tab) says so: when its load
+ * fails, the shell shows the error rather than an empty canvas that would
+ * take edits nobody can save. A 1.x board's store keeps the
+ * empty canvas. */
+function isFileBacked(store: SceneStore | undefined): boolean {
+  return (store as { fileBacked?: unknown } | undefined)?.fileBacked === true;
+}
+
+function loadErrorMessage(error: unknown): string {
+  if (error instanceof Error || error instanceof DOMException) return error.message || error.name;
+  return typeof error === 'string' && error ? error : 'The file couldn’t be read.';
+}
+
 /** Everything but the chrome: the scene, persistence, libraries, gestures and
  * the Excalidraw element itself. */
 function useNebulaCanvas({ context: contextInput, store, onReady, chrome = true }: NebulaExcalidrawShellProps, resolved: ResolvedTheme) {
@@ -274,6 +287,11 @@ function useNebulaCanvas({ context: contextInput, store, onReady, chrome = true 
   const [document, setDocument] = useState<NebulaExcalidrawDocument>(fallbackDocument);
   const documentRef = useRef<NebulaExcalidrawDocument>(fallbackDocument);
   const [isLoaded, setIsLoaded] = useState(false);
+  /** A file-backed load that failed, shown instead of the canvas; Try again
+   * counts up `loadAttempt`, which loads once more. */
+  const [loadError, setLoadError] = useState<{ error: unknown } | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const fileBacked = isFileBacked(store);
   const [canvases, setCanvases] = useState<CanvasSummary[]>([]);
   const [collections, setCollections] = useState<LibraryCollectionsState>(() =>
     loadLibraryCollections(baseContext.boardId),
@@ -345,6 +363,7 @@ function useNebulaCanvas({ context: contextInput, store, onReady, chrome = true 
   useEffect(() => {
     let cancelled = false;
     setIsLoaded(false);
+    setLoadError(null);
 
     sceneStore
       .load({ boardId: context.boardId, canvasId: context.canvasId })
@@ -354,8 +373,12 @@ function useNebulaCanvas({ context: contextInput, store, onReady, chrome = true 
         documentRef.current = loaded;
         setDocument(loaded);
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (cancelled) return;
+        if (fileBacked) {
+          setLoadError({ error });
+          return;
+        }
         documentRef.current = fallbackDocument;
         setDocument(fallbackDocument);
       })
@@ -368,7 +391,7 @@ function useNebulaCanvas({ context: contextInput, store, onReady, chrome = true 
     return () => {
       cancelled = true;
     };
-  }, [context.boardId, context.canvasId, fallbackDocument, sceneStore, refreshCanvases]);
+  }, [context.boardId, context.canvasId, fallbackDocument, sceneStore, refreshCanvases, fileBacked, loadAttempt]);
 
   const saveDocument = useCallback(
     (next: NebulaExcalidrawDocument, options: { updateState?: boolean } = {}) => {
@@ -742,7 +765,20 @@ function useNebulaCanvas({ context: contextInput, store, onReady, chrome = true 
 
   const boardName = baseContext.boardName || baseContext.boardSlug || DEFAULT_NEBULA_CANVAS_NAME;
 
-  const canvas = isLoaded ? (
+  const canvas = loadError ? (
+    <div className="nebula-loading" data-nebula-load-error="">
+      <div className="nebula-error-card" role="alert">
+        <p className="nebula-error-eyebrow">This canvas didn’t open</p>
+        <p className="nebula-loading__title">Couldn’t read this drawing.</p>
+        <p>Nothing was changed. Try again, or it opens by itself when the file changes.</p>
+        <pre>{loadErrorMessage(loadError.error)}</pre>
+        {/* The chrome-less canvas lives in the workspace's tab: its buttons. */}
+        <button type="button" className="btn-secondary ws-view-btn" data-no-arc onClick={() => setLoadAttempt((count) => count + 1)}>
+          Try again
+        </button>
+      </div>
+    </div>
+  ) : isLoaded ? (
     <div ref={canvasRef} className="nebula-canvas" data-nebula-canvas-id={context.canvasId}>
       <Excalidraw
         key={`${context.boardId}:${context.canvasId}`}

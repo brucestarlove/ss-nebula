@@ -245,7 +245,8 @@
   font: inherit;
   font-size: 0.95rem;
   font-weight: 700;
-  color: #fff;
+  /* --btn-gradient is pale now: white text on it was unreadable. */
+  color: var(--btn-color, #fff);
   background: var(--btn-gradient);
   cursor: pointer;
   transition:

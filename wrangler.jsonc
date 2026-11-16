@@ -1,0 +1,25 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  // nebula.starscape.app on Cloudflare Workers static assets (2026-10-25). The site is
+  // `pnpm run build:cloudflare`: dist/site, plus _headers and _redirects written from
+  // vercel.json by scripts/cloudflare-assets.mjs. Ship with `pnpm run deploy` (checks
+  // first) or `pnpm run deploy:preview`; never a bare `wrangler deploy`, which ships
+  // whatever dist/site holds, a test build included.
+  "name": "nebula",
+  // The date of the workerd that wrangler 4.151.3 installs (1.20261019.1).
+  "compatibility_date": "2026-10-19",
+  // One address for people: Nebula keeps files per address (origin), so a second one
+  // (workers.dev) would hold a second, separate set. Preview URLs stay on for checks.
+  "workers_dev": false,
+  "preview_urls": true,
+  // The custom domain replaced 1.x's CNAME to Vercel (2026-10-25); Cloudflare made its
+  // own DNS record for it, which nobody edits by hand.
+  "routes": [{ "pattern": "nebula.starscape.app", "custom_domain": true }],
+  "observability": { "enabled": false },
+  "assets": {
+    "directory": "./dist/site",
+    // Unknown paths answer 404, as before; app links (/p/..., /b/...) are _redirects rewrites.
+    "not_found_handling": "none",
+    "html_handling": "auto-trailing-slash"
+  }
+}

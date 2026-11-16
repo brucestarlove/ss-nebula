@@ -40,4 +40,13 @@ describe('keptCopyText', () => {
       'Couldn’t keep your changes to Observing plan as a copy (The operation failed for an unknown transient reason). Download them so they aren’t lost.',
     );
   });
+
+  it('says a failed save is a failed save, not a copy that couldn’t be kept', () => {
+    const failed = (error: unknown) => ({ ...refused(error), download: { filename: 'Observing plan.md', text: 'Mine.' }, failedSave: true as const });
+    const full = new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+    expect(keptCopyText(failed(full))).toBe('Couldn’t save your changes to Observing plan: this browser’s storage is full. Download them so they aren’t lost.');
+    expect(keptCopyText(failed(new Error('The operation failed for an unknown transient reason.')))).toBe(
+      'Couldn’t save your changes to Observing plan (The operation failed for an unknown transient reason). Download them so they aren’t lost.',
+    );
+  });
 });

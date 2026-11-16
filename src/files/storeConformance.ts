@@ -279,7 +279,7 @@ export const fileStoreConformanceCases: ConformanceCase[] = [
     },
   },
   {
-    // New names are checked by newNameProblem() (review finding 22); files
+    // New names are checked by newNameProblem(); files
     // that already have such names, from an older build or an unpacked zip,
     // must still work.
     name: 'keeps names a new file may not have: they list, open, rename and delete',
@@ -414,7 +414,7 @@ export const fileStoreConformanceCases: ConformanceCase[] = [
     },
   },
   {
-    name: 'writes with ifUnchanged only while the file holds exactly the text given, or nothing (round 5)',
+    name: 'writes with ifUnchanged only while the file holds exactly the text given, or nothing',
     writeOptions: true,
     async run(store) {
       await store.write('a.md', 'v1');
@@ -441,7 +441,7 @@ export const fileStoreConformanceCases: ConformanceCase[] = [
     },
   },
   {
-    name: 'lets exactly one of two writes expecting the same text through, whatever their size and time (round 5)',
+    name: 'lets exactly one of two writes expecting the same text through, whatever their size and time',
     writeOptions: true,
     async run(store) {
       // Same size, landing together: only the bytes tell them apart.
@@ -596,8 +596,7 @@ export const fileStoreConformanceCases: ConformanceCase[] = [
 ];
 
 /** The cases about write options (`exclusive`, `ifUnchanged`): run them
- * through every store wrapper, so one that drops an option is caught
- * (round 5, G4). */
+ * through every store wrapper, so one that drops an option is caught. */
 export const writeOptionCases: ConformanceCase[] = fileStoreConformanceCases.filter((testCase) => testCase.writeOptions);
 
 /** Two stores over the same files, as two tabs have: what one changes, the
@@ -694,7 +693,7 @@ export const fileStoreTwinCases: TwinConformanceCase[] = [
     },
   },
   {
-    name: 'refuses a write expecting the text it saw once the other store changed the file (round 5)',
+    name: 'refuses a write expecting the text it saw once the other store changed the file',
     async run(here, there) {
       await here.write('a.md', 'v1');
       await there.write('a.md', 'v2');
@@ -705,7 +704,7 @@ export const fileStoreTwinCases: TwinConformanceCase[] = [
     },
   },
   {
-    name: 'lets exactly one of two writes expecting the same text, one from each store, through (round 5)',
+    name: 'lets exactly one of two writes expecting the same text, one from each store, through',
     async run(here, there) {
       await here.write('Notes/n.md', inFlight('base'));
       assert((await there.readText('Notes/n.md')) === inFlight('base'), 'read it first');
@@ -732,9 +731,14 @@ export function registerFileStoreTwinConformance(api: TestApi, label: string, fa
 }
 
 /** Registers every case, under one describe block, with a test framework. */
-export function registerFileStoreConformance(api: TestApi, label: string, factory: FileStoreFactory): void {
+/** The case a store that hides every dot-entry (the folder tier, S1) skips:
+ * it lists a nested `.nebula/`. */
+export const NESTED_DOT_CASE = "hides the project's .nebula folder from list, but reaches it by path";
+
+export function registerFileStoreConformance(api: TestApi, label: string, factory: FileStoreFactory, options: { skip?: string[] } = {}): void {
   api.describe(`${label} (FileStore conformance)`, () => {
     for (const testCase of fileStoreConformanceCases) {
+      if (options.skip?.includes(testCase.name)) continue;
       api.it(testCase.name, async () => testCase.run(await factory()));
     }
   });
@@ -744,9 +748,11 @@ export function registerFileStoreConformance(api: TestApi, label: string, factor
 export async function runFileStoreConformance(
   factory: FileStoreFactory,
   cleanup?: (store: FileStore) => Promise<void> | void,
+  options: { skip?: string[] } = {},
 ): Promise<ConformanceResult[]> {
   const results: ConformanceResult[] = [];
   for (const testCase of fileStoreConformanceCases) {
+    if (options.skip?.includes(testCase.name)) continue;
     let store: FileStore | undefined;
     try {
       store = await factory();

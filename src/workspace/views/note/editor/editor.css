@@ -1,0 +1,414 @@
+/* The note editor (live preview): the Markdown being written, drawn as the
+ * page it makes. Sizes and colours follow the reading view (workspace.css's
+ * .ws-page and .ws-prose, note.css), so moving between Read and Edit keeps
+ * the note where it was; where a value repeats the reading view's, the
+ * comment names its source. code.css's note variant (.ws-cm-note) sets the
+ * editor's frame; this file is only what live preview adds. Classes come from
+ * livePreview.ts. */
+
+.ws-cm-live {
+  /* A list marker's slot: the text of an item starts one slot in, nested
+   * items one slot further each (the reading view's 1.35rem at its size). */
+  --ws-li-slot: 1.35em;
+}
+
+/* The reading view's body type: 1.04rem at 1.72, or the serif at 1.2rem
+ * (workspace.css .ws-prose). */
+.ws-cm-live .cm-scroller {
+  font-size: 1.04rem;
+  line-height: 1.72;
+}
+
+:root[data-body='serif'] .ws-cm-live .cm-scroller {
+  font-size: 1.2rem;
+  line-height: 1.6;
+}
+
+.ws-cm-live .cm-content {
+  /* Room after the last line, so the end of a note isn't at the page's edge.
+   * (CodeMirror keeps the cursor above the keyboard and the phone bar itself:
+   * e2e/app-editor.spec.ts checks it, and passes without this.) */
+  padding-bottom: 4rem;
+}
+
+/* ---- Headings (workspace.css .ws-prose h2, note.css h1 h3-h6) ---------- */
+
+.ws-cm-live .cm-line.ws-cm-heading {
+  color: var(--ink);
+  font-family: var(--ws-display);
+}
+
+.ws-cm-live .cm-line.ws-cm-h1 {
+  padding-top: 0.6em;
+  font-size: var(--ws-h1-size);
+  font-weight: var(--ws-h1-weight);
+  line-height: var(--ws-h1-leading);
+  letter-spacing: var(--ws-h1-tracking);
+}
+
+.ws-cm-live .cm-line.ws-cm-h2 {
+  padding-top: 0.55em;
+  font-size: var(--ws-h2-size);
+  font-weight: var(--ws-h2-weight);
+  line-height: var(--ws-h2-leading);
+  letter-spacing: var(--ws-h2-tracking);
+}
+
+.ws-cm-live .cm-line.ws-cm-h3 {
+  padding-top: 0.45em;
+  font-size: var(--ws-h3-size);
+  font-weight: var(--ws-h3-weight);
+  line-height: var(--ws-h3-leading);
+}
+
+.ws-cm-live .cm-line.ws-cm-h4,
+.ws-cm-live .cm-line.ws-cm-h5,
+.ws-cm-live .cm-line.ws-cm-h6 {
+  padding-top: 0.35em;
+  font-family: inherit;
+  font-size: var(--ws-h4-size);
+  font-weight: var(--ws-h4-weight);
+}
+
+/* ---- Blank lines: the page's gap between blocks, not a whole line ------- */
+
+.ws-cm-live .cm-line.ws-cm-blank {
+  line-height: var(--ws-paragraph-gap);
+}
+
+/* ---- Lists and tasks ---------------------------------------------------- */
+
+.ws-cm-live .cm-line.ws-cm-li,
+.ws-cm-live .cm-line.ws-cm-li-cont {
+  --ws-li-depth: 0;
+  padding-inline-start: calc((var(--ws-li-depth) + 1) * var(--ws-li-slot));
+}
+
+/* The first line hangs its marker in the slot; wrapped lines line up with the text. */
+.ws-cm-live .cm-line.ws-cm-li {
+  text-indent: calc(-1 * var(--ws-li-slot));
+}
+
+.ws-cm-live .cm-line.ws-cm-li-1 { --ws-li-depth: 1; }
+.ws-cm-live .cm-line.ws-cm-li-2 { --ws-li-depth: 2; }
+.ws-cm-live .cm-line.ws-cm-li-3 { --ws-li-depth: 3; }
+.ws-cm-live .cm-line.ws-cm-li-4 { --ws-li-depth: 4; }
+.ws-cm-live .cm-line.ws-cm-li-5 { --ws-li-depth: 5; }
+.ws-cm-live .cm-line.ws-cm-li-6 { --ws-li-depth: 6; }
+
+/* Items breathe as on the page (note.css .ws-prose li, workspace.css .ws-tasks li). */
+.ws-cm-live .cm-line.ws-cm-li {
+  padding-block: 0.1rem;
+}
+
+/* A task's box and its gap (17px and 0.7rem on the page) take a wider slot. */
+.ws-cm-live .cm-line.ws-cm-task {
+  --ws-li-slot: 1.75em;
+  padding-block: 0.2rem;
+}
+
+.ws-cm-live .ws-cm-marker {
+  display: inline-block;
+  width: var(--ws-li-slot);
+  text-indent: 0;
+  color: var(--ws-muted, var(--muted));
+}
+
+.ws-cm-live .ws-cm-bullet {
+  padding-inline-start: 0.3em;
+}
+
+.ws-cm-live .ws-cm-number {
+  padding-inline-end: 0.35em;
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A task's box: note.css's .ws-tasks input.ws-check draws the box itself. */
+.ws-cm-live .ws-cm-task-box {
+  position: relative;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  cursor: pointer;
+}
+
+/* A finger-sized target around the 17 px box (the wrapper takes the click). */
+.ws-cm-live .ws-cm-task-box::before {
+  content: '';
+  position: absolute;
+  inset: -0.35em -0.2em -0.35em -0.6em;
+}
+
+.ws-cm-live .ws-cm-task-box input.ws-check {
+  vertical-align: baseline;
+}
+
+.ws-cm-live .cm-line.ws-cm-done {
+  color: var(--ws-muted, var(--muted));
+}
+
+/* ---- Quotes (workspace.css .ws-prose blockquote) ------------------------ */
+
+.ws-cm-live .cm-line.ws-cm-quote {
+  padding-inline-start: var(--ws-quote-indent);
+  border-inline-start: var(--ws-quote-rule);
+  color: var(--ws-muted, var(--muted));
+  font-family: var(--ws-display);
+  font-size: var(--ws-quote-size);
+  font-style: italic;
+  line-height: var(--ws-quote-leading);
+}
+
+/* ---- Rules (note.css .ws-prose hr) -------------------------------------- */
+
+.ws-cm-live .ws-cm-rule {
+  display: inline-block;
+  width: 100%;
+  vertical-align: middle;
+  border-top: 1px solid var(--ws-page-line, var(--line));
+}
+
+/* ---- Fenced code (note.css .ws-prose pre) ------------------------------- */
+
+.ws-cm-live .cm-line.ws-cm-code {
+  padding-inline: var(--ws-code-pad-inline);
+  border-inline: var(--ws-code-border);
+  background: var(--subtle-bg);
+  font-family: var(--ws-mono, ui-monospace, monospace);
+  font-size: var(--ws-code-size);
+  line-height: var(--ws-code-leading);
+  text-indent: 0;
+}
+
+.ws-cm-live .cm-line.ws-cm-code-first {
+  padding-top: 0.5rem;
+  border-top: var(--ws-code-border);
+  border-start-start-radius: var(--ws-code-radius);
+  border-start-end-radius: var(--ws-code-radius);
+}
+
+.ws-cm-live .cm-line.ws-cm-code-last {
+  padding-bottom: 0.5rem;
+  border-bottom: var(--ws-code-border);
+  border-end-start-radius: var(--ws-code-radius);
+  border-end-end-radius: var(--ws-code-radius);
+}
+
+/* A fence line with its marks hidden and nothing else on it is only the
+ * panel's padding (the page's pre), not an empty line of code. */
+.ws-cm-live .cm-line.ws-cm-fence-hidden {
+  font-size: 0;
+  line-height: 0;
+}
+
+.ws-cm-live .cm-line.ws-cm-code-first.ws-cm-fence-hidden {
+  padding-top: var(--ws-code-pad-block);
+}
+
+.ws-cm-live .cm-line.ws-cm-code-last.ws-cm-fence-hidden {
+  padding-bottom: var(--ws-code-pad-block);
+}
+
+.ws-cm-live .cm-line.ws-cm-fence {
+  color: var(--ws-muted, var(--muted));
+}
+
+.ws-cm-live .ws-cm-code-info {
+  color: var(--ws-muted, var(--muted));
+  font-family: var(--ws-ui, inherit);
+  font-size: 0.74rem;
+  letter-spacing: 0.03em;
+}
+
+/* ---- Tables (note.css .ws-prose table): the source, set in columns ------ */
+
+.ws-cm-live .cm-line.ws-cm-table {
+  font-family: var(--ws-mono, ui-monospace, monospace);
+  font-size: var(--ws-code-size);
+  line-height: 1.75;
+}
+
+.ws-cm-live .cm-line.ws-cm-table-head {
+  font-weight: 650;
+}
+
+/* The header's words are bold; its pipes stay quiet, as in the other rows. */
+.ws-cm-live .cm-line.ws-cm-table-head .ws-cm-pipe {
+  font-weight: 400;
+}
+
+.ws-cm-live .cm-line.ws-cm-table-rule,
+.ws-cm-live .ws-cm-pipe {
+  color: color-mix(in oklab, var(--ws-muted, var(--muted)) 70%, transparent);
+}
+
+/* ---- Front matter: a quiet properties block ----------------------------- */
+
+.ws-cm-live .cm-line.ws-cm-frontmatter {
+  padding-inline: 0.85rem;
+  background: color-mix(in oklab, var(--subtle-bg) 70%, transparent);
+  color: var(--ws-muted, var(--muted));
+  font-family: var(--ws-mono, ui-monospace, monospace);
+  font-size: 0.8rem;
+  line-height: 1.7;
+}
+
+.ws-cm-live .cm-line.ws-cm-frontmatter-first {
+  padding-top: 0.3rem;
+  border-start-start-radius: 10px;
+  border-start-end-radius: 10px;
+}
+
+.ws-cm-live .cm-line.ws-cm-frontmatter-last {
+  padding-bottom: 0.3rem;
+  border-end-start-radius: 10px;
+  border-end-end-radius: 10px;
+}
+
+/* ---- Inline: code, links, tags ------------------------------------------ */
+
+/* note.css .ws-prose code */
+.ws-cm-live .ws-cm-inline-code {
+  padding: 0.1em 0.3em;
+  border: 1px solid var(--ws-page-line, var(--line));
+  border-radius: 5px;
+  background: var(--subtle-bg);
+}
+
+/* workspace.css .ws-link draws a web link; a click places the cursor, so the
+ * pointer says text until Ctrl/⌘ is held (the title says so). */
+.ws-cm-live .ws-link {
+  cursor: text;
+}
+
+.ws-cm-live .ws-link-local {
+  color: var(--accent);
+}
+
+/* [[wikilinks]]: note.css .ws-prose .ws-wikilink. The words are text until
+ * Ctrl/⌘ is held (.ws-cm-mod), when a click opens them. */
+.ws-cm-live .ws-wikilink {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, var(--accent) 40%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.ws-cm-live .ws-wikilink-missing {
+  color: var(--ws-muted, var(--muted));
+  text-decoration-style: dashed;
+  text-decoration-color: color-mix(in oklab, var(--ws-muted, var(--muted)) 70%, transparent);
+}
+
+/* ' > ' between a note and its heading: the link's colour, no underline of its own. */
+.ws-cm-live .ws-cm-wikilink-sep {
+  text-decoration: none;
+  opacity: 0.7;
+}
+
+.ws-cm-live .ws-cm-mod .ws-wikilink,
+.ws-cm-live .ws-cm-mod .ws-link {
+  cursor: pointer;
+}
+
+.ws-cm-live .ws-cm-mod .ws-wikilink:hover,
+.ws-cm-live .ws-cm-mod .ws-link:hover {
+  text-decoration-color: currentcolor;
+}
+
+/* note.css .ws-prose .ws-tag-inline: workspace.css .ws-tag draws the pill. */
+.ws-cm-live .ws-tag-inline {
+  font-size: 0.78em;
+  vertical-align: 0.08em;
+}
+
+/* ---- ![[embeds]] on a line of their own (embeds.tsx) ------------------------ */
+
+/* The reading view's components (note.css .ws-embed-*) inside a block widget.
+ * Its padding is the widget's edge: a click there is the editor's and puts the
+ * cursor on the source line; a click on the drawing opens the file. */
+.ws-cm-live .ws-cm-embed {
+  padding: 0.3rem 0;
+  cursor: text;
+}
+
+.ws-cm-live .ws-cm-embed-body {
+  width: fit-content;
+  max-width: 100%;
+  white-space: normal;
+  cursor: pointer;
+}
+
+/* An embedded note fills the column, as on the page. */
+.ws-cm-live .ws-cm-embed-body:has(> .ws-embed-note) {
+  width: auto;
+}
+
+.ws-cm-live .ws-cm-embed-body img {
+  max-width: 100%;
+}
+
+/* ---- [[ completion: the project's files ----------------------------------- */
+
+/* In live preview and in the source alike. The list in the app's type, a row a finger can take, the folder quiet beside
+ * the name. No type icons: a note isn't code. */
+.ws-cm-note .cm-tooltip.cm-tooltip-autocomplete {
+  padding: 4px;
+  /* Opaque: the theme's raised surface lets the words beneath show through at night. */
+  background-color: var(--ws-page-bg, var(--surface-raised));
+  box-shadow: 0 8px 24px color-mix(in oklab, black 18%, transparent);
+}
+
+.ws-cm-note .cm-tooltip.cm-tooltip-autocomplete > ul {
+  max-width: min(26rem, calc(100vw - 2rem));
+  max-height: min(16rem, 40vh);
+  font-family: var(--ws-ui, inherit);
+  font-size: 0.875rem;
+}
+
+.ws-cm-note .cm-tooltip.cm-tooltip-autocomplete > ul > li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6em;
+  min-height: 2rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: 6px;
+  line-height: 1.3;
+}
+
+.ws-cm-note .cm-completionIcon {
+  display: none;
+}
+
+.ws-cm-note .cm-completionLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-cm-note .cm-completionMatchedText {
+  text-decoration: none;
+  color: var(--accent);
+}
+
+.ws-cm-note .cm-completionDetail {
+  margin-inline-start: auto;
+  overflow: hidden;
+  color: var(--ws-muted, var(--muted));
+  font-style: normal;
+  font-size: 0.8em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- Motion -------------------------------------------------------------- */
+
+/* The cursor holds still for anyone who asks for less motion. CodeMirror
+ * names its blink in an inline style, which only !important outranks. */
+@media (prefers-reduced-motion: reduce) {
+  .ws-cm-live .cm-cursorLayer {
+    animation: none !important;
+  }
+}

@@ -16,7 +16,7 @@ import {
   test,
 } from './app-fixtures';
 
-// Someone arriving from Nebula 1.x (docs/slice-3.md, decisions 3 and 5):
+// Someone arriving from Nebula 1.x:
 // every board becomes a project and every canvas a file in it, the old keys
 // stay exactly as they were, the note about it shows once, and old links
 // still open the canvas they named.
@@ -91,7 +91,7 @@ test('old links open the canvas they named, once it has moved', async ({ page, c
   await openApp(page, '/b/ss-nebula/c/pleiades');
   await expect(page.getByRole('tab', { selected: true })).toHaveText('The Pleiades');
   await expect(page.locator('.ws-canvas .excalidraw')).toBeVisible({ timeout: 30_000 });
-  await expect.poll(() => new URL(page.url()).pathname).toBe('/p/ss-nebula/The%20Pleiades.excalidraw.md');
+  await expect.poll(() => new URL(page.url()).pathname).toBe('/app/p/ss-nebula/The%20Pleiades.excalidraw.md');
 
   // ?board=&canvas=, with a board whose id couldn't be a project's.
   await page.goto('about:blank');

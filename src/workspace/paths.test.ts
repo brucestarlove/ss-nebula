@@ -50,7 +50,7 @@ describe('validateName', () => {
     expect(validateName('..')).not.toBeNull();
   });
 
-  it('refuses names that won’t work on Windows, or that hide what they are (review finding 22)', () => {
+  it('refuses names that won’t work on Windows, or that hide what they are', () => {
     expect(validateName('CON.txt')).toBe('CON is reserved on Windows.');
     expect(validateName('a:b')).toBe('A name can’t contain :, which Windows reserves.');
     expect(validateName('report\u202Efdp.exe')).toBe('A name can’t contain invisible text-direction characters.');

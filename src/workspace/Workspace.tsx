@@ -1,14 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ChangeEvent, type ComponentType, type CSSProperties } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useReducer, useState, useSyncExternalStore, type ChangeEvent, type ComponentType, type CSSProperties } from 'react';
 import { kindFromName } from '../files/kinds';
 import { PLANET_COLOURS } from '../files/palette';
-import { storageStatus } from '../files/persist';
-import { FIRST_PROJECT_NAME, type FileKind, type FileStore, type FileViewProps, type ProjectRecord, type ProjectRegistry } from '../files/types';
-import { AboutDialog } from '../nebula/ui/AboutDialog';
+import { onPersistenceAnswer, storageStatus } from '../files/persist';
+import { FIRST_PROJECT_NAME, type FileKind, type FileStore, type FileViewProps, type FolderHandle, type Preferences, type ProjectRecord, type ProjectRegistry } from '../files/types';
 import { NEBULA_LOGO_SRC } from '../nebula/ui/logo';
 import { useMotion } from '../nebula/ui/useMotion';
 import { useTheme } from '../nebula/ui/useTheme';
 import { Button, Planet } from './components/Button';
-import { ConfirmDialog, IntroDialog, NewProjectDialog, PromptDialog, type MigrationLeftBehind } from './components/Dialogs';
+import { ConfirmDialog, IntroDialog, NewProjectDialog, PromptDialog, type MigrationLeftBehind, type ProjectHome } from './components/Dialogs';
+import { Help } from './components/Help';
 import { iconForFile } from './components/fileIcon';
 import { useEscapeLayer, useMediaQuery } from './components/hooks';
 import { Icon } from './components/icons';
@@ -18,20 +18,31 @@ import { Rail, type StarredItem } from './components/Rail';
 import { SettingsDrawer, type SettingsTab } from './components/Settings';
 import { useBackdrop } from './useBackdrop';
 import { keptCopyText } from './keptCopyText';
+import type { HeadingJump } from './components/headings';
 import { OutlinePanel, Stage, StatusLine } from './components/Stage';
 import { Tabs, type TabMeta } from './components/Tabs';
 import { hasMod, menuAtElement, shortcutLabel, tabId, type MenuAt } from './components/ui';
 import { downloadAsExcalidraw, downloadFile, downloadText } from './download';
 import { countLabel, usageLabel } from './format';
+import { downloadedLabel, lastDownloaded, recordDownload } from './downloads';
+import { defaultFolders, type FolderActions } from './folders';
 import { extractOutline, type Heading } from './outline';
 import { basename, dirname, isInside, joinPath, uniqueName } from '../files/paths';
 import { describeName, renameTarget, validateName } from './paths';
+import { pastedNoteName } from './pasteNote';
 import { addFiles } from './upload';
+import { errorName, folderTooBigMessage } from '../files/errors';
 import { usePreferences } from './preferences';
+import { ProjectLinksContext, type ProjectLinks } from './views/shared/projectLinks';
+import { planNewNote } from './views/note/links';
+import { PageWidthContext } from './views/shared/pageWidth';
+import { describeConversions, isConvertible, type ConvertOutcome, type ImageTools } from './imageConvert';
+import { ConvertImagesDialog } from './components/ConvertImages';
 import { buildTree } from './tree';
 import { useProjectSession } from './useProjectSession';
 import { viewFor as defaultViewFor } from './views';
-import { hasUnsavedChanges, holdWrites, subscribeKeptCopies, subscribeUnsaved } from './views/shared/fileSessions';
+import { hasUnsavedAt, hasUnsavedChanges, holdWrites, subscribeKeptCopies, subscribeUnsaved } from './views/shared/fileSessions';
+import { linkRunMessage, updateLinksAfterMove } from './updateLinksRun';
 
 export type WorkspaceProps = {
   /** `readOnly`, when the registry has it (the browser tier's), is true once
@@ -57,6 +68,8 @@ export type WorkspaceProps = {
   olderTabCanvases?: OlderTabOffer | null;
   /** Downloads a project as a .zip. Without it, Download as .zip is hidden. */
   downloadProject?: (id: string) => Promise<void>;
+  /** The browser's image work for Convert image… (src/workspace/imageConvert.ts); tests swap in their own. */
+  imageTools?: ImageTools;
   /** Help in the rail's footer. Without it, the workspace shows the app's
    * About dialog. */
   onHelp?: () => void;
@@ -69,11 +82,17 @@ export type WorkspaceProps = {
   /** Called with the open project and file whenever either changes, so the
    * app can keep the address in step (null, null with no project). */
   onActiveFileChange?: (projectId: string | null, path: string | null) => void;
+  /** The full address of a file or folder (path null: the project), for
+   * Copy link, the link an Orbit card holds. Without it, no Copy link. */
+  linkTo?: (projectId: string, path: string | null) => string;
   /** Something startup couldn't do, said at once above the files. */
   notice?: string | null;
   /** This device's own files, beside the projects (the browser tier's
    * `appearance/`): a background image. Without it, no images. */
   deviceStore?: FileStore;
+  /** Folders on this computer: the browser's picker and its
+   * permission prompts unless a test gives its own. */
+  folders?: FolderActions;
 };
 
 /** A canvas a Nebula 1.x tab saved after the move: `projectId` is where its
@@ -86,7 +105,7 @@ export type OlderTabOffer = {
   importCopy(key: string, projectId: string): Promise<string>;
   /** Downloads it as an .excalidraw file. */
   download(key: string): void;
-  /** The user put these away: leave them out until saved again (round 4, F8). */
+  /** The user put these away: leave them out until saved again. */
   dismiss?(canvases: OlderTabCanvas[]): void;
 };
 
@@ -110,6 +129,8 @@ type DialogState =
       first?: boolean;
     }
   | { type: 'confirm'; title: string; body: string; confirmLabel: string; danger?: boolean; onConfirm: () => void }
+  /** Convert image… (one file) or Convert images… (a folder's, with its path). */
+  | { type: 'convert'; paths: string[]; folder: string | null }
   | {
       type: 'prompt';
       title: string;
@@ -149,17 +170,25 @@ export function Workspace({
   onDownloadLeftBehind,
   olderTabCanvases = null,
   downloadProject,
+  imageTools,
   onHelp,
   viewFor = defaultViewFor,
   initialFile = null,
   onActiveFileChange,
+  linkTo,
   notice = null,
   deviceStore,
+  folders = defaultFolders(),
 }: WorkspaceProps) {
   const theme = useTheme();
   const backdrop = useBackdrop(theme.resolved, deviceStore);
   const motion = useMotion();
   const { preferences, setPreference } = usePreferences();
+  // The note's page width switch: the same preference as Settings → Page width.
+  const pageWidth = useMemo(
+    () => ({ width: preferences.width, setWidth: (width: Preferences['width']) => setPreference('width', width) }),
+    [preferences.width, setPreference],
+  );
   const phone = useMediaQuery('(max-width: 768px)');
   const night = theme.resolved === 'dark';
 
@@ -203,9 +232,80 @@ export function Workspace({
     };
   }, [registry]);
 
-  const session = useProjectSession(registry, currentId);
+  // A folder project whose folder Nebula can't open now (the browser forgot
+  // the permission, the person said no, or the folder is gone) isn't opened:
+  // a bar over it says why, and how to open it again.
+  // A folder on this computer, where the browser can open one and keeps the
+  // project list (Chromium on a desktop; not a private window).
+  const canUseFolders = persistent && folders.supported;
+  // An open folder project whose folder went out of reach stays open (S2):
+  // its tabs and sessions keep what's unsaved, and the bar says why.
+  const [heldOpen, setHeldOpen] = useState<string | null>(null);
+  const unreachableFolder = heldOpen !== null && heldOpen === currentId && project?.tier === 'folder' && project.folder ? project.folder : null;
+  const blocked = project?.tier === 'folder' && project.folder && project.folder.access !== 'granted' && !unreachableFolder ? project.folder : null;
+  // Bumped when a held-open project's folder is chosen again: it opens anew
+  // from the folder picked.
+  const [reopened, setReopened] = useState(0);
+  const session = useProjectSession(registry, blocked ? null : currentId, `${project?.tier ?? ''}#${reopened}`);
   const { store, entries, ws, dispatch, kinds, refresh, gone, removing } = session;
   const sessionReady = session.ready && session.projectId === currentId;
+  const sessionUnreachable = session.projectId === currentId ? session.unreachable : null;
+  // Move to a folder… running, in this tab or another (S3): no New, no
+  // Upload, until it's done.
+  const [movingHere, setMovingHere] = useState(false);
+  const isMoving = movingHere || (session.projectId === currentId && session.moving);
+  const movingRef = useRef(false);
+  movingRef.current = isMoving;
+  // Converting images writes into the project, so it waits while the project
+  // moves or its folder is out of reach (2.1.0, where conversion met the folder tier).
+  const convertWait = isMoving
+    ? 'The project is moving to a folder. Convert images once it’s moved.'
+    : unreachableFolder
+      ? `Nebula can’t reach the folder ‘${unreachableFolder.name}’ right now. Convert images once it’s back.`
+      : null;
+  // The bar over a folder project: one that can't be opened, or one held
+  // open while its folder is out of reach (said as missing until the
+  // registry says more).
+  const folderBar = blocked ?? (unreachableFolder ? { ...unreachableFolder, access: unreachableFolder.access === 'granted' ? ('missing' as const) : unreachableFolder.access } : null);
+
+  // A folder project that wouldn't open, or whose folder went while open:
+  // ask the registry again, so the bar says what's wrong.
+  const sessionError = session.error;
+  const projectTier = project?.tier;
+  useEffect(() => {
+    if (sessionError && projectTier === 'folder') void reloadProjects().catch(() => {});
+  }, [sessionError, projectTier, reloadProjects]);
+
+  // Another tab moved the project to a folder: the registry says so now,
+  // and the project opens again from there (same id).
+  const sessionMoved = session.moved;
+  useEffect(() => {
+    if (sessionMoved > 0) void reloadProjects().catch(() => {});
+  }, [sessionMoved, reloadProjects]);
+
+  // Out of reach: held open, and the registry asked why ('prompt', 'denied'
+  // or 'missing'). Back: asked again first, so the project isn't shut on
+  // the old answer, and then let go.
+  const sessionProject = session.projectId;
+  useEffect(() => {
+    if (sessionUnreachable !== null && sessionProject) {
+      setHeldOpen(sessionProject);
+      void reloadProjects().catch(() => {});
+      return;
+    }
+    if (sessionUnreachable === null && heldOpen !== null) {
+      let cancelled = false;
+      void reloadProjects()
+        .catch(() => {})
+        .finally(() => {
+          if (!cancelled) setHeldOpen(null);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
+    return undefined;
+  }, [sessionUnreachable, sessionProject, heldOpen, reloadProjects]);
 
   /* ---- what's on screen --------------------------------------------- */
 
@@ -219,8 +319,8 @@ export function Workspace({
   const [tabMenu, setTabMenu] = useState<{ path: string; at: MenuAt } | null>(null);
   const [newMenu, setNewMenu] = useState<MenuAt | null>(null);
   const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(null);
-  // Settings opens where it was last left in this visit: Project at first.
-  const [lastSettingsTab, setLastSettingsTab] = useState<SettingsTab>('project');
+  // Settings opens where it was last left in this visit: Appearance, its first tab, at first.
+  const [lastSettingsTab, setLastSettingsTab] = useState<SettingsTab>('appearance');
   const showSettingsTab = useCallback((tab: SettingsTab) => {
     setSettingsTab(tab);
     setLastSettingsTab(tab);
@@ -232,7 +332,7 @@ export function Workspace({
   const [focusRequest, setFocusRequest] = useState<{ path: string; n: number } | null>(null);
   const [meta, setMeta] = useState<Record<string, TabMeta>>({});
   /** Files shown in another kind's view than their own, until their tab
-   * closes: a canvas that won't open, as a note (review finding 8). */
+   * closes: a canvas that won't open, as a note. */
   const [kindOverrides, setKindOverrides] = useState<Record<string, FileKind>>({});
   const [message, setMessage] = useState<string | null>(null);
   const [outline, setOutline] = useState<Heading[] | null>(null);
@@ -264,6 +364,34 @@ export function Workspace({
     setFocusRequest((current) => ({ path, n: (current?.n ?? 0) + 1 }));
   }, []);
 
+  /** Shows a file or folder in the file tree: the folders above it open, the
+   * rail (on a phone, the files sheet) open, and its row focused. A folder
+   * link opens the folder itself too, so its files are in view. */
+  const showInFiles = useCallback(
+    (path: string, openFolder = false) => {
+      dispatch({ type: 'reveal', path });
+      if (openFolder) dispatch({ type: 'setExpanded', path, expanded: true });
+      if (phone) setSheet(true);
+      else setCollapsed(false);
+      requestFocus(path);
+    },
+    [dispatch, phone, requestFocus],
+  );
+
+  /** Copy link: the address of a file or folder, for an Orbit card or a note.
+   * It opens wherever the project lives, so the message says so. */
+  const copyLink = useCallback(
+    (path: string | null) => {
+      if (!linkTo || !currentId) return;
+      const url = linkTo(currentId, path);
+      const copied = () => notify('Link copied. It opens in this browser, where the project is.');
+      const show = () => window.prompt('Copy this link', url);
+      if (navigator.clipboard?.writeText) navigator.clipboard.writeText(url).then(copied, show);
+      else show();
+    },
+    [linkTo, currentId, notify],
+  );
+
   // A new project starts with nothing open and nothing in flight.
   const [shownProject, setShownProject] = useState(currentId);
   if (shownProject !== currentId) {
@@ -282,7 +410,14 @@ export function Workspace({
   const expanded = useMemo(() => new Set(ws.expanded), [ws.expanded]);
   const files = useMemo(() => entries.filter((entry) => entry.type === 'file'), [entries]);
   const usage = usageLabel(entries);
-  const location = persistent ? 'In this browser' : 'In this tab only';
+  // Where the files live, as the switcher, the menu and quick open say it.
+  const browserLocation = persistent ? 'In this browser' : 'In this tab only';
+  const locationOf = useCallback((record: ProjectRecord) => (record.tier === 'folder' ? 'On this computer' : browserLocation), [browserLocation]);
+  const location = project ? locationOf(project) : browserLocation;
+  // A folder project's folder: the status names it, and the browser can't clear it.
+  const folderName = project?.tier === 'folder' ? (project.folder?.name ?? project.name) : null;
+  // How a file's delete says where it goes from.
+  const deletedFrom = folderName ? `the folder ‘${folderName}’ on this computer` : persistent ? 'this browser' : 'this tab';
   const activeEntry = ws.active ? (entryByPath.get(ws.active) ?? null) : null;
   const activeKind: FileKind | null = activeEntry ? (kindOverrides[activeEntry.path] ?? kinds[activeEntry.path] ?? null) : null;
   const iconKind = (path: string) => kinds[path] ?? kindFromName(basename(path));
@@ -303,6 +438,20 @@ export function Workspace({
       setSheet(false);
     },
     [dispatch],
+  );
+
+  /** A link to a heading: the file opens, and the stage scrolls to the heading once the view has drawn it. */
+  const [jump, setJump] = useState<HeadingJump | null>(null);
+  const jumps = useRef(0);
+  const openLinked = useCallback(
+    (path: string, heading?: string) => {
+      openFile(path);
+      if (heading) {
+        jumps.current += 1;
+        setJump({ path, heading, n: jumps.current });
+      }
+    },
+    [openFile],
   );
 
   const closeTab = useCallback(
@@ -345,8 +494,7 @@ export function Workspace({
     setMeta((current) => (current[path]?.dirty === dirty ? current : { ...current, [path]: { ...current[path], dirty } }));
   }, []);
 
-  // Closing the page while something isn't saved asks first (review finding
-  // 15): an open view with unsaved edits, or a session still writing after
+  // Closing the page while something isn't saved asks first: an open view with unsaved edits, or a session still writing after
   // its tab was left.
   const sessionsUnsaved = useSyncExternalStore(subscribeUnsaved, hasUnsavedChanges);
   const unsaved = sessionsUnsaved || Object.values(meta).some((value) => value.dirty === true);
@@ -363,8 +511,7 @@ export function Workspace({
 
   // A change held in a conflict when its view went is kept beside the file
   // (re-review R1): say so, once, and offer the copy.
-  // A copy that couldn't be written is offered as a download instead (round
-  // 4, F2); the page asks before closing until it's downloaded or dismissed.
+  // A copy that couldn't be written is offered as a download instead; the page asks before closing until it's downloaded or dismissed.
   const [keptCopies, setKeptCopies] = useState<KeptLine[]>([]);
   useEffect(() => {
     let key = 0;
@@ -446,9 +593,12 @@ export function Workspace({
     if (!sessionReady) return;
     settle();
     if (!wanted.path) return;
-    if (entryByPath.get(wanted.path)?.type === 'file') openFile(wanted.path);
+    const entry = entryByPath.get(wanted.path);
+    if (entry?.type === 'file') openFile(wanted.path);
+    // A folder link (from an Orbit card, say): the folder, open in the tree.
+    else if (entry?.type === 'dir') showInFiles(wanted.path, true);
     else notify(`“${basename(wanted.path)}” isn’t in ${project?.name ?? 'this project'}.`);
-  }, [projectList, currentId, sessionReady, entryByPath, project, openFile, notify]);
+  }, [projectList, currentId, sessionReady, entryByPath, project, openFile, showInFiles, notify]);
 
   // The open project and file, for the address. Quiet until a link has
   // opened, so the file restored underneath it never flashes by.
@@ -472,7 +622,7 @@ export function Workspace({
 
   const createFile = useCallback(
     async (folder: string, desired: string) => {
-      if (!store) return;
+      if (!store || movingRef.current) return;
       const name = uniqueName(await siblingNames(folder), desired);
       const path = joinPath(folder, name);
       await store.write(path, '');
@@ -487,7 +637,7 @@ export function Workspace({
 
   const createFolder = useCallback(
     async (parent: string) => {
-      if (!store) return;
+      if (!store || movingRef.current) return;
       const name = uniqueName(await siblingNames(parent), NEW_FOLDER);
       const path = joinPath(parent, name);
       await store.mkdir(path);
@@ -506,9 +656,63 @@ export function Workspace({
   );
   const newFolder = useCallback((parent = '') => void createFolder(parent).catch(fail('Couldn’t make a folder')), [createFolder, fail]);
 
+  /** Paste as note: the clipboard's text as a new note in `folder`, named by
+   * when it was pasted (src/workspace/pasteNote.ts). Opened, not renamed:
+   * the time is the point of the name. */
+  const pasteNote = useCallback(
+    async (folder: string) => {
+      if (!store || movingRef.current) return;
+      let text: string;
+      try {
+        text = (await navigator.clipboard?.readText?.()) ?? '';
+      } catch {
+        notify('Nebula couldn’t read the clipboard here. Make a note and paste into it instead.');
+        return;
+      }
+      if (!text.trim()) {
+        notify('There’s no text on the clipboard to paste.');
+        return;
+      }
+      const path = joinPath(folder, uniqueName(await siblingNames(folder), pastedNoteName(text, new Date())));
+      await store.write(path, text);
+      await refresh();
+      if (folder) dispatch({ type: 'setExpanded', path: folder, expanded: true });
+      openFile(path);
+    },
+    [store, notify, siblingNames, refresh, dispatch, openFile],
+  );
+  const pasteAsNote = useCallback((folder = '') => void pasteNote(folder).catch(fail('Couldn’t make a note')), [pasteNote, fail]);
+
+  /** A click on a link to a note that isn't there: an empty note by that name
+   * in the folder of the note holding the link, opened. Never over a file
+   * that's there (the write is exclusive: one made meanwhile just opens),
+   * and a name Nebula refuses says why. */
+  const createLinked = useCallback(
+    (target: string, from: string) => {
+      if (!store || movingRef.current) return;
+      const plan = planNewNote(target, from);
+      if ('problem' in plan) {
+        notify(plan.problem);
+        return;
+      }
+      void (async () => {
+        try {
+          await store.write(plan.path, '', { exclusive: true });
+        } catch (reason) {
+          if (errorName(reason) !== 'FileExistsError') throw reason;
+        }
+        await refresh();
+        openFile(plan.path);
+      })().catch(fail('Couldn’t make the note'));
+    },
+    [store, notify, refresh, openFile, fail],
+  );
+
+  /** What a note's links need of the project: its files, a way to open one (at a heading, if the link names it), and a way to make the note a link names. */
+  const projectLinks = useMemo<ProjectLinks>(() => ({ files, open: openLinked, create: createLinked }), [files, openLinked, createLinked]);
+
   /** store.rename, once what the open files under `from` have pending is
-   * written there; their next writes wait until it's done, then follow it
-   * (review finding 1). */
+   * written there; their next writes wait until it's done, then follow it. */
   const moveWithSessions = useCallback(
     async (from: string, to: string) => {
       if (!store || !currentId) return;
@@ -520,6 +724,26 @@ export function Workspace({
       }
     },
     [store, currentId],
+  );
+
+  /** After a rename or a move: the notes that link to what moved follow it
+   * (updateLinks.ts), each written the way a tab's save writes, and the
+   * status line says what was done. It runs after the rename, which never
+   * waits for it and never fails because of it: whatever goes wrong is only
+   * logged, and a note it can't update says so. */
+  const followLinks = useCallback(
+    (from: string, to: string) => {
+      if (!store || !currentId) return;
+      const scope = currentId;
+      updateLinksAfterMove(store, { from, to, unsaved: (path) => hasUnsavedAt(scope, path) }).then(
+        (run) => {
+          const said = linkRunMessage(run);
+          if (said) notify(said);
+        },
+        (reason: unknown) => console.error('Nebula: links weren’t updated after the move', reason),
+      );
+    },
+    [store, currentId, notify],
   );
 
   const renameEntry = useCallback(
@@ -545,11 +769,12 @@ export function Workspace({
       dispatch({ type: 'renamed', from: path, to });
       moveMeta(path, to);
       setRenaming(null);
+      followLinks(path, to);
       await refresh();
       requestFocus(to);
       return null;
     },
-    [entryByPath, store, siblingNames, moveWithSessions, dispatch, moveMeta, refresh, requestFocus],
+    [entryByPath, store, siblingNames, moveWithSessions, followLinks, dispatch, moveMeta, refresh, requestFocus],
   );
 
   const moveEntry = useCallback(
@@ -566,18 +791,23 @@ export function Workspace({
       await moveWithSessions(from, to);
       dispatch({ type: 'renamed', from, to });
       moveMeta(from, to);
+      followLinks(from, to);
       if (folder) dispatch({ type: 'setExpanded', path: folder, expanded: true });
       await refresh();
       requestFocus(to);
     },
-    [store, siblingNames, notify, moveWithSessions, dispatch, moveMeta, refresh, requestFocus],
+    [store, siblingNames, notify, moveWithSessions, followLinks, dispatch, moveMeta, refresh, requestFocus],
   );
 
   const uploadFiles = useCallback(
     async (list: File[], folder: string) => {
       if (!store || list.length === 0) return;
+      if (movingRef.current) {
+        notify('The project is moving to a folder. Add the files once it’s moved.');
+        return;
+      }
       // Each file under a safe, free name; one that can't go in is skipped
-      // with a word, and the rest still go in (review finding 17).
+      // with a word, and the rest still go in.
       const { added, skipped } = await addFiles(store, folder, list, await siblingNames(folder));
       if (folder && added.length > 0) dispatch({ type: 'setExpanded', path: folder, expanded: true });
       await refresh();
@@ -607,13 +837,15 @@ export function Workspace({
       if (!store || !entry) return;
       const shown = entry.type === 'dir' ? entry.name : describeName(entry.name).label;
       const inside = entry.type === 'dir' ? entries.filter((other) => other.type === 'file' && isInside(other.path, path)).length : 0;
+      // A folder's files go for good: the system's bin never sees them.
+      const undone = folderName ? 'It won’t go to your computer’s bin, so this can’t be undone.' : 'This can’t be undone.';
       setDialog({
         type: 'confirm',
         title: `Delete “${shown}”?`,
         body:
           entry.type === 'dir'
-            ? `The folder and the ${countLabel(inside, 'file')} in it will be deleted from ${persistent ? 'this browser' : 'this tab'}. This can’t be undone.`
-            : `It will be deleted from ${persistent ? 'this browser' : 'this tab'}. This can’t be undone.`,
+            ? `The folder and the ${countLabel(inside, 'file')} in it will be deleted from ${deletedFrom}. ${undone}`
+            : `It will be deleted from ${deletedFrom}. ${undone}`,
         confirmLabel: 'Delete',
         danger: true,
         onConfirm: () => {
@@ -621,8 +853,7 @@ export function Workspace({
           void (async () => {
             const done = removing(path);
             // What the open files under it are writing lands first, and
-            // nothing more is written there, so nothing comes back (review
-            // finding 13).
+            // nothing more is written there, so nothing comes back.
             const release = currentId ? await holdWrites(currentId, path, { flush: false }) : () => {};
             try {
               await store.remove(path);
@@ -638,7 +869,28 @@ export function Workspace({
         },
       });
     },
-    [entryByPath, store, entries, persistent, currentId, removing, dispatch, refresh, notify, fail],
+    [entryByPath, store, entries, deletedFrom, folderName, currentId, removing, dispatch, refresh, notify, fail],
+  );
+
+  const sizeByPath = useMemo(() => new Map(entries.flatMap((entry) => (entry.type === 'file' ? [[entry.path, entry.size ?? 0] as const] : []))), [entries]);
+
+  /** Convert image… replacing an original: its tab, star and place follow it to the new file, before the original goes. */
+  const followConverted = useCallback(
+    (from: string, to: string) => {
+      dispatch({ type: 'renamed', from, to });
+      moveMeta(from, to);
+    },
+    [dispatch, moveMeta],
+  );
+
+  const finishConvert = useCallback(
+    async (outcomes: ConvertOutcome[], single: boolean) => {
+      await refresh();
+      notify(describeConversions(outcomes, { folder: !single }));
+      const first = outcomes.find((outcome) => outcome.status === 'converted');
+      if (single && first?.status === 'converted') requestFocus(first.to);
+    },
+    [refresh, notify, requestFocus],
   );
 
   /* ---- projects ----------------------------------------------------- */
@@ -662,13 +914,73 @@ export function Workspace({
   );
 
   const createProject = useCallback(
-    async (input: { name: string; color: string }) => {
+    async (input: { name: string; color: string; folder?: FolderHandle }) => {
       const created = await registry.create(input);
       await reloadProjects();
       setCurrentId(created.id);
+      return created;
     },
     [registry, reloadProjects],
   );
+
+  /** New project's Create: in this browser, or in a folder picked now (from
+   * the click). Cancelling the picker leaves the dialog as it was. */
+  const createFromDialog = useCallback(
+    (input: { name: string; color: string; where: ProjectHome }) => {
+      if (input.where === 'browser') {
+        setDialog(null);
+        void createProject({ name: input.name, color: input.color }).catch(fail('Couldn’t make the project'));
+        return;
+      }
+      void (async () => {
+        const folder = await folders.pick();
+        if (!folder) return;
+        setDialog(null);
+        const created = await createProject({ name: input.name, color: input.color, folder });
+        if (created.name !== input.name) notify(`‘${folder.name}’ was already the Nebula project ${created.name}, so it opened as it was.`);
+      })().catch(fail('Couldn’t make the project'));
+    },
+    [createProject, folders, notify, fail],
+  );
+
+  /** Move to a folder…, in Settings: the open browser project's files go to
+   * an empty folder picked now, and the project with them (the registry
+   * copies, checks each file, and only then deletes the browser copy). What
+   * the open files have unsaved is written first, and their writes wait. */
+  const moveProjectToFolder = useCallback(() => {
+    if (!project || project.tier !== 'browser') return;
+    const moving = project;
+    void (async () => {
+      const folder = await folders.pick();
+      if (!folder) return;
+      notify(`Moving ${moving.name} to the folder ‘${folder.name}’…`);
+      setMovingHere(true);
+      // Every write of the project's, not only the open files' (S3): new
+      // notes, uploads and workspace.json wait too.
+      const release = await holdWrites(moving.id, '');
+      try {
+        await registry.create({ name: moving.name, color: moving.color, folder, from: moving.id });
+      } finally {
+        release();
+        setMovingHere(false);
+      }
+      await reloadProjects();
+      notify(`Moved ${moving.name} to the folder ‘${folder.name}’. Its copy in this browser is deleted.`);
+    })().catch(fail('Couldn’t move the project'));
+  }, [project, folders, registry, reloadProjects, notify, fail]);
+
+  /** Open a folder…: the folder as a project named after it, or the project
+   * it already is. Cancelling the picker changes nothing. */
+  const openFolder = useCallback(() => {
+    closeOverlays();
+    setPaletteOpen(false);
+    setSheet(false);
+    void (async () => {
+      const folder = await folders.pick();
+      if (!folder) return;
+      await createProject({ name: folder.name, color: nextColour(projects), folder });
+    })().catch(fail('Couldn’t open the folder'));
+  }, [closeOverlays, folders, createProject, projects, fail]);
 
   const updateProject = useCallback(
     async (id: string, patch: { name?: string; color?: string }) => {
@@ -704,6 +1016,27 @@ export function Workspace({
       const record = projects.find((item) => item.id === id);
       if (!record || listLocked) return;
       closeOverlays();
+      if (record.tier === 'folder') {
+        // Forgotten, never deleted: the folder and its files stay put.
+        const folder = record.folder?.name ?? record.name;
+        setDialog({
+          type: 'confirm',
+          title: `Remove “${record.name}” from Nebula?`,
+          body: `Nebula forgets this project. It never deletes the folder ‘${folder}’ or the files in it: they stay on this computer.`,
+          confirmLabel: 'Remove from Nebula',
+          onConfirm: () => {
+            setDialog(null);
+            setSettingsTab(null);
+            void (async () => {
+              await registry.remove(id);
+              const list = await reloadProjects();
+              if (id === currentId) setCurrentId([...list].sort(byCreated)[0]?.id ?? null);
+              notify(`Removed “${record.name}” from Nebula. Its folder is where it was.`);
+            })().catch(fail('Couldn’t remove the project'));
+          },
+        });
+        return;
+      }
       const where = persistent ? 'this browser' : 'this tab';
       const what = id === currentId ? `its ${countLabel(files.length, 'file')}` : 'all its files';
       setDialog({
@@ -727,12 +1060,23 @@ export function Workspace({
     [projects, listLocked, closeOverlays, persistent, currentId, files.length, downloadProject, registry, reloadProjects, notify, fail],
   );
 
+  // When the open project was last downloaded from this browser, for Settings.
+  const [downloads, noteDownload] = useReducer((count: number) => count + 1, 0);
+  const [downloadedAt, setDownloadedAt] = useState<number | null>(null);
+  useEffect(() => {
+    setDownloadedAt(currentId ? lastDownloaded(currentId) : null);
+  }, [currentId, downloads]);
+
   const runDownloadProject = useCallback(
     (id: string) => {
       closeOverlays();
       if (!downloadProject) return;
       notify('Preparing the .zip…');
-      void downloadProject(id).then(() => setMessage(null), fail('Couldn’t download the project'));
+      void downloadProject(id).then(() => {
+        setMessage(null);
+        recordDownload(id);
+        noteDownload();
+      }, fail('Couldn’t download the project'));
     },
     [closeOverlays, downloadProject, notify, fail],
   );
@@ -774,20 +1118,68 @@ export function Workspace({
     setDialog({ type: 'newProject' });
   }, [listLocked, closeOverlays]);
 
+  /** The bar's button when the browser forgot a folder's permission: it
+   * asks again (a prompt, so from this click). */
+  const askForFolder = useCallback(() => {
+    if (!project) return;
+    void folders
+      .request(project.id)
+      .then(() => reloadProjects())
+      .catch(fail('Couldn’t open the folder'));
+  }, [project, folders, reloadProjects, fail]);
+
+  /** The bar's button when a folder can't be opened: choose it again. The
+   * same folder (moved, or picked again) is the same project; another
+   * folder opens as a project of its own. Cancelling changes nothing. */
+  const chooseFolderAgain = useCallback(() => {
+    if (!project) return;
+    const wanted = project;
+    void (async () => {
+      const handle = await folders.pick();
+      if (!handle) return;
+      const record = await registry.create({ name: wanted.name, color: wanted.color, folder: handle });
+      await reloadProjects();
+      if (record.id === wanted.id && heldOpen === wanted.id) {
+        setReopened((count) => count + 1);
+        setHeldOpen(null);
+      }
+      if (record.id !== wanted.id) {
+        setCurrentId(record.id);
+        notify(`‘${handle.name}’ isn’t the folder ${wanted.name} was in, so it opened as a project of its own.`);
+      }
+    })().catch(fail('Couldn’t open the folder'));
+  }, [project, folders, registry, reloadProjects, notify, fail, heldOpen]);
+
   // "Saved in this browser" is true in a private window too, which can't be
-  // told apart; Settings says what the browser has promised (review finding
-  // 18).
+  // told apart; Settings says what the browser has promised, and the rail's status says when it hasn't. Read when the workspace
+  // opens, when Settings opens, when an edit asks the browser (keepOnEdit) and
+  // when the page comes back into view; only the latest read counts.
   const settingsOpen = settingsTab !== null;
   useEffect(() => {
-    if (!settingsOpen || !persistent) return;
+    if (!persistent) return;
     let cancelled = false;
-    void storageStatus().then((status) => {
-      if (!cancelled) setKept(status.persisted);
-    });
+    let latest = 0;
+    const read = () => {
+      const n = ++latest;
+      void storageStatus().then((status) => {
+        if (!cancelled && n === latest) setKept(status.persisted);
+      });
+    };
+    read();
+    const stop = onPersistenceAnswer(read);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') read();
+    };
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       cancelled = true;
+      stop();
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, [settingsOpen, persistent]);
+  // false: it hasn't promised; null: it can't say. Either way, may be cleared.
+  // A folder can't be cleared by the browser: its status stays calm.
+  const attention = persistent && !folderName && (kept === false || kept === null);
 
   /* ---- shortcuts ---------------------------------------------------- */
 
@@ -868,6 +1260,7 @@ export function Workspace({
   const fileMenuEntries = (path: string | null): MenuEntry[] => {
     const creating = (folder: string): MenuEntry[] => [
       { label: 'New note', icon: 'note-plus', onSelect: act(() => newNote(folder)) },
+      { label: 'Paste as note', icon: 'paste', onSelect: act(() => pasteAsNote(folder)) },
       { label: 'New canvas', icon: 'canvas-plus', onSelect: act(() => newCanvas(folder)) },
       { label: 'New folder', icon: 'folder-plus', onSelect: act(() => newFolder(folder)) },
       { label: 'Upload files…', icon: 'upload', onSelect: act(() => pickUpload(folder)) },
@@ -879,14 +1272,23 @@ export function Workspace({
     const common: MenuEntry[] = [
       { label: 'Rename…', icon: 'pencil', shortcut: 'F2', keys: 'F2', onSelect: act(() => setRenaming(path)) },
       { label: isStarred ? 'Unstar' : 'Star', icon: 'star', onSelect: act(() => dispatch({ type: 'toggleStar', path })) },
+      ...(linkTo ? [{ label: 'Copy link', icon: 'link' as const, onSelect: act(() => copyLink(path)) }] : []),
     ];
     const remove: MenuEntry = { label: 'Delete…', icon: 'trash', danger: true, shortcut: 'Del', keys: 'Delete', onSelect: act(() => confirmDelete(path)) };
-    if (entry.type === 'dir') return [...creating(path), 'separator', ...common, 'separator', remove];
+    if (entry.type === 'dir') {
+      const images = entries.filter((other) => other.type === 'file' && isInside(other.path, path) && isConvertible(other.name)).map((other) => other.path);
+      const convert: MenuEntry[] =
+        images.length > 0 ? [{ label: 'Convert images…', icon: 'image', disabled: convertWait !== null, onSelect: act(() => setDialog({ type: 'convert', paths: images, folder: path })) }] : [];
+      return [...creating(path), 'separator', ...common, ...convert, 'separator', remove];
+    }
     const canvas = iconKind(path) === 'canvas';
     return [
       { label: 'Open', icon: 'open', onSelect: act(() => openFile(path)) },
       ...common,
       'separator',
+      ...(isConvertible(entry.name)
+        ? [{ label: 'Convert image…', icon: 'image' as const, disabled: convertWait !== null, onSelect: act(() => setDialog({ type: 'convert', paths: [path], folder: null })) }]
+        : []),
       { label: 'Download', icon: 'download', onSelect: act(() => void downloadFile(store, entry).catch(fail('Couldn’t download it'))) },
       ...(canvas
         ? [
@@ -914,13 +1316,9 @@ export function Workspace({
     {
       label: 'Show in files',
       icon: 'files',
-      onSelect: act(() => {
-        dispatch({ type: 'reveal', path });
-        if (phone) setSheet(true);
-        else setCollapsed(false);
-        requestFocus(path);
-      }),
+      onSelect: act(() => showInFiles(path)),
     },
+    ...(linkTo ? [{ label: 'Copy link', icon: 'link' as const, onSelect: act(() => copyLink(path)) }] : []),
   ];
 
   /* ---- intro --------------------------------------------------------- */
@@ -937,7 +1335,12 @@ export function Workspace({
   const activeMeta = ws.active ? meta[ws.active] : undefined;
   const oneProject = projects.length === 1;
 
-  const emptyStage = !project ? (
+  const emptyStage = blocked && project ? (
+    <div className="ws-empty">
+      <h2>{project.name}</h2>
+      <p>Its files are in the folder ‘{blocked.name}’ on this computer.</p>
+    </div>
+  ) : !project ? (
     <div className="ws-empty">
       <h2>{projectList === null ? 'Opening Nebula…' : 'No projects yet'}</h2>
       {projectList === null ? null : (
@@ -1023,6 +1426,9 @@ export function Workspace({
           location={location}
           usage={usage}
           ephemeral={!persistent}
+          attention={attention}
+          folderName={folderName}
+          blocked={folderBar ? (folderBar.access === 'prompt' ? 'Needs your OK' : folderBar.access === 'denied' ? 'Not allowed' : 'Can’t be found') : isMoving ? 'Moving to a folder…' : null}
           night={night}
           collapsed={collapsed && !phone}
           menuOpen={menuOpen}
@@ -1049,6 +1455,7 @@ export function Workspace({
           }}
           onNewNote={() => newNote()}
           onNewCanvas={() => newCanvas()}
+          onNewFolder={() => newFolder()}
           onUpload={() => pickUpload()}
           onOpenStarred={(path) => {
             const entry = entryByPath.get(path);
@@ -1065,6 +1472,15 @@ export function Workspace({
             setSheet(false);
             setSettingsTab(project ? lastSettingsTab : 'appearance');
           }}
+          onWhere={
+            project
+              ? () => {
+                  closeOverlays();
+                  setSheet(false);
+                  showSettingsTab('project');
+                }
+              : undefined
+          }
           onHelp={() => {
             closeOverlays();
             if (onHelp) onHelp();
@@ -1073,6 +1489,7 @@ export function Workspace({
           onToggleCollapsed={toggleRail}
           tree={{
             tree,
+            ...(blocked ? { emptyText: 'Its files show here once Nebula can open the folder.' } : {}),
             expanded,
             activePath: ws.active,
             kinds,
@@ -1201,6 +1618,37 @@ export function Workspace({
             </div>
           ) : null}
 
+          {!folderBar && session.projectId === currentId && session.tooBig !== null ? (
+            <div className="ws-ephemeral ws-folder-bar" role="note">
+              <span className="ws-store-dot" data-attention="" aria-hidden="true" />
+              <p>{folderTooBigMessage(session.tooBig || project?.folder?.name || '')} Changes made outside Nebula show once you reload.</p>
+            </div>
+          ) : null}
+
+          {folderBar ? (
+            <div className="ws-ephemeral ws-folder-bar" role="note">
+              <span className="ws-store-dot" data-attention="" aria-hidden="true" />
+              <p>
+                {folderBar.access === 'prompt'
+                  ? `Nebula needs your OK to open the folder ‘${folderBar.name}’ again.`
+                  : folderBar.access === 'denied'
+                    ? `Nebula isn’t allowed to open the folder ‘${folderBar.name}’.`
+                    : `Nebula can’t find the folder ‘${folderBar.name}’. It may have been moved, renamed or deleted, or be on a drive that isn’t connected.`}
+              </p>
+              {folderBar.access === 'prompt' ? (
+                <Button className="ws-btn" onClick={askForFolder}>
+                  <Icon name="folder" />
+                  Open the folder
+                </Button>
+              ) : (
+                <Button className="ws-btn" onClick={chooseFolderAgain}>
+                  <Icon name="folder" />
+                  Choose the folder again
+                </Button>
+              )}
+            </div>
+          ) : null}
+
           {listLocked ? (
             <div className="ws-ephemeral ws-readonly" role="note">
               <span className="ws-store-dot" data-attention="" aria-hidden="true" />
@@ -1222,22 +1670,27 @@ export function Workspace({
           ) : null}
 
           <div className="ws-body">
-            <Stage
-              viewFor={viewFor}
-              projectId={currentId ?? ''}
-              store={store}
-              entry={sessionReady ? activeEntry : null}
-              kind={activeKind}
-              labelledBy={ws.active ? tabId(ws.active) : undefined}
-              empty={emptyStage}
-              onStatus={onStatus}
-              onDirty={onDirty}
-              onOpenAs={openAs}
-            />
+            <PageWidthContext.Provider value={pageWidth}>
+              <ProjectLinksContext.Provider value={projectLinks}>
+              <Stage
+                viewFor={viewFor}
+                projectId={currentId ?? ''}
+                store={store}
+                entry={sessionReady ? activeEntry : null}
+                kind={activeKind}
+                labelledBy={ws.active ? tabId(ws.active) : undefined}
+                empty={emptyStage}
+                onStatus={onStatus}
+                onDirty={onDirty}
+                onOpenAs={openAs}
+                jump={jump}
+              />
+              </ProjectLinksContext.Provider>
+            </PageWidthContext.Provider>
             {panelOpen && !phone ? <OutlinePanel headings={outline} isNote={activeKind === 'note'} /> : null}
           </div>
 
-          <StatusLine ephemeral={!persistent} saving={activeMeta?.dirty === true} status={activeMeta?.status ?? null} message={message} />
+          <StatusLine ephemeral={!persistent} inFolder={folderName !== null} folderClosed={folderBar !== null} saving={activeMeta?.dirty === true} status={activeMeta?.status ?? null} message={message} />
 
           <nav className="ws-phone-bar" aria-label="Phone">
             <Button aria-expanded={sheetOpen} onClick={() => setSheet(true)}>
@@ -1248,18 +1701,21 @@ export function Workspace({
               <Icon name="search" />
               Search
             </Button>
-            <Button
-              className="ws-phone-new"
-              aria-label="New"
-              aria-haspopup="menu"
-              aria-expanded={newMenu !== null}
-              onClick={(event) => {
-                const rect = event.currentTarget.getBoundingClientRect();
-                setNewMenu(newMenu ? null : { x: rect.left - 60, y: rect.top - 200 });
-              }}
-            >
-              <Icon name="plus" />
-            </Button>
+            {/* Nothing to add to while the folder can't be opened (the rail hides its own). */}
+            {folderBar || isMoving ? null : (
+              <Button
+                className="ws-phone-new"
+                aria-label="New"
+                aria-haspopup="menu"
+                aria-expanded={newMenu !== null}
+                onClick={(event) => {
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  setNewMenu(newMenu ? null : { x: rect.left - 60, y: rect.top - 200 });
+                }}
+              >
+                <Icon name="plus" />
+              </Button>
+            )}
             <Button onClick={() => setSettingsTab(project ? lastSettingsTab : 'appearance')}>
               <Icon name="gear" />
               Settings
@@ -1280,13 +1736,14 @@ export function Workspace({
         open={menuOpen}
         projects={projects}
         currentId={currentId}
-        location={location}
+        location={locationOf}
         dock={preferences.dock}
         anchor={switcherRef}
         onDockChange={(on) => setPreference('dock', on)}
         onSwitch={switchProject}
         onNewProject={openNewProject}
         canCreate={!listLocked}
+        onOpenFolder={canUseFolders ? openFolder : undefined}
         onProjectMenu={(id, at) => setProjectMenu({ id, at, fromSwitcher: false })}
         onClose={() => setMenuOpen(false)}
       />
@@ -1322,7 +1779,7 @@ export function Workspace({
         kinds={kinds}
         projects={projects}
         currentId={currentId}
-        location={location}
+        location={locationOf}
         onOpenFile={(path) => {
           setPaletteOpen(false);
           openFile(path);
@@ -1353,7 +1810,10 @@ export function Workspace({
         usage={usage}
         fileCount={files.length}
         ephemeral={!persistent}
+        folderName={folderName}
         kept={kept}
+        // A .zip is a browser project's safety net; a folder's files are already on this computer.
+        downloaded={folderName === null ? downloadedLabel(downloadedAt) : null}
         canDownload={downloadProject !== undefined}
         canChangeProject={!listLocked}
         onRename={(name) => project && void updateProject(project.id, { name }).catch(fail('Couldn’t rename the project'))}
@@ -1361,6 +1821,7 @@ export function Workspace({
         onDownload={() => project && runDownloadProject(project.id)}
         onImport={() => pickUpload('')}
         onRemove={() => project && removeProject(project.id)}
+        onMoveToFolder={canUseFolders && project?.tier === 'browser' ? moveProjectToFolder : undefined}
       />
 
       {dialog?.type === 'newProject' ? (
@@ -1369,11 +1830,9 @@ export function Workspace({
           persistent={persistent}
           initialColour={nextColour(projects)}
           defaultName={dialog.first || projects.length === 0 ? FIRST_PROJECT_NAME : undefined}
+          canUseFolders={canUseFolders}
           onCancel={() => setDialog(null)}
-          onCreate={(input) => {
-            setDialog(null);
-            void createProject(input).catch(fail('Couldn’t make the project'));
-          }}
+          onCreate={createFromDialog}
         />
       ) : null}
 
@@ -1386,6 +1845,24 @@ export function Workspace({
           danger={dialog.danger}
           onConfirm={dialog.onConfirm}
           onCancel={() => setDialog(null)}
+        />
+      ) : null}
+
+      {dialog?.type === 'convert' && store ? (
+        <ConvertImagesDialog
+          open
+          store={store}
+          paths={dialog.paths}
+          sizes={sizeByPath}
+          folder={dialog.folder}
+          tools={imageTools}
+          waitReason={convertWait}
+          onReplace={followConverted}
+          onCancel={() => setDialog(null)}
+          onDone={(outcomes) => {
+            setDialog(null);
+            void finishConvert(outcomes, dialog.folder === null).catch(fail('Couldn’t finish converting'));
+          }}
         />
       ) : null}
 
@@ -1418,7 +1895,7 @@ export function Workspace({
         />
       ) : null}
 
-      {onHelp ? null : <AboutDialog open={aboutOpen} onClose={() => setAboutOpen(false)} />}
+      {onHelp ? null : <Help open={aboutOpen} persistent={persistent} canDownload={downloadProject !== undefined} canUseFolders={canUseFolders} onClose={() => setAboutOpen(false)} />}
     </div>
   );
 }

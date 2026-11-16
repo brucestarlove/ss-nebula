@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { BROKEN_TEXT, CRLF_TEXT, expect, files, openPath, openSessions, PATHS, row, shoot, test } from './harness/sessions-test';
 
 // What a file is shown as, what the workspace says about where it's kept,
-// and what leaves the page (review findings 7, 8, 14, 16, 17, 18, 20), on
+// and what leaves the page, on
 // the real OPFS store. Screenshots go to $TMPDIR/sessions-shots.
 
 const PHONE = { width: 390, height: 844 };
@@ -102,7 +102,8 @@ test('text that isn’t UTF-8 opens read-only, with Download, and is never writt
 
   await openPath(page, PATHS.latin1Note);
   await expect(page.locator('.ws-note .ws-conflict')).toContainText('Read-only');
-  await expect(page.locator('.ws-page-tools')).toHaveCount(0);
+  // No Edit; the page width switch stays, since reading width still applies.
+  await expect(page.locator('.ws-page-tools [aria-label="Edit"]')).toHaveCount(0);
   await shoot(page, `read-only-note-1440-${browserName}`);
   const task = page.locator('.ws-prose input[type="checkbox"]').first();
   if ((await task.count()) > 0) await task.click({ force: true }).catch(() => undefined);
@@ -197,7 +198,7 @@ test('web images in a note wait for a click; the project’s own aren’t touche
   await expect(prose.locator('img')).toHaveCount(2);
   await expect.poll(() => asked.length, { timeout: 5_000 }).toBe(2);
   await expect(bar).toHaveCount(0);
-  // The project's own image still waits for embeds (slice 5).
-  await expect(prose.locator('.ws-embed-pending')).toHaveText('Winter hexagon');
+  // The project's own image isn't in this harness project: its words stand in, muted.
+  await expect(prose.locator('.ws-embed-missing')).toHaveText('Winter hexagon');
   await shoot(page, `web-images-loaded-1440-${browserName}`);
 });

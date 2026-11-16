@@ -52,7 +52,7 @@ describe('kindFromName', () => {
 describe('the content check for markdown', () => {
   const drawing = toObsidianExcalidrawMarkdown({ elements: [{ id: 'a', type: 'rectangle', x: 0, y: 0, width: 1, height: 1 }] });
   const uncompressed = toObsidianExcalidrawMarkdown({ elements: [] }, { compressed: false });
-  // Notes that talk about drawings, or quote one: still notes (review finding 8).
+  // Notes that talk about drawings, or quote one: still notes.
   const notes = [
     '# Observing plan\n\nSaturday, after moonset.',
     '# Excalidraw Data\n\n## Drawing\n```json\n{"elements":[]}\n```',

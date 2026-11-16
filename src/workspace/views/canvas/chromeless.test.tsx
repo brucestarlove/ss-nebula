@@ -1,9 +1,9 @@
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NebulaExcalidrawDocument } from '../../../nebula/storage/types';
-import { render, waitFor } from '../testing/render';
+import { click, render, waitFor } from '../testing/render';
 
-// The chrome-less mode of NebulaExcalidrawShell (lane C), with Excalidraw
+// The chrome-less mode of NebulaExcalidrawShell, with Excalidraw
 // mocked as in src/nebula/runtimeSmoke.test.tsx.
 const excalidraw = vi.hoisted(() => ({ themes: [] as string[], initialData: [] as Array<Record<string, unknown> | undefined> }));
 
@@ -113,6 +113,42 @@ describe('NebulaExcalidrawShell without chrome', () => {
     expect(canvas?.querySelector('.nebula-library-controls')).not.toBeNull();
     expect(store.load).toHaveBeenCalledWith({ boardId: 'night-sky', canvasId: 'Sketches/Winter hexagon.excalidraw.md' });
     await waitFor(() => expect(store.save).toHaveBeenCalled());
+    await view.unmount();
+  });
+
+  // Round 7, N3: a file's load that fails shows the error, never an empty
+  // canvas that takes edits nobody will save.
+  it('shows a file-backed canvas’s failed load as the error, with Try again, and no canvas to draw on', async () => {
+    const { NebulaExcalidrawShell } = await import('../../../nebula/NebulaExcalidrawShell');
+    const store = { ...sceneStore([{ id: 'a', type: 'rectangle' }]), fileBacked: true as const };
+    const load = store.load.getMockImplementation()!;
+    store.load.mockImplementationOnce(async () => {
+      throw new DOMException('A requested file or directory could not be found.', 'NotFoundError');
+    });
+    const view = await render(<NebulaExcalidrawShell chrome={false} context={{ boardId: 'b', canvasId: 'c.excalidraw' }} store={store} />);
+    await waitFor(() => expect(view.container.querySelector('[role="alert"]')).not.toBeNull());
+    const alert = view.container.querySelector('[role="alert"]')!;
+    expect(alert.textContent).toContain('A requested file or directory could not be found.');
+    expect(view.container.querySelector('[data-mock-excalidraw]')).toBeNull();
+    expect(store.save).not.toHaveBeenCalled();
+    // Try again loads once more, and the drawing opens.
+    store.load.mockImplementation(load);
+    await click([...alert.querySelectorAll('button')].find((button) => button.textContent === 'Try again'));
+    await waitFor(() => expect(view.container.querySelector('[data-mock-excalidraw="ready"]')).not.toBeNull());
+    expect(store.load).toHaveBeenCalledTimes(2);
+    expect(view.container.querySelector('[role="alert"]')).toBeNull();
+    await view.unmount();
+  });
+
+  it('keeps the empty canvas for a 1.x board whose load fails (a store that isn’t a file)', async () => {
+    const { NebulaExcalidrawShell } = await import('../../../nebula/NebulaExcalidrawShell');
+    const store = sceneStore();
+    store.load.mockImplementationOnce(async () => {
+      throw new Error('unreadable');
+    });
+    const view = await render(<NebulaExcalidrawShell chrome={false} context={{ boardId: 'b', canvasId: 'c' }} store={store} />);
+    await waitFor(() => expect(view.container.querySelector('[data-mock-excalidraw="ready"]')).not.toBeNull());
+    expect(view.container.querySelector('[role="alert"]')).toBeNull();
     await view.unmount();
   });
 

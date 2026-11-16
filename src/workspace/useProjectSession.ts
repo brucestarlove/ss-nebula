@@ -31,6 +31,18 @@ export type ProjectSession = {
   refresh: () => Promise<FileEntry[]>;
   /** A project that wouldn't open. */
   error: string | null;
+  /** The open folder project's folder is out of reach right now (S2): its
+   * name ('' when unknown), or null. Tabs and sessions stay; the list
+   * refreshes once it's back. */
+  unreachable: string | null;
+  /** The folder holds more than Nebula shows (S8): its name, or null. It
+   * isn't looked at again until the page reloads. */
+  tooBig: string | null;
+  /** Another tab is moving this project to a folder (S3). */
+  moving: boolean;
+  /** Counts the moves to a folder heard from another tab: the workspace
+   * asks the registry again, and the project opens from the folder. */
+  moved: number;
   /** The file on screen, deleted elsewhere: its tab stays while it's the
    * active one, so its view can say so; choosing another tab lets it go. */
   gone: FileEntry | null;
@@ -55,13 +67,19 @@ function sameKinds(a: Readonly<Record<string, FileKind>>, b: Readonly<Record<str
 /** One open project: its store, its files, and what was open in it
  * (`.nebula/workspace.json`), restored on open and saved as it changes.
  * Follows store.watch(), so changes from other tabs show up. */
-export function useProjectSession(registry: ProjectRegistry, projectId: string | null): ProjectSession {
+/** `where` is where the project lives ('browser', 'folder'): when it changes
+ * (Move to a folder…), the project opens again from its new home. */
+export function useProjectSession(registry: ProjectRegistry, projectId: string | null, where?: string): ProjectSession {
   const [ws, dispatch] = useReducer(workspaceReducer, EMPTY_WORKSPACE);
   const [store, setStore] = useState<FileStore | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [unreachable, setUnreachable] = useState<string | null>(null);
+  const [moving, setMoving] = useState(false);
+  const [tooBig, setTooBig] = useState<string | null>(null);
+  const [moved, setMoved] = useState(0);
   const [kinds, setKinds] = useState<Record<string, FileKind>>({});
 
   const listSeq = useRef(0);
@@ -79,7 +97,7 @@ export function useProjectSession(registry: ProjectRegistry, projectId: string |
   const ownRemovals = useRef(new Set<string>());
   /** Counts the changes heard, so a listing knows which came after it began. */
   const changeSeq = useRef(0);
-  /** Files updated from a stat after a write, and when (review finding 26). */
+  /** Files updated from a stat after a write, and when. */
   const patches = useRef(new Map<string, { seq: number; entry: FileEntry }>());
 
   const setGoneEntry = useCallback((entry: FileEntry | null) => {
@@ -151,6 +169,9 @@ export function useProjectSession(registry: ProjectRegistry, projectId: string |
     setKinds({});
     setReady(false);
     setError(null);
+    setUnreachable(null);
+    setMoving(false);
+    setTooBig(null);
     setGoneEntry(null);
     dispatch({ type: 'load', state: EMPTY_WORKSPACE });
     if (!projectId) return;
@@ -179,13 +200,47 @@ export function useProjectSession(registry: ProjectRegistry, projectId: string |
 
         unwatch = opened.watch((change) => {
           if (cancelled) return;
+          // The folder out of reach, and back (S2): nothing in it is gone.
+          if (change.type === 'unreachable') {
+            setUnreachable(change.folder ?? '');
+            return;
+          }
+          if (change.type === 'too-big') {
+            setTooBig(change.folder ?? '');
+            return;
+          }
+          if (change.type === 'reachable') {
+            setUnreachable(null);
+            listSoon();
+            return;
+          }
+          // Another tab moving the project to a folder (S3): no New, no
+          // Upload, until it's moved (the project opens from the folder) or
+          // it failed.
+          if (change.type === 'moving') {
+            setMoving(true);
+            return;
+          }
+          if (change.type === 'move-failed') {
+            setMoving(false);
+            return;
+          }
+          if (change.type === 'moved') {
+            setMoving(false);
+            setMoved((count) => count + 1);
+            return;
+          }
+          // The project itself was removed (or moved away).
+          if (change.type === 'remove' && change.path === '') {
+            setError('The project’s folder can’t be read any more.');
+            return;
+          }
           const touched = change.type === 'rename' ? [change.from, change.to] : [change.path];
           if (touched.every((path) => path === '.nebula' || path.startsWith('.nebula/'))) return;
           const seq = ++changeSeq.current;
           if (change.type === 'write' && entriesRef.current.some((entry) => entry.path === change.path && entry.type === 'file')) {
             // A file the tree already has, saved again (a canvas while it's
-            // drawn on): one stat, not a walk of the whole project (review
-            // finding 26).
+            // drawn on): one stat, not a walk of the whole project.
             opened.stat(change.path).then(
               (entry) => {
                 if (cancelled || storeRef.current !== opened) return;
@@ -227,7 +282,7 @@ export function useProjectSession(registry: ProjectRegistry, projectId: string |
       unwatch?.();
       flush();
     };
-  }, [registry, projectId, listInto, flush, setGoneEntry]);
+  }, [registry, projectId, where, listInto, flush, setGoneEntry]);
 
   // Another tab chosen (or this one closed): the deleted file goes.
   useEffect(() => {
@@ -279,7 +334,7 @@ export function useProjectSession(registry: ProjectRegistry, projectId: string |
       }
       const cached = cache.get(entry.path);
       // A file that changed keeps its kind while it's checked again, so its
-      // view stays on screen (review finding 4); one never checked waits.
+      // view stays on screen; one never checked waits.
       if (cached) next[entry.path] = cached.kind;
       if (!cached || cached.sig !== signature(entry)) queue.push(entry);
     }
@@ -303,5 +358,5 @@ export function useProjectSession(registry: ProjectRegistry, projectId: string |
     };
   }, [store, entries, gone]);
 
-  return { projectId: openId, store, entries, ready, ws, dispatch, kinds, refresh, error, gone, removing };
+  return { projectId: openId, store, entries, ready, ws, dispatch, kinds, refresh, error, unreachable, tooBig, moving, moved, gone, removing };
 }

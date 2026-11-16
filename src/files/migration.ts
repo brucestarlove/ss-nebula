@@ -1,11 +1,10 @@
 /**
- * Moves Nebula 1.x canvases from localStorage into projects (docs/slice-3.md,
- * decisions 3, 4 and 8; PLAN §7). One project per board, one compressed
+ * Moves Nebula 1.x canvases from localStorage into projects. One project per board, one compressed
  * `.excalidraw.md` per canvas at the project's root. It copies and never
  * deletes: the legacy keys stay exactly as they were. Every file is read back
  * and compared before the migration counts as done.
  *
- * Safe to interrupt and to run in two tabs at once (review finding 5):
+ * Safe to interrupt and to run in two tabs at once:
  *
  * - It runs under the Web Lock `nebula:migration` and looks for its record
  *   again once it holds the lock, so a second tab finds the work done.
@@ -73,7 +72,7 @@ export type LegacyCanvasUpdate = {
 };
 
 /** A canvas the migration left in localStorage because its file didn't read
- * back the same (review finding 9). */
+ * back the same. */
 export type FailedCanvas = { key: string; boardId: string; canvasId: string; name: string; error: string };
 
 export type MigrationReport = {

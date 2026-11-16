@@ -28,7 +28,7 @@ const BY_EXTENSION: Record<string, FileKind> = {
 };
 
 // Text and code. `.canvas` is Obsidian's JSON Canvas: shown as text until it
-// gets a view of its own (PLAN §5.4).
+// gets a view of its own.
 const TEXT_EXTENSIONS = new Set(
   (
     'txt text log csv tsv json jsonc json5 yaml yml toml ini cfg conf env xml canvas ' +
@@ -72,10 +72,10 @@ export function kindFromName(name: string): FileKind {
 }
 
 // The same test as isObsidianExcalidrawFile() (src/nebula/excalidraw/
-// obsidianMarkdown.ts), which reads and writes canvases (decision 1): the
+// obsidianMarkdown.ts), which reads and writes canvases: the
 // `excalidraw-plugin` key, with a value, in the leading frontmatter block, as
 // Obsidian itself decides. A note that quotes a drawing or mentions the key
-// stays a note (review finding 8). It is repeated here because the build puts
+// stays a note. It is repeated here because the build puts
 // that module in the canvas chunk, which the file tree mustn't load;
 // kinds.test.ts checks the two agree.
 const LEADING_FRONTMATTER_RE = /^\uFEFF?---[ \t]*\r?\n((?:[^\n]*\n)*?)(?:---|\.\.\.)[ \t]*\r?(?:\n|$)/;

@@ -1,6 +1,6 @@
 import { drawRectangle, expect, files, openSessions, PATHS, shownElements, test } from './harness/sessions-test';
 
-// Two tabs on one canvas (review finding 3), on the real OPFS store and
+// Two tabs on one canvas, on the real OPFS store and
 // BroadcastChannel: a clean tab follows the other's save; a tab with its own
 // change asks before writing over it, even when the other tab's message is
 // slow to arrive.

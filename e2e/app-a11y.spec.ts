@@ -26,7 +26,7 @@ type State = {
   welcome?: boolean;
   open?: (page: Page, context: BrowserContext) => Promise<void>;
   exclude?: string[];
-  /** A violation in another lane's code: docs/lanes/integration-findings.md. */
+  /** A violation in another part of the code, known and tracked. */
   fixme?: string;
 };
 

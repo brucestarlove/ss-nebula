@@ -8,7 +8,7 @@ export { withFallback };
 type ViewModule = { default: FileView };
 
 // One loader per kind, so a phone that only reads notes never downloads
-// Excalidraw, and reading a note never downloads CodeMirror (PLAN §10).
+// Excalidraw, and reading a note never downloads CodeMirror.
 const LOADERS: Record<FileKind, () => Promise<ViewModule>> = {
   note: () => import('./note/NoteView'),
   canvas: () => import('./canvas/CanvasView'),

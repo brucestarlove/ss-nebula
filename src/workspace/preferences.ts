@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { DEFAULT_PREFERENCES, type Preferences } from '../files/types';
 
 /**
- * Per-device preferences (PLAN §6): Style, Page width, Note text and the
+ * Per-device preferences: Style, Page width, Note text and the
  * dock. They live in localStorage, one key each, and show on <html> as
  * data-style, data-width, data-body and data-dock (present while the dock
  * preference is on), which the workspace CSS reads. Theme, background and

@@ -125,7 +125,7 @@ export function sampleProjects(): SampleProject[] {
         'Charts/Star chart — October.pdf': bytes(96_000, 'application/pdf'),
         'Charts/Meteor showers 2026.csv': 'Shower,Peak\nOrionids,Oct 21\nLeonids,Nov 17\nGeminids,Dec 14\n',
         'README.md': README,
-        // What the sketch shows open, as the real sample will (lane A).
+        // What the sketch shows open, as the real sample will.
         '.nebula/workspace.json': JSON.stringify({
           tabs: ['Guides/Observing plan.md', 'Sketches/Winter hexagon.excalidraw.md', 'Photos/Orion Nebula.jpg'],
           active: 'Guides/Observing plan.md',

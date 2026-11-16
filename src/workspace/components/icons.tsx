@@ -153,6 +153,21 @@ const PATHS = {
       <path d="M6 9.5h4.25M8.75 8l1.5 1.5-1.5 1.5" />
     </>
   ),
+  /* Copy link: two links of a chain, on the diagonal. */
+  link: (
+    <>
+      <path d="M6.9 9.1a2.6 2.6 0 0 0 3.7 0l2.2-2.2a2.6 2.6 0 0 0-3.7-3.7l-1 1" />
+      <path d="M9.1 6.9a2.6 2.6 0 0 0-3.7 0L3.2 9.1a2.6 2.6 0 0 0 3.7 3.7l1-1" />
+    </>
+  ),
+  /* Paste as note: a clipboard with a line of text. */
+  paste: (
+    <>
+      <path d="M5.5 2.75h-1.75v11.5h8.5V2.75H10.5" />
+      <rect x="5.5" y="1.75" width="5" height="2.25" rx=".75" />
+      <path d="M6 7.75h4.25M6 10.25h3" />
+    </>
+  ),
 } satisfies Record<string, ReactNode>;
 
 const PATHS_24 = {

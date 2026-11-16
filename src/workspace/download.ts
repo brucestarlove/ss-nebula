@@ -23,13 +23,13 @@ export function saveBlob(blob: Blob, filename: string): void {
 
 /** Saves a file to the device as opaque bytes, so even a 'page.html' or an
  * SVG can't open as a page of this origin where the download attribute is
- * ignored (review finding 14). */
+ * ignored. */
 export async function downloadFile(store: FileStore, entry: Pick<FileEntry, 'path' | 'name'>): Promise<void> {
   saveBlob(typedBlob(await store.readBlob(entry.path), entry.name, OPAQUE_TYPE), entry.name);
 }
 
 /** Saves text the page holds, such as a change that couldn't be kept as a
- * copy (round 4, F2), as a file: opaque bytes, as downloadFile saves. */
+ * copy, as a file: opaque bytes, as downloadFile saves. */
 export function downloadText(text: string, filename: string): void {
   saveBlob(typedBlob(new Blob([text]), filename, OPAQUE_TYPE), filename);
 }

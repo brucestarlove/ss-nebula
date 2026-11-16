@@ -1,10 +1,24 @@
-import type { TextSession, TextSessionState } from './textSession';
+import { unreachableMessage, type TextSession, type TextSessionState } from './textSession';
 import { errorMessage } from './download';
 
 /** The small bars above an editable file: changed elsewhere, a failed save,
  * a file deleted elsewhere, a file that can only be read. */
 export function SessionBars({ session, state, onDownload }: { session: TextSession | null; state: TextSessionState; onDownload?: () => void }) {
   if (!session) return null;
+  if (state.unreachable !== null) {
+    return (
+      <div className="ws-conflict" role="status">
+        <span className="ws-conflict-text">{unreachableMessage(state.unreachable)}</span>
+      </div>
+    );
+  }
+  if (state.moving) {
+    return (
+      <div className="ws-conflict" role="status">
+        <span className="ws-conflict-text">This project is moving to a folder. Your changes are kept here and saved there once it’s moved.</span>
+      </div>
+    );
+  }
   if (state.removed) {
     return (
       <div className="ws-conflict" role="status">

@@ -1,8 +1,7 @@
 import type { ResolvedTheme } from '../nebula/ui/useTheme';
 
 /**
- * The window's background, for each theme, on this device (Bruce,
- * 2026-10-22; docs/slice-3.md, Settings and backgrounds): the theme's own
+ * The window's background, for each theme, on this device: the theme's own
  * sky (Starfield at night, Parchment by day), a colour, or an image the user
  * uploads. The choice lives in localStorage with the other preferences; an
  * image itself lives in the browser tier's `appearance/` folder (useBackdrop).

@@ -20,4 +20,6 @@ From the Northern Hemisphere, follow the Belt to the left and slightly down to r
 
 Rigel is one corner of the [[Winter hexagon.excalidraw|winter hexagon]], and Betelgeuse sits inside it.
 
+![[Winter hexagon.png|520]]
+
 Sources: NASA Science, "Discovering the Universe Through the Constellation Orion", "Messier 42" and "What's Up: December 2024"; EarthSky, "Use Orion's Belt to find 4 bright stars in the sky".

@@ -1,11 +1,12 @@
 import { defineConfig, devices } from '@playwright/test';
 
-// One port per checkout, so parallel lanes never test each other's server
-// (docs/slice-3.md). NEBULA_E2E_BUILT=1 serves the production build
+// One port per checkout, so parallel lanes never test each other's server. NEBULA_E2E_BUILT=1 serves the production build
 // (dist/site, through serve-site.mjs and vercel.json's routing) instead of
 // the dev server.
 const port = Number(process.env.NEBULA_E2E_PORT || 4340);
 const built = process.env.NEBULA_E2E_BUILT === '1';
+// A deployed copy to test instead of a local server (e2e/app-fixtures.ts).
+const remote = process.env.NEBULA_E2E_BASE_URL?.replace(/\/$/, '');
 
 export default defineConfig({
   testDir: 'e2e',
@@ -16,7 +17,7 @@ export default defineConfig({
   timeout: 60_000,
   reporter: [['list']],
   use: {
-    baseURL: `http://127.0.0.1:${port}`,
+    baseURL: remote || `http://127.0.0.1:${port}`,
     trace: 'retain-on-failure',
   },
   projects: [
@@ -27,7 +28,7 @@ export default defineConfig({
     // checks run in Chromium; nothing here depends on pixel density.
     { name: 'webkit', use: { ...devices['Desktop Safari'], deviceScaleFactor: 1 } },
   ],
-  webServer: {
+  webServer: remote ? undefined : {
     command: built ? 'node serve-site.mjs' : `pnpm exec vite --host 127.0.0.1 --port ${port} --strictPort`,
     env: { PORT: String(port) },
     port,

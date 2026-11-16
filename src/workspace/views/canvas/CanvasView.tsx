@@ -4,6 +4,7 @@ import type { FileViewProps } from '../../../files/types';
 import { LazyNebulaExcalidrawShell } from '../../../nebula/LazyNebulaExcalidrawShell';
 import OtherView from '../other/OtherView';
 import { errorMessage } from '../shared/download';
+import { unreachableMessage } from '../shared/fileSessions';
 import { formatCount, titleFromName } from '../shared/format';
 import { ViewLoading } from '../shared/SessionBars';
 import { useLeaveFlush } from '../shared/useTextSession';
@@ -67,8 +68,7 @@ export default function CanvasView(props: FileViewProps) {
   const context = useMemo(() => ({ boardId: projectId, canvasId: entry.path }), [projectId, entry.path]);
 
   if (phase.status === 'error') {
-    // A file that isn't a drawing after all can still be read (review
-    // finding 8): a note for markdown, text for an .excalidraw file.
+    // A file that isn't a drawing after all can still be read: a note for markdown, text for an .excalidraw file.
     const { openAs } = actions;
     const json = entry.name.toLowerCase().endsWith('.excalidraw');
     const alternative = openAs ? { label: json ? 'Open as text' : 'Open as note', onOpen: () => openAs(json ? 'text' : 'note') } : undefined;
@@ -78,7 +78,15 @@ export default function CanvasView(props: FileViewProps) {
   const title = titleFromName(entry.name);
   return (
     <div className="ws-board ws-canvas" data-view-of="canvas" aria-label={`Canvas: ${title}`} role="region">
-      {state.removed ? (
+      {state.moving ? (
+        <div className="ws-conflict ws-canvas-bar" role="status">
+          <span className="ws-conflict-text">This project is moving to a folder. Your changes are kept here until it’s moved.</span>
+        </div>
+      ) : state.unreachable ? (
+        <div className="ws-conflict ws-canvas-bar" role="status">
+          <span className="ws-conflict-text">{unreachableMessage(state.unreachable)}</span>
+        </div>
+      ) : state.removed ? (
         <div className="ws-conflict ws-canvas-bar" role="status">
           <span className="ws-conflict-text">Deleted elsewhere. Edits here aren&rsquo;t saved.</span>
         </div>

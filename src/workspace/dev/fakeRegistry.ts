@@ -1,10 +1,21 @@
-import type { FileStore, ProjectMeta, ProjectRecord, ProjectRegistry } from '../../files/types';
+import { FolderUnavailableError } from '../../files/folderTier';
+import type { FileStore, FolderAccess, FolderHandle, ProjectMeta, ProjectRecord, ProjectRegistry } from '../../files/types';
 import { MemoryStore } from './memoryStore';
 import { sampleProjects } from './sample';
+
+/** A folder on this computer, as a test picks it: its files, and the
+ * project it already is (its `.nebula/project.json`), if any. */
+export type FakeFolder = FolderHandle & { files?: MemoryStore; projectId?: string };
+
+export function fakeFolder(name: string, files = new MemoryStore()): FakeFolder {
+  return { kind: 'directory', name, files };
+}
 
 export type FakeRegistry = ProjectRegistry & {
   /** The stores behind each project, for tests that change files "from elsewhere". */
   stores: Map<string, MemoryStore>;
+  /** Says what the browser now answers for a folder project's folder. */
+  setAccess(id: string, access: FolderAccess): void;
   /** As the browser registry's: true when registry.json came from a newer
    * Nebula, and the project list can't be changed. */
   readonly readOnly: boolean;
@@ -57,6 +68,10 @@ export function createFakeRegistry(options: { projects?: number; empty?: boolean
   };
 
   /** What the browser registry throws when it's read-only. */
+  const access = new Map<string, FolderAccess>();
+  const shown = (record: ProjectRecord): ProjectRecord =>
+    record.folder ? { ...record, folder: { ...record.folder, access: access.get(record.id) ?? 'granted' } } : { ...record };
+
   const refuse = () => {
     if (!options.readOnly) return;
     throw Object.assign(new Error('The project list was written by a newer version of Nebula.'), { name: 'ReadOnlyRegistryError' });
@@ -65,11 +80,40 @@ export function createFakeRegistry(options: { projects?: number; empty?: boolean
   return {
     stores,
     readOnly: options.readOnly ?? false,
-    async list() {
-      return ordered().map((record) => ({ ...record }));
+    setAccess(id, state) {
+      access.set(id, state);
     },
-    async create({ name, color }) {
+    async list() {
+      return ordered().map(shown);
+    },
+    async create({ name, color, folder, from }) {
       refuse();
+      const picked = folder as FakeFolder | undefined;
+      // Move to a folder…: an empty folder takes the project's files.
+      if (picked && from !== undefined) {
+        const record = need(from);
+        const target = picked.files ?? new MemoryStore();
+        if ((await target.list()).length > 0) {
+          throw Object.assign(new Error(`The folder ‘${picked.name}’ isn’t empty. Choose an empty folder, so nothing in it is mixed up with the project or written over.`), {
+            name: 'FolderNotEmptyError',
+          });
+        }
+        const source = stores.get(from)!;
+        for (const entry of await source.list()) {
+          if (entry.type === 'dir') await target.mkdir(entry.path);
+          else await target.write(entry.path, await source.readBlob(entry.path));
+        }
+        record.tier = 'folder';
+        record.folder = { name: picked.name, access: 'granted' };
+        stores.set(from, target);
+        picked.projectId = from;
+        return shown(record);
+      }
+      // A folder that already is one of these projects is that project.
+      if (picked?.projectId && records.has(picked.projectId)) {
+        access.set(picked.projectId, 'granted');
+        return shown(records.get(picked.projectId)!);
+      }
       let id = slug(name);
       for (let n = 2; records.has(id); n += 1) id = `${slug(name)}-${n}`;
       const record: ProjectRecord = {
@@ -78,16 +122,20 @@ export function createFakeRegistry(options: { projects?: number; empty?: boolean
         color,
         created: new Date().toISOString(),
         createdBy: 'nebula',
-        tier: 'browser',
+        tier: picked ? 'folder' : 'browser',
+        ...(picked ? { folder: { name: picked.name, access: 'granted' as const } } : {}),
       };
       records.set(id, record);
-      const store = new MemoryStore();
+      const store = picked?.files ?? new MemoryStore();
       store.latency = options.latency ?? 0;
       stores.set(id, store);
-      return { ...record };
+      if (picked) picked.projectId = id;
+      return shown(record);
     },
     async open(id): Promise<FileStore> {
       const record = need(id);
+      const state = access.get(id) ?? 'granted';
+      if (record.folder && state !== 'granted') throw new FolderUnavailableError(record.folder.name, state);
       record.lastOpened = new Date(Math.max(Date.now(), Date.parse(ordered()[0]?.lastOpened ?? '0') + 1)).toISOString();
       return stores.get(id)!;
     },
@@ -96,7 +144,7 @@ export function createFakeRegistry(options: { projects?: number; empty?: boolean
       const record = need(id);
       if (patch.name !== undefined) record.name = patch.name;
       if (patch.color !== undefined) record.color = patch.color;
-      return { ...record };
+      return shown(record);
     },
     async remove(id) {
       refuse();

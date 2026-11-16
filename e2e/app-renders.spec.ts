@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import type { Page } from '@playwright/test';
 import { closeIntro, expect, openApp, seedLocalStorage, switcherTitle, test } from './app-fixtures';
 
-// Renders for Bruce from the production build (docs/renders/slice-3/). Runs
+// Renders for Bruce from the production build. Runs
 // only when NEBULA_RENDERS names a folder for the PNGs, in Chromium:
 //   NEBULA_RENDERS=$TMPDIR/renders NEBULA_E2E_BUILT=1 pnpm exec playwright test --project=chromium e2e/app-renders.spec.ts
 // The same checks as every app test apply: the policy blocks nothing, and no

@@ -13,8 +13,7 @@ type Fixtures = {
 };
 
 type WorkerFixtures = {
-  /** WebKit keeps OPFS only in a persistent context (docs/slice-3.md, decision
-   * 8), so the OPFS specs use one in both browsers. */
+  /** WebKit keeps OPFS only in a persistent context, so the OPFS specs use one in both browsers. */
   persistentContext: BrowserContext;
 };
 

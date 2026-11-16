@@ -2,15 +2,14 @@
  * The integration suite's fixtures (e2e/app-*.spec.ts): the production build
  * of the whole app, each test in a browser profile of its own.
  *
- * WebKit keeps OPFS only in a persistent context (docs/slice-3.md, decision
- * 8), so every test gets a fresh persistent context in both browsers, which
+ * WebKit keeps OPFS only in a persistent context, so every test gets a fresh persistent context in both browsers, which
  * is also what a first visit is. `test.use({ ephemeral: true })` gives the
  * default, ephemeral context instead: in WebKit that is a browser that keeps
  * nothing.
  *
  * Every test runs under the site's Content-Security-Policy (serve-site.mjs
  * sends vercel.json's headers), and fails if the policy blocked anything or a
- * request left the origin (review finding 20).
+ * request left the origin.
  */
 import { test as base, expect, type BrowserContext, type BrowserContextOptions, type Page } from '@playwright/test';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -18,10 +17,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const port = Number(process.env.NEBULA_E2E_PORT || 4340);
-export const baseURL = `http://127.0.0.1:${port}`;
-export const built = process.env.NEBULA_E2E_BUILT === '1';
+/** NEBULA_E2E_BASE_URL runs the suite against a deployed copy (it's the
+ * production build, so it counts as built); otherwise the local server. */
+const remote = process.env.NEBULA_E2E_BASE_URL?.replace(/\/$/, '');
+export const baseURL = remote || `http://127.0.0.1:${port}`;
+export const built = process.env.NEBULA_E2E_BUILT === '1' || Boolean(remote);
 /** NEBULA_E2E_FIXME=1 runs the tests marked fixme for a bug in another lane's
- * code (docs/lanes/integration-findings.md), to see whether it still fails. */
+ * code, to see whether it still fails. */
 export const runFixme = process.env.NEBULA_E2E_FIXME === '1';
 
 type Options = {
@@ -43,7 +45,10 @@ export const test = base.extend<Options>({
   browserChannel: [undefined, { option: true }],
   allowOrigins: [[], { option: true }],
 
-  context: async ({ playwright, browserName, appContext, ephemeral, browserChannel: channel, allowOrigins }, provide) => {
+  context: async ({ playwright, browserName, appContext, ephemeral, browserChannel: channel, allowOrigins }, provide, testInfo) => {
+    // Per test, here: a beforeEach at this module's top level attached only to the first spec
+    // file that imported it, so a dev-server run ran (and failed) every other app spec.
+    testInfo.skip(!built, 'The app suite runs on the production build: NEBULA_E2E_BUILT=1 (pnpm run build:site first).');
     const options: BrowserContextOptions = { baseURL, viewport: { width: 1440, height: 900 }, acceptDownloads: true, ...appContext };
     const run = async (context: BrowserContext) => {
       const guard = await guardContext(context, allowOrigins);
@@ -77,9 +82,6 @@ export const test = base.extend<Options>({
   },
 });
 
-test.beforeEach(() => {
-  test.skip(!built, 'The app suite runs on the production build: NEBULA_E2E_BUILT=1 (pnpm run build:site first).');
-});
 
 export { expect };
 
@@ -113,11 +115,20 @@ async function guardContext(context: BrowserContext, allowOrigins: string[] = []
 
 /* ---- driving the app ------------------------------------------------------ */
 
+/** The app's address on the site for one of its own (`/`, `/p/…`, `/b/…`,
+ * `/?board=…`): the site mounts the app at /app, with the landing page at /. */
+export function appUrl(path = '/'): string {
+  if (path === '/app' || path.startsWith('/app/') || path.startsWith('/app?') || path.startsWith('/app#')) return path;
+  if (path === '/') return '/app';
+  if (path.startsWith('/?') || path.startsWith('/#')) return `/app${path.slice(1)}`;
+  return `/app${path}`;
+}
+
 /** Opens a page of the app and waits for the workspace, with the boot splash gone. */
 export async function openApp(page: Page, path = '/'): Promise<string[]> {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  const response = await page.goto(path);
+  const response = await page.goto(appUrl(path));
   // The suite runs under the policy the site sends (vercel.json via serve-site.mjs).
   expect(response?.headers()['content-security-policy']).toMatch(/^default-src 'self'/);
   await page.locator('.ws-root').waitFor({ timeout: 30_000 });
@@ -141,11 +152,12 @@ export function switcherTitle(page: Page) {
   return page.locator('.ws-switcher .page-sidebar-title');
 }
 
-/** The open file's path, from the address (/p/<project>/<path>). */
+/** The open file's path, from the address (/app/p/<project>/<path>). */
 export function addressPath(page: Page): { projectId: string; path: string | null } | null {
   const url = new URL(page.url());
-  if (!url.pathname.startsWith('/p/')) return null;
-  const [project, ...rest] = url.pathname.slice(3).split('/');
+  const pathname = url.pathname.replace(/^\/app(?=\/|$)/, '');
+  if (!pathname.startsWith('/p/')) return null;
+  const [project, ...rest] = pathname.slice(3).split('/');
   return { projectId: decodeURIComponent(project), path: rest.length ? rest.map(decodeURIComponent).join('/') : null };
 }
 
@@ -153,13 +165,23 @@ export function addressPath(page: Page): { projectId: string; path: string | nul
 
 export type StoredProject = { id: string; dir: string; name: string; color: string; files: string[] };
 
+/*
+ * Reads of OPFS from a test take the file's shared Web Lock, as Nebula's own
+ * reads do (`nebula:file:<place>`, src/files/fileLocks.ts): WebKit's getFile()
+ * isn't a snapshot, so a read while the app's writable closes can see the file
+ * empty. A probe that rewrote a file the way the app does found 7 empty reads
+ * in 1,162 without the lock in WebKit, and none with it (2026-10-22).
+ */
+
 /** The projects in OPFS, read straight from the tree Nebula keeps there
  * (nebula/registry.json and nebula/projects/<dir>/), not through the app. */
 export async function storedProjects(page: Page): Promise<StoredProject[]> {
   return page.evaluate(async () => {
     const root = await navigator.storage.getDirectory();
     const tree = await root.getDirectoryHandle('nebula');
-    const registry = JSON.parse(await (await (await tree.getFileHandle('registry.json')).getFile()).text()) as { projects: { id: string; dir: string }[] };
+    const readLocked = (place: string, open: () => Promise<FileSystemFileHandle>): Promise<string> =>
+      navigator.locks.request(`nebula:file:${place}`, { mode: 'shared' }, async () => (await (await open()).getFile()).text());
+    const registry = JSON.parse(await readLocked('registry.json', () => tree.getFileHandle('registry.json'))) as { projects: { id: string; dir: string }[] };
     const projectsDir = await tree.getDirectoryHandle('projects');
     const walk = async (dir: FileSystemDirectoryHandle, prefix: string): Promise<string[]> => {
       const found: string[] = [];
@@ -174,7 +196,9 @@ export async function storedProjects(page: Page): Promise<StoredProject[]> {
     const result = [];
     for (const entry of registry.projects) {
       const dir = await projectsDir.getDirectoryHandle(entry.dir);
-      const meta = JSON.parse(await (await (await (await dir.getDirectoryHandle('.nebula')).getFileHandle('project.json')).getFile()).text());
+      const meta = JSON.parse(
+        await readLocked(`projects/${entry.dir}/.nebula/project.json`, async () => (await dir.getDirectoryHandle('.nebula')).getFileHandle('project.json')),
+      );
       result.push({ id: entry.id, dir: entry.dir, name: meta.name, color: meta.color, files: (await walk(dir, '')).sort() });
     }
     return result;
@@ -188,13 +212,17 @@ export async function storedText(page: Page, projectId: string, path: string): P
       try {
         const root = await navigator.storage.getDirectory();
         const tree = await root.getDirectoryHandle('nebula');
-        const registry = JSON.parse(await (await (await tree.getFileHandle('registry.json')).getFile()).text()) as { projects: { id: string; dir: string }[] };
+        const readLocked = (place: string, open: () => Promise<FileSystemFileHandle>): Promise<string> =>
+          navigator.locks.request(`nebula:file:${place}`, { mode: 'shared' }, async () => (await (await open()).getFile()).text());
+        const registry = JSON.parse(await readLocked('registry.json', () => tree.getFileHandle('registry.json'))) as { projects: { id: string; dir: string }[] };
         const entry = registry.projects.find((project) => project.id === projectId);
         if (!entry) return null;
-        let dir = await (await tree.getDirectoryHandle('projects')).getDirectoryHandle(entry.dir);
         const parts = path.split('/');
-        for (const part of parts.slice(0, -1)) dir = await dir.getDirectoryHandle(part);
-        return await (await (await dir.getFileHandle(parts.at(-1)!)).getFile()).text();
+        return await readLocked(`projects/${entry.dir}/${path}`, async () => {
+          let dir = await (await tree.getDirectoryHandle('projects')).getDirectoryHandle(entry.dir);
+          for (const part of parts.slice(0, -1)) dir = await dir.getDirectoryHandle(part);
+          return dir.getFileHandle(parts.at(-1)!);
+        });
       } catch {
         return null;
       }

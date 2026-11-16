@@ -1,5 +1,5 @@
 /**
- * Download a project as a .zip (PLAN §7: browser-tier files belong to one
+ * Download a project as a .zip (browser-tier files belong to one
  * browser, so Nebula always offers a copy). Every file and folder goes in, and
  * so does `.nebula/project.json`, so the project keeps its name and colour
  * when it is opened again. The workspace state (open tabs) belongs to this
@@ -62,8 +62,7 @@ class BlobParts {
 /** Where each path goes in the archive: names that wouldn't unpack on
  * Windows or macOS mapped (portableName), and names that would land on one
  * another there (case, Unicode composition, or the mapping) kept apart, as
- * 'Name 2.ext'. Folders map once, for everything inside them (review
- * finding 22). */
+ * 'Name 2.ext'. Folders map once, for everything inside them. */
 function archivePaths(paths: string[]): Map<string, string> {
   const mapped = new Map<string, string>([['', '']]);
   const taken = new Map<string, string[]>();
@@ -86,7 +85,7 @@ function archivePaths(paths: string[]): Map<string, string> {
 /**
  * The project as a .zip Blob. Each file is read a slice at a time and
  * streamed through fflate's Zip into Blob parts, so a project of big videos
- * never sits whole in memory (review finding 25). The archive holds what
+ * never sits whole in memory. The archive holds what
  * zipSync's would: the same entries, bytes, methods, UTF-8 flags and times;
  * only the sizes come after each entry's data, as in any streamed zip.
  */

@@ -118,19 +118,19 @@ describe('runFileStoreConformance', () => {
     ]);
   });
 
-  it('catches a store that drops the write options: exclusive writes overwrite (round 4, F1), conditional ones too (round 5)', async () => {
+  it('catches a store that drops the write options: exclusive writes overwrite, conditional ones too', async () => {
     expect(await failures(() => new CarelessStore())).toEqual([
       'refuses an exclusive write where anything exists, and makes a new file with one',
       'lets exactly one of two exclusive writes to one new path through',
-      'writes with ifUnchanged only while the file holds exactly the text given, or nothing (round 5)',
-      'lets exactly one of two writes expecting the same text through, whatever their size and time (round 5)',
+      'writes with ifUnchanged only while the file holds exactly the text given, or nothing',
+      'lets exactly one of two writes expecting the same text through, whatever their size and time',
     ]);
   });
 
-  it('catches a store that compares only size and time (round 5)', async () => {
+  it('catches a store that compares only size and time', async () => {
     expect(await failures(() => new StampStore())).toEqual([
-      'writes with ifUnchanged only while the file holds exactly the text given, or nothing (round 5)',
-      'lets exactly one of two writes expecting the same text through, whatever their size and time (round 5)',
+      'writes with ifUnchanged only while the file holds exactly the text given, or nothing',
+      'lets exactly one of two writes expecting the same text through, whatever their size and time',
     ]);
   });
 

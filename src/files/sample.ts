@@ -1,6 +1,5 @@
 /**
- * Night Sky, the sample project brand-new visitors get (docs/slice-3.md,
- * decision 5). Its notes and canvas travel in this module as text; the image
+ * Night Sky, the sample project brand-new visitors get. Its notes and canvas travel in this module as text; the image
  * and the PDF are fetched from public/sample/ when the project is made, so the
  * binaries never enter the JavaScript bundle. public/sample/CREDITS.md says
  * where each file comes from.

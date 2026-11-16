@@ -1,6 +1,6 @@
 /**
  * Contracts shared by the storage layer (src/files) and the workspace UI
- * (src/workspace). Slice 3 of PLAN.md; the build plan is docs/slice-3.md.
+ * (src/workspace).
  *
  * Paths are POSIX-style and relative to a project's root, with no leading or
  * trailing slash: 'Guides/Observing plan.md'. The root itself is ''.
@@ -21,19 +21,42 @@ export type FileEntry = {
   modified?: number;
 };
 
-/** A change to a store. A remove whose path is '' means the store's own
- * folder went (its project was removed, or the folder moved away): treat
- * everything in it as gone. A scoped store says so (src/files/scopedStore.ts). */
+/** A change to a store. A remove whose path is '' means the project was
+ * removed on purpose (or moved to a folder): treat everything in it as
+ * gone. A scoped store says so (src/files/scopedStore.ts).
+ *
+ * `unreachable` and `reachable` are a folder project's folder going out of
+ * reach (moved, a drive unplugged, permission taken back) and coming back: nothing in it is gone, so edits stay unsaved and
+ * saves wait until it's back. `folder` is the folder's name, to say so. */
 export type FileChange =
   | { type: 'write'; path: string }
   | { type: 'mkdir'; path: string }
   | { type: 'remove'; path: string }
-  | { type: 'rename'; from: string; to: string };
+  | { type: 'rename'; from: string; to: string }
+  | { type: 'unreachable'; folder?: string }
+  | { type: 'reachable' }
+  /** Move to a folder…, said on the project's channel by the tab moving it
+   * (S3): saves wait while it's `moving`; once `moved`, the project opens
+   * again from the folder; `move-failed`, it stays here and saves resume. */
+  /** A folder project's folder holds more than Nebula shows (S8): it's
+   * not looked at again until the page reloads. */
+  | { type: 'too-big'; folder?: string }
+  | { type: 'moving' }
+  | { type: 'moved' }
+  | { type: 'move-failed' };
+
+/** A change to a path: every FileChange but a folder's reach. */
+export type PathChange = Extract<FileChange, { type: 'write' | 'mkdir' | 'remove' | 'rename' }>;
+
+/** True for a change that names no path: a folder's reach, a move. */
+export function isProjectSignal(change: FileChange): change is Exclude<FileChange, PathChange> {
+  return change.type === 'unreachable' || change.type === 'reachable' || change.type === 'too-big' || change.type === 'moving' || change.type === 'moved' || change.type === 'move-failed';
+}
 
 export type WriteOptions = {
-  /** Create the file, never replace one (round 4, F1): a conflict copy. */
+  /** Create the file, never replace one: a conflict copy. */
   exclusive?: boolean;
-  /** Write only if the file is still what the caller last saw (round 5):
+  /** Write only if the file is still what the caller last saw:
    * `{ text }`, exactly that content, or 'absent', nothing at the path.
    * Checked under the same lock as the write itself, so no other write, in
    * this tab or another, lands between the check and the write. On a
@@ -44,7 +67,7 @@ export type WriteOptions = {
 };
 
 /** One project's files. The browser tier (OPFS) implements it in slice 3;
- * the server tier (slice 4) and the folder tier (slice 7) implement it later. */
+ * the server tier and the folder tier implement it later. */
 export interface FileStore {
   /** Every file and folder under the root except `.nebula/`, sorted by path. */
   list(): Promise<FileEntry[]>;
@@ -74,8 +97,28 @@ export interface FileStore {
  * content says so (Obsidian Excalidraw frontmatter); see src/files/kinds.ts. */
 export type FileKind = 'note' | 'canvas' | 'image' | 'pdf' | 'audio' | 'video' | 'text' | 'other';
 
-/** Where a project's files live. 'folder' and 'server' arrive in slices 7 and 4. */
-export type ProjectTier = 'browser';
+/** Where a project's files live: the browser's own storage (OPFS), or a
+ * folder on this computer the person picked (slice 7; Chromium on a desktop).
+ * 'server' arrives with the sync layer. */
+export type ProjectTier = 'browser' | 'folder';
+
+/** Whether Nebula can open a folder project's folder now:
+ * - 'granted': it can;
+ * - 'prompt': the browser forgot the permission and must ask again, from a click;
+ * - 'denied': the person said no;
+ * - 'missing': the folder was moved, deleted or is on a drive that isn't
+ *   connected, or this browser no longer knows which folder it was. */
+export type FolderAccess = 'granted' | 'prompt' | 'denied' | 'missing';
+
+/** The part of a picked folder (FileSystemDirectoryHandle) the folder tier
+ * relies on; tests pass a stand-in whose permission they control. */
+export type FolderHandle = {
+  readonly kind: 'directory';
+  readonly name: string;
+  queryPermission?(descriptor: { mode: 'read' | 'readwrite' }): Promise<PermissionState>;
+  requestPermission?(descriptor: { mode: 'read' | 'readwrite' }): Promise<PermissionState>;
+  isSameEntry?(other: FolderHandle): Promise<boolean>;
+};
 
 /** `.nebula/project.json`. It travels with the folder. */
 export type ProjectMeta = {
@@ -94,6 +137,22 @@ export type ProjectRecord = ProjectMeta & {
   tier: ProjectTier;
   /** ISO 8601. */
   lastOpened?: string;
+  /** A folder project's folder: its name as the computer shows it, and
+   * whether Nebula can open it now. Absent for the browser tier. */
+  folder?: { name: string; access: FolderAccess };
+};
+
+/** What New project and Open a folder… give the registry. With `folder`,
+ * the project lives in that folder: one that already holds a
+ * `.nebula/project.json` keeps its id, name and colour. */
+export type NewProject = {
+  name: string;
+  color: string;
+  folder?: FolderHandle;
+  /** With `folder`: Move to a folder…, for this browser project. Every file
+   * is copied into the (empty) folder and checked before the project
+   * switches to it, keeping its id, and its browser copy is deleted. */
+  from?: string;
 };
 
 /** `.nebula/workspace.json`: what was open, restored when you come back. */
@@ -111,11 +170,13 @@ export type WorkspaceState = {
 export interface ProjectRegistry {
   /** Most recently opened first. */
   list(): Promise<ProjectRecord[]>;
-  create(input: { name: string; color: string }): Promise<ProjectRecord>;
-  /** Opens the project's files and records it as the last one opened. */
+  create(input: NewProject): Promise<ProjectRecord>;
+  /** Opens the project's files and records it as the last one opened. A
+   * folder project Nebula can't open now rejects with FolderUnavailableError. */
   open(id: string): Promise<FileStore>;
   update(id: string, patch: Partial<Pick<ProjectMeta, 'name' | 'color'>>): Promise<ProjectRecord>;
-  /** Deletes the project and all its files from this tier. */
+  /** A browser project: deletes it and all its files. A folder project:
+   * forgets it, and never touches the folder or its files. */
   remove(id: string): Promise<void>;
   /** The project opened last, for startup; null when there are none. */
   current(): Promise<string | null>;
@@ -138,7 +199,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   dock: false,
 };
 
-/** A person's first project (Bruce, 2026-10-22): what Nebula 1.x's default
+/** A person's first project: what Nebula 1.x's default
  * board is called once it moves in, and what New project suggests while
  * there are no projects, or from the welcome's Start empty. */
 export const FIRST_PROJECT_NAME = 'My First Project';

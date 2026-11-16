@@ -40,13 +40,13 @@ test('a note reads like the sketch, and never runs raw HTML', async ({ page }) =
   await expect(pageEl).not.toContainText('tags:');
 });
 
-test('web links open in a new tab, wikilinks are plain text', async ({ page }) => {
+test('web links open in a new tab, and a wikilink is a link of its own (muted here: the harness has no project around it)', async ({ page }) => {
   await openHarness(page, 'Guides/Observing plan.md');
   const link = page.getByRole('link', { name: 'the Met Office' });
   await expect(link).toHaveAttribute('target', '_blank');
   await expect(link).toHaveAttribute('rel', 'noopener noreferrer');
   await expect(page.locator('.ws-prose')).toContainText('Notes in Orion.');
-  await expect(page.getByRole('link', { name: 'Orion', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Orion', exact: true })).toHaveClass(/ws-wikilink-missing/);
 });
 
 test('an SVG shows as an image and its script never runs', async ({ page }) => {

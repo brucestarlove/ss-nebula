@@ -1,4 +1,4 @@
-// The storage lane's browser checks (docs/lanes/storage.md): what only real
+// The storage lane's browser checks: what only real
 // OPFS and real Web Locks can show. The store conformance cases themselves run
 // in e2e/files-opfs.spec.ts.
 import { expect, openHarness, test } from './harness/files-fixtures';
@@ -21,7 +21,7 @@ test.describe('the registry and its projects share their path locks', () => {
   });
 });
 
-test.describe('a new file appears whole or not at all (review finding 11)', () => {
+test.describe('a new file appears whole or not at all', () => {
   test('another store never sees a new file empty or half written, nor its temporary name', async ({ persistentContext, browserName }, testInfo) => {
     const page = await openHarness(persistentContext, HARNESS);
     // WebKit writes and moves 8 MB before the reader has looked twice.
@@ -49,7 +49,7 @@ test.describe('an overwrite is read whole, from another store too', () => {
   });
 });
 
-test.describe('registry.json and the project folders (review findings 10 and 12)', () => {
+test.describe('registry.json and the project folders', () => {
   test('a project that registry.json lost, as when two tabs wrote it at once, is listed again', async ({ persistentContext }) => {
     const page = await openHarness(persistentContext, HARNESS);
     await page.evaluate(() => window.storageHarness.wipe());

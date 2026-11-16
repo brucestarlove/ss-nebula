@@ -30,9 +30,13 @@ export type SettingsProps = {
   usage: string;
   fileCount: number;
   ephemeral: boolean;
+  /** A folder project's folder, or null in the browser. */
+  folderName?: string | null;
   /** Whether the browser has agreed to keep the files; null when it
    * doesn't say, undefined until it's asked. */
   kept?: boolean | null;
+  /** When the open project was last downloaded from this browser ('Last downloaded today.'). */
+  downloaded?: string | null;
   canDownload: boolean;
   /** False when the project list can't be changed (a registry from a newer
    * Nebula): name, colour and Remove show, turned off. Files still can. */
@@ -42,11 +46,15 @@ export type SettingsProps = {
   onDownload: () => void;
   onImport: () => void;
   onRemove: () => void;
+  /** Move to a folder…, for a browser project where the browser can open
+   * folders; absent otherwise. */
+  onMoveToFolder?: () => void;
 };
 
 type Choice<T> = { value: T; label: string };
 
-function Segmented<T extends string>({ label, value, options, onChange }: { label: string; value: T; options: Choice<T>[]; onChange: (value: T) => void }) {
+/** ss-ui's segmented radios, with arrow keys; the image converter uses them too. */
+export function Segmented<T extends string>({ label, value, options, onChange }: { label: string; value: T; options: Choice<T>[]; onChange: (value: T) => void }) {
   return (
     <div
       className="segmented"
@@ -110,8 +118,9 @@ export function SettingsDrawer(props: SettingsProps) {
   if (!open) return null;
 
   const tabs: { id: SettingsTab; label: string }[] = [
-    { id: 'project', label: 'Project' },
+    // Appearance, then Project (Bruce, 2026-10-25, back from 10-22's Project first).
     { id: 'appearance', label: 'Appearance' },
+    { id: 'project', label: 'Project' },
   ];
 
   const onTabKeys = (event: KeyboardEvent<HTMLElement>) => {
@@ -487,59 +496,115 @@ function ProjectPanel(props: SettingsProps) {
           <Swatches className="ws-swatches-row" value={project.color} onChange={props.onColour} label="Colour" disabled={props.canChangeProject === false} />
         </div>
       </div>
-      <div className="drawer-section">
-        <h3 className="ws-set-h">Files</h3>
-        <div className="ws-where">
-          <Icon name="browser" />
-          <span>
-            <b>{props.location}</b>
-            <span>
-              {props.usage}
-              {props.ephemeral ? ', gone when this tab closes' : ', on this device only'}
-            </span>
-          </span>
-        </div>
-        <div className="ws-set-actions">
-          {props.canDownload ? (
-            <Button className="ws-btn" onClick={props.onDownload}>
-              <Icon name="download" />
-              Download as .zip
-            </Button>
-          ) : null}
-          <Button className="ws-btn" onClick={props.onImport}>
-            <Icon name="upload" />
-            Import files…
-          </Button>
-        </div>
-        {props.ephemeral ? (
-          <p className="ws-set-help">This browser can’t keep files here, so download anything you want to keep.</p>
-        ) : props.kept === true ? (
-          <p className="ws-set-help">This browser has agreed to keep Nebula’s files, even when space runs low.</p>
-        ) : props.kept === false ? (
-          <p className="ws-set-help">
-            This browser may clear Nebula’s files when space runs low, and a private window forgets them when it closes. Keep a download of anything
-            you’d miss.
-          </p>
-        ) : props.kept === null ? (
-          <p className="ws-set-help">
-            This browser doesn’t say whether it keeps Nebula’s files, and a private window forgets them when it closes. Keep a download of anything
-            you’d miss.
-          </p>
-        ) : null}
-      </div>
+      {props.folderName ? <FolderFiles {...props} folderName={props.folderName} /> : <BrowserFiles {...props} />}
       <div className="drawer-section">
         <h3 className="ws-set-h">Remove</h3>
         <p className="ws-set-help">
-          Deletes {project.name} and its {props.fileCount === 1 ? '1 file' : `${props.fileCount} files`} from{' '}
-          {props.ephemeral ? 'this tab' : 'this browser'}.
+          {props.folderName
+            ? `Removes ${project.name} from Nebula. The folder ‘${props.folderName}’ and its files stay on this computer.`
+            : `Deletes ${project.name} and its ${props.fileCount === 1 ? '1 file' : `${props.fileCount} files`} from ${props.ephemeral ? 'this tab' : 'this browser'}.`}
         </p>
         <div className="ws-set-actions">
-          <Button className="ws-btn ws-btn-danger" disabled={props.canChangeProject === false} onClick={props.onRemove}>
+          <Button className={props.folderName ? 'ws-btn' : 'ws-btn ws-btn-danger'} disabled={props.canChangeProject === false} onClick={props.onRemove}>
             <Icon name="trash" />
-            Remove project…
+            {props.folderName ? 'Remove from Nebula…' : 'Remove project…'}
           </Button>
         </div>
       </div>
     </section>
+  );
+}
+
+/** Download as .zip and Import, and when it was last downloaded. */
+function FileActions(props: SettingsProps) {
+  return (
+    <>
+      <div className="ws-set-actions">
+        {props.canDownload ? (
+          <Button className="ws-btn" onClick={props.onDownload}>
+            <Icon name="download" />
+            Download as .zip
+          </Button>
+        ) : null}
+        <Button className="ws-btn" onClick={props.onImport}>
+          <Icon name="upload" />
+          Import files…
+        </Button>
+      </div>
+      {props.canDownload && props.downloaded ? <p className="ws-set-help ws-set-downloaded">{props.downloaded}</p> : null}
+    </>
+  );
+}
+
+/** A folder project's files: ordinary files in a folder on this computer,
+ * which the browser can't clear, backed up with the folder. */
+function FolderFiles(props: SettingsProps & { folderName: string }) {
+  return (
+    <div className="drawer-section">
+      <h3 className="ws-set-h">Files</h3>
+      <div className="ws-where">
+        <Icon name="folder" />
+        <span>
+          <b>In the folder ‘{props.folderName}’, on this computer</b>
+          <span>{props.usage}</span>
+        </span>
+      </div>
+      <FileActions {...props} />
+      <p className="ws-set-help">
+        These are ordinary files: other apps can open and change them, and Nebula shows their changes. Backing up the folder backs up the project, and a
+        folder inside Dropbox, Google Drive, iCloud Drive, OneDrive or Proton Drive is backed up by that service’s own app.
+      </p>
+    </div>
+  );
+}
+
+/** A browser project's files, and what can clear them. */
+function BrowserFiles(props: SettingsProps) {
+  return (
+    <div className="drawer-section">
+      <h3 className="ws-set-h">Files</h3>
+      <div className="ws-where">
+        <Icon name="browser" />
+        <span>
+          <b>{props.location}</b>
+          <span>
+            {props.usage}
+            {props.ephemeral ? ', gone when this tab closes' : ', on this device only'}
+          </span>
+        </span>
+      </div>
+      <FileActions {...props} />
+      {props.onMoveToFolder ? (
+        <>
+          <div className="ws-set-actions">
+            <Button className="ws-btn" onClick={props.onMoveToFolder}>
+              <Icon name="folder" />
+              Move to a folder…
+            </Button>
+          </div>
+          <p className="ws-set-help">
+            Move to a folder… copies its files into an empty folder on this computer, checks each one, and only then deletes the copy in this browser.
+          </p>
+        </>
+      ) : null}
+      {props.ephemeral ? (
+        <p className="ws-set-help ws-set-warn">This browser can’t keep files here, so download anything you want to keep.</p>
+      ) : props.kept === true ? (
+        <p className="ws-set-help">
+          This browser has agreed to keep Nebula’s files, even when space runs low. A .zip is still your copy if this device is lost or reset.
+        </p>
+      ) : props.kept === false ? (
+        <p className="ws-set-help ws-set-warn">
+          This browser may clear Nebula’s files when space runs low, and a private window forgets them when it closes. Safari can also clear them
+          after a week of use without a visit. Keep a .zip of anything you’d miss, or install Nebula as an app (Help says how): browsers clear
+          installed apps far less often.
+        </p>
+      ) : props.kept === null ? (
+        <p className="ws-set-help ws-set-warn">
+          This browser doesn’t say whether it keeps Nebula’s files, and a private window forgets them when it closes. Keep a .zip of anything
+          you’d miss, or install Nebula as an app (Help says how): browsers clear installed apps far less often.
+        </p>
+      ) : null}
+    </div>
   );
 }

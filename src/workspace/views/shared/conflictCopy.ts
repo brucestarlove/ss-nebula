@@ -12,8 +12,7 @@ const pad = (value: number) => String(value).padStart(2, '0');
 
 /** The copy's name, in local time, with '.' in the time (':' isn't portable
  * in names), free among `taken` (the folder's names), and at most 255 bytes:
- * the stem is shortened, never the stamp, the counter or the extension
- * (round 4, F2). */
+ * the stem is shortened, never the stamp, the counter or the extension. */
 export function conflictCopyName(path: string, taken: Iterable<string>, now: Date): string {
   const ext = extension(path);
   const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}.${pad(now.getMinutes())}`;
@@ -31,7 +30,7 @@ export function conflictCopyName(path: string, taken: Iterable<string>, now: Dat
 const COPY_ATTEMPTS = 10;
 
 /** Writes `data` beside `path` under a free conflict name; returns its path.
- * The write only creates (round 4, F1): a copy written at the same moment
+ * The write only creates: a copy written at the same moment
  * by another session or tab, under the same name, is never overwritten, and
  * this one takes the next name. */
 export async function writeConflictCopy(store: FileStore, path: string, data: string, now = new Date()): Promise<string> {

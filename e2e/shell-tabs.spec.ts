@@ -109,11 +109,14 @@ test.describe('tabs, stage, outline and status', () => {
     await expect(page.getByRole('button', { name: 'Collapse the sidebar' })).toHaveAttribute('aria-pressed', 'true');
   });
 
-  test('Help opens the About dialog, or the host’s help', async ({ page }) => {
+  test('Help opens the workspace’s Help, or the host’s help', async ({ page }) => {
     await page.getByRole('button', { name: 'Help' }).click();
-    await expect(page.locator('dialog.nebula-about[open]')).toBeVisible();
+    const help = page.locator('dialog.ws-help[open]');
+    await expect(help).toBeVisible();
+    await expect(help).toContainText('Where your files live');
+    await expect(help).not.toContainText('board dropdown');
     await page.keyboard.press('Escape');
-    await expect(page.locator('dialog.nebula-about[open]')).toHaveCount(0);
+    await expect(page.locator('dialog.ws-help[open]')).toHaveCount(0);
 
     await openShell(page, 'help=link');
     await page.getByRole('button', { name: 'Help' }).click();

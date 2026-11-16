@@ -1,5 +1,5 @@
 /**
- * How Nebula starts (docs/slice-3.md, Integration 2, decisions 5 and 8):
+ * How Nebula starts:
  *
  * 1. Open the browser tier (OPFS, or memory when this browser keeps nothing).
  * 2. When Nebula 1.x canvases are in localStorage and haven't moved yet, move
@@ -45,7 +45,7 @@ export type BootDeps = {
 
 export type Boot = {
   registry: BrowserRegistry;
-  /** False when nothing will be kept (decision 8). */
+  /** False when nothing will be kept. */
   persistent: boolean;
   /** Why nothing will be kept. */
   reason?: string;

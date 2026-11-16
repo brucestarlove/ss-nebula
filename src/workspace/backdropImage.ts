@@ -1,8 +1,7 @@
 import { mimeFromName } from './views/shared/mime';
 
 /**
- * Readies an image the user picked as a background (docs/slice-3.md,
- * Settings and backgrounds): a web format, at most MAX_BACKDROP_SIDE on its
+ * Readies an image the user picked as a background: a web format, at most MAX_BACKDROP_SIDE on its
  * long side, kept as it is when it already is one; and a tiny JPEG preview
  * that paints at once on the next load. Nothing leaves the browser.
  */

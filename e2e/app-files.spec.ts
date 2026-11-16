@@ -132,3 +132,35 @@ test('a new canvas keeps its drawing over a reload', async ({ page }) => {
   expect(await elementCount(page)).toBe(1);
   expect((await liveScene(page)).ids).toEqual(drawn);
 });
+
+// Bruce, 2026-11-14, testing 2.0.0 locally: "there's no right-click context
+// menu for creating a new folder in the files bar". The menu was there, but only
+// on the list's own rows; the blank part of the rail below them did nothing.
+test('right-clicking the empty space below the files offers New folder, and it makes one', async ({ page }) => {
+  await openApp(page);
+  await closeIntro(page);
+  const tree = page.locator('nav.ws-tree');
+  const last = await page.locator('.ws-filetree [role="treeitem"]').last().boundingBox();
+  const rail = await tree.boundingBox();
+  if (!last || !rail) throw new Error('the file tree is not on screen');
+  const y = Math.min(last.y + last.height + 60, rail.y + rail.height - 8);
+  expect(y).toBeGreaterThan(last.y + last.height + 20);
+  await page.mouse.click(rail.x + 40, y, { button: 'right' });
+  await page.getByRole('menuitem', { name: 'New folder' }).click();
+  const name = page.getByRole('textbox', { name: /^Rename New folder/ });
+  await expect(name).toBeFocused();
+  await name.fill('Maps');
+  await page.keyboard.press('Enter');
+  await expect(row(page, 'Maps')).toBeVisible();
+});
+
+test('the Files heading has a New folder button', async ({ page }) => {
+  await openApp(page);
+  await closeIntro(page);
+  await page.locator('.ws-section-actions').getByRole('button', { name: 'New folder' }).click();
+  const name = page.getByRole('textbox', { name: /^Rename New folder/ });
+  await expect(name).toBeFocused();
+  await name.fill('Reference');
+  await page.keyboard.press('Enter');
+  await expect(row(page, 'Reference')).toBeVisible();
+});

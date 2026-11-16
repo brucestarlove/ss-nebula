@@ -1,4 +1,4 @@
-/* CodeMirror inside Nebula (lane C). The editor's own theme lives in
+/* CodeMirror inside Nebula. The editor's own theme lives in
  * codeTheme.ts; this file sizes it per variant and keeps the app's global
  * input and button styles out of CodeMirror's panels. */
 

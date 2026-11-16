@@ -1,4 +1,4 @@
-/* Nebula workspace (slice 3). Ported from the approved round-2 sketch
+/* Nebula workspace. Ported from the approved round-2 sketch
  * (sketches/workspace/sketch.css); the ws-* class names are kept.
  *
  * It extends the real ss-ui layers the app installs (@starlove/ui 3.3.3:
@@ -561,6 +561,14 @@
   border-radius: var(--radius-control);
 }
 
+/* The files list runs to the foot of the rail, so a right-click on the blank
+ * space below the rows is the project's own menu (New note, New folder…), and
+ * a file dropped there lands at the project's root. */
+.ws-tree .ws-files-section,
+.ws-files-drop {
+  flex: 1 0 auto;
+}
+
 .ws-filetree [role="treeitem"] {
   outline: none;
 }
@@ -680,6 +688,23 @@
 
 .ws-rail-footer .ws-icon-btn:first-of-type {
   margin-inline-start: auto;
+}
+
+/* The status opens Settings at the project's files. */
+.ws-rail-footer .ws-rail-where {
+  margin: -0.2rem auto -0.2rem -0.35rem;
+  padding: 0.2rem 0.35rem;
+  border-radius: 8px;
+  text-align: start;
+}
+
+.ws-rail-footer .ws-rail-where:hover {
+  background: var(--subtle-bg);
+}
+
+.ws-rail-footer .ws-rail-where:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .ws-store-dot {
@@ -891,7 +916,7 @@
   flex: 1 1 auto;
 }
 
-/* A calm notice when this browser keeps nothing (docs/slice-3.md, decision 8). */
+/* A calm notice when this browser keeps nothing. */
 .ws-ephemeral {
   flex: 0 0 auto;
   display: flex;
@@ -2258,6 +2283,169 @@
   justify-content: flex-end;
 }
 
+/* Convert image…: an image, or a folder's, to WebP, JPEG or PNG, and smaller. */
+.ws-convert.dialog {
+  width: min(34rem, calc(100vw - 2rem));
+}
+
+.ws-convert-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+  padding: 1.45rem 1.6rem 1.4rem;
+}
+
+.ws-convert-what {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  min-width: 0;
+}
+
+/* The checks show through where the image is clear. */
+.ws-convert-thumb {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 4.25rem;
+  height: 4.25rem;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--ws-muted);
+  background-color: var(--surface-input);
+  background-image: conic-gradient(var(--line) 25%, transparent 0 50%, var(--line) 0 75%, transparent 0);
+  background-size: 12px 12px;
+}
+
+.ws-convert-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.ws-convert-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.ws-convert-facts strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.ws-convert-facts span {
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ws-muted);
+}
+
+.ws-convert-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.95rem;
+}
+
+/* Each row of choices fills the dialog's width, so they line up. */
+.ws-convert-fields .segmented {
+  display: flex;
+}
+
+.ws-convert-fields .segmented-option {
+  flex: 1 1 auto;
+  justify-content: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Its own row rules: Settings' .ws-bg-fade sizes a row, and in this column it made the row 14rem tall. */
+.ws-convert-quality {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+  font-size: 0.82rem;
+  color: var(--ws-muted);
+}
+
+.ws-convert-quality input {
+  flex: 1;
+  min-width: 0;
+}
+
+.ws-convert-quality output {
+  min-width: 2.6rem;
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.ws-convert-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.ws-convert-notes p {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--ws-muted);
+}
+
+.ws-convert-notes .ws-convert-estimate {
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.ws-convert-estimate strong {
+  font-weight: 650;
+}
+
+.ws-convert-estimate[data-larger] {
+  color: var(--ws-muted);
+}
+
+.ws-convert-notes .ws-convert-warn {
+  color: var(--ws-warn-dot);
+}
+
+.ws-convert-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  min-width: 0;
+  font-size: 0.85rem;
+  color: var(--ws-muted);
+}
+
+.ws-convert-progress span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-convert-progress progress {
+  width: 100%;
+  height: 6px;
+  accent-color: var(--accent);
+}
+
+@media (max-width: 480px) {
+  .ws-convert-inner {
+    padding: 1.2rem 1.1rem 1.1rem;
+  }
+
+  .ws-convert-fields .segmented-option {
+    padding-inline: 0.4rem;
+  }
+}
+
 /* ------------------------------------------------------------------ *
  * Settings drawer and phone sheet scrims
  * ------------------------------------------------------------------ */
@@ -2856,4 +3044,76 @@
     flex-basis: 100%;
     white-space: normal;
   }
+}
+
+/* ---- Help: where your files live -------------------------------------- */
+
+.ws-help-where {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ws-help-where li {
+  position: relative;
+  padding-inline-start: 1rem;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.ws-help-where li::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0.1rem;
+  top: 0.6em;
+  width: 0.36rem;
+  height: 0.36rem;
+  border-radius: 50%;
+  background: var(--muted);
+  opacity: 0.6;
+}
+
+.ws-help-where li:first-child {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* The workspace's keys have longer names than 1.x's tools: two columns, one on a phone. */
+.ws-help .nebula-about-keys {
+  grid-template-columns: repeat(auto-fill, minmax(13.5rem, 1fr));
+}
+
+/* Settings: advice about keeping the files, set apart while they may be cleared. */
+.ws-set-help.ws-set-warn {
+  padding: 0.55rem 0.7rem;
+  border-inline-start: 3px solid var(--ws-warn-dot);
+  border-radius: 6px;
+  background: var(--ws-warn-ring);
+  color: var(--ink);
+}
+
+/* Help's last line: who makes Nebula, and the bundled libraries' licences. */
+.ws-help-legal {
+  margin-top: 0;
+  text-align: center;
+}
+
+.ws-help-legal a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+
+/* New project's Where: the two choices share the row, each growing with its label, so no
+   empty strip at the right reads as a third choice (desktop; a phone already fills it). */
+.ws-np-where {
+  display: flex;
+}
+
+.ws-np-where .segmented-option {
+  flex: 1 1 auto;
+  justify-content: center;
 }

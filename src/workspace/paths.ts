@@ -31,8 +31,7 @@ export function validateName(name: string): string | null {
   if (trimmed.includes('\\')) return 'A name can’t contain \\.';
   if (trimmed === '.' || trimmed === '..') return 'That name is reserved.';
   if (trimmed.toLowerCase() === '.nebula') return '.nebula holds the project’s settings.';
-  // Names that won't unpack on Windows or macOS, or that hide what they are
-  // (review finding 22). Files that already have such names still open.
+  // Names that won't unpack on Windows or macOS, or that hide what they are. Files that already have such names still open.
   return newNameProblem(trimmed);
 }
 

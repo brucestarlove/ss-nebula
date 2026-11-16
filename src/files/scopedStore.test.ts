@@ -49,7 +49,7 @@ describe('scopedStore', () => {
       { type: 'rename', from: 'Notes/a.md', to: 'Notes/b.md' },
       { type: 'remove', path: 'Notes/b.md' },
       { type: 'write', path: 'back.md' },
-      // Its own folder removed: everything in it is gone (review finding 23).
+      // Its own folder removed: everything in it is gone.
       { type: 'remove', path: '' },
     ]);
   });
@@ -59,7 +59,7 @@ describe('scopedStore', () => {
     expect(() => scopedStore(new MemoryFileStore(), '')).toThrow(/Invalid path/);
   });
 
-  it('tells its watchers when its own folder is removed or moved away, as the removal of everything (review finding 23)', async () => {
+  it('tells its watchers when its own folder is removed or moved away, as the removal of everything', async () => {
     const cases: Array<[string, (root: MemoryFileStore) => Promise<void>]> = [
       ['its folder removed', (root) => root.remove('projects/abc')],
       ['a folder above it removed', (root) => root.remove('projects')],

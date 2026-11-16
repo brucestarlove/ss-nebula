@@ -15,7 +15,7 @@ import { initPreferencesFromStorage } from './workspace/preferences'
 
 // Excalidraw's fonts come from this site: every app build copies them to
 // <base>fonts/ (scripts/excalidrawFonts.ts), and Excalidraw asks esm.sh only
-// when this path is unset (review finding 20). Set before any canvas loads.
+// when this path is unset. Set before any canvas loads.
 (window as Window & { EXCALIDRAW_ASSET_PATH?: string }).EXCALIDRAW_ASSET_PATH = import.meta.env.BASE_URL
 
 // Apply the stored theme, motion, background (with an image's preview) and

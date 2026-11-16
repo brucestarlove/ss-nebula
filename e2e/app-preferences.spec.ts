@@ -2,7 +2,7 @@ import { unzipSync } from 'fflate';
 import { readFile } from 'node:fs/promises';
 import { closeIntro, currentProjectId, expect, openApp, storedProjects, storedText, switcherTitle, test } from './app-fixtures';
 
-// What a person sets stays set (docs/slice-3.md, Done when): the page style,
+// What a person sets stays set: the page style,
 // width and note text, a project's colour from its right-click menu, and the
 // dock with two projects, all over a reload. And a project downloads whole.
 
@@ -68,10 +68,9 @@ test('preferences, a project colour and the dock survive a reload', async ({ pag
     ['Night Sky', '#fb7a5a'],
   ]);
 
-  // A new visit opens Settings on Project again.
+  // A new visit opens Settings on Appearance again.
   await page.getByRole('button', { name: 'Settings' }).click();
-  await expect(drawer.getByRole('tab', { name: 'Project' })).toHaveAttribute('aria-selected', 'true');
-  await drawer.getByRole('tab', { name: 'Appearance' }).click();
+  await expect(drawer.getByRole('tab', { name: 'Appearance' })).toHaveAttribute('aria-selected', 'true');
   await expect(drawer.getByRole('radio', { name: /Pane/ })).toBeChecked();
   await expect(drawer.getByRole('radio', { name: 'Stretch' })).toBeChecked();
   await expect(drawer.getByRole('radio', { name: /Newsreader/ })).toBeChecked();
@@ -107,7 +106,7 @@ test('Download as .zip holds every file of the project, byte for byte', async ({
   expect(JSON.parse(new TextDecoder().decode(entries['.nebula/project.json']))).toMatchObject({ name: 'Night Sky', color: '#7c8cff' });
 });
 
-test('/p/ links open their file on a fresh load, and /app/ links still redirect', async ({ page }) => {
+test('file links open their file on a fresh load, inside /app, and 2.0’s /p/ links redirect there', async ({ page }) => {
   await openApp(page);
   await closeIntro(page);
   const projectId = currentProjectId(page);
@@ -122,8 +121,10 @@ test('/p/ links open their file on a fresh load, and /app/ links still redirect'
   await expect(page.getByRole('tab', { selected: true })).toHaveText('Star chart — October.pdf');
   await expect(page.locator('.ws-stage[data-kind="pdf"] iframe')).toBeVisible();
 
+  // A link from 2.0's previews, at the root, lands in the app.
   await page.goto('about:blank');
-  await openApp(page, `/app/p/${projectId}/Guides/Moon%20phases.md`);
-  expect(new URL(page.url()).pathname).toBe(`/p/${projectId}/Guides/Moon%20phases.md`);
+  await page.goto(`/p/${projectId}/Guides/Moon%20phases.md`);
+  await page.locator('.ws-root').waitFor({ timeout: 30_000 });
+  expect(new URL(page.url()).pathname).toBe(`/app/p/${projectId}/Guides/Moon%20phases.md`);
   await expect(page.getByRole('tab', { selected: true })).toHaveText('Moon phases');
 });

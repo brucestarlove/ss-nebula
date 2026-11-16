@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, relative } from 'node:path'
 import { defineConfig, type Plugin } from 'vite'
 import { configDefaults } from 'vitest/config'
@@ -62,8 +62,12 @@ function manualChunks(id: string): string | undefined {
 }
 
 // https://vite.dev/config/
+const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string }
+
 export default defineConfig({
   base: './',
+  // The welcome names the version, so it comes from package.json.
+  define: { __NEBULA_VERSION__: JSON.stringify(pkg.version) },
   plugins: [react(), excalidrawFonts(), chunkReport()],
   test: {
     // Playwright owns e2e/ (playwright.config.ts).
@@ -77,6 +81,8 @@ export default defineConfig({
   },
   build: {
     target: 'es2022',
+    // Every bundled library's licence, at /third-party-licenses.txt, linked from Help.
+    license: { fileName: 'third-party-licenses.txt' },
     cssCodeSplit: true,
     sourcemap: false,
     assetsDir: 'assets',

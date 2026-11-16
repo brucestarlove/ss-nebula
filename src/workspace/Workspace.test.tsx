@@ -7,6 +7,7 @@ import type { TextSession } from './views/shared/textSession';
 import { hasUnsavedChanges, reportKeptCopy } from './views/shared/fileSessions';
 import { useTextSession } from './views/shared/useTextSession';
 import { ViewActionsContext } from './views/shared/viewActions';
+import { PageWidthContext } from './views/shared/pageWidth';
 import { byLabel, render, settle, waitFor, type Rendered } from './views/testing/render';
 import { slowWrites } from './views/testing/slowWrites';
 import { Workspace } from './Workspace';
@@ -244,6 +245,9 @@ describe('deleting what is open', () => {
     await act(async () => {
       row.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
     });
+    // A browser project's files don't talk of the computer's bin.
+    expect(document.querySelector('dialog[open]')?.textContent).toContain('from this browser. This can’t be undone.');
+    expect(document.querySelector('dialog[open]')?.textContent).not.toContain('bin');
     const confirm = [...document.querySelectorAll<HTMLButtonElement>('dialog button')].find((button) => button.textContent === 'Delete');
     await act(async () => confirm!.click());
     await settle(30);
@@ -294,10 +298,10 @@ describe('New project', () => {
   });
 
   it('says where the files are saved otherwise', async () => {
-    expect(await openNewProject(true)).toBe('Its files are saved in this browser, on this device.');
+    expect(await openNewProject(true)).toBe('Its files are saved in this browser, on this device. To keep a project in a folder on your computer, use Chrome, Edge or Opera on a desktop.');
   });
 
-  // A person's first project is "My First Project" (Bruce, 2026-10-22).
+  // A person's first project is "My First Project".
   function suggested(): { placeholder: string | null; preview: string | null } {
     const dialog = document.querySelector<HTMLElement>('dialog.ws-np')!;
     return { placeholder: dialog.querySelector('input')!.getAttribute('placeholder'), preview: dialog.querySelector('.ws-np-name')!.textContent };
@@ -402,21 +406,46 @@ describe('uploading', () => {
   });
 });
 
-describe('Settings opens on Project, then on the tab used last', () => {
-  it('opens on Project, and comes back on Appearance after Appearance was used', async () => {
+describe('the page width switch on a note', () => {
+  afterEach(() => {
+    localStorage.removeItem('nebula:width');
+    delete document.documentElement.dataset.width;
+  });
+
+  it('changes the same preference as Settings → Page width, kept on this device', async () => {
+    function WidthProbe() {
+      const page = useContext(PageWidthContext);
+      return (
+        <button type="button" data-probe-width="" onClick={() => page?.setWidth(page.width === 'stretch' ? 'fixed' : 'stretch')}>
+          {page?.width ?? 'none'}
+        </button>
+      );
+    }
+    rendered = await render(<Workspace registry={createFakeRegistry()} persistent viewFor={() => WidthProbe} />);
+    const button = () => rendered!.container.querySelector<HTMLButtonElement>('[data-probe-width]');
+    await waitFor(() => expect(button()?.textContent).toBe('fixed'));
+    await act(async () => button()!.click());
+    expect(button()!.textContent).toBe('stretch');
+    expect(localStorage.getItem('nebula:width')).toBe('stretch');
+    expect(document.documentElement.dataset.width).toBe('stretch');
+  });
+});
+
+describe('Settings opens on Appearance, then on the tab used last', () => {
+  it('opens on Appearance, and comes back on Project after Project was used', async () => {
     rendered = await render(<Workspace registry={createFakeRegistry()} persistent viewFor={probeView} />);
     await waitFor(() => expect(probe(rendered!.container)).toBe('Guides/Observing plan.md'));
     const gear = () => rendered!.container.querySelector<HTMLButtonElement>('.ws-rail [aria-label="Settings"]')!;
     const shownTab = () => document.querySelector('.ws-settings [role="tab"][aria-selected="true"]')?.textContent ?? null;
     await act(async () => gear().click());
-    expect(shownTab()).toBe('Project');
-    await act(async () => document.querySelector<HTMLButtonElement>('#ws-settings-tab-appearance')!.click());
     expect(shownTab()).toBe('Appearance');
+    await act(async () => document.querySelector<HTMLButtonElement>('#ws-settings-tab-project')!.click());
+    expect(shownTab()).toBe('Project');
     await act(async () => document.querySelector<HTMLButtonElement>('.ws-settings .drawer-close')!.click());
     await settle(20);
     expect(document.querySelector('.ws-settings')).toBeNull();
     await act(async () => gear().click());
-    expect(shownTab()).toBe('Appearance');
+    expect(shownTab()).toBe('Project');
   });
 });
 
@@ -592,7 +621,7 @@ describe('a change held in a conflict when its tab is left (re-review R1)', () =
   });
 
   /** The note open in its tab, in a conflict, and the tab left, with the
-   * store refusing the copy as a full one would (round 4, F2). */
+   * store refusing the copy as a full one would. */
   async function copyRefused() {
     const registry = createFakeRegistry();
     const store = registry.stores.get('night-sky')!;
@@ -637,7 +666,7 @@ describe('a change held in a conflict when its tab is left (re-review R1)', () =
     expect(await store.readText('Guides/Observing plan.md')).toBe('Theirs.');
   });
 
-  it('says when the copy was kept because another tab deleted the file (round 4, F5)', async () => {
+  it('says when the copy was kept because another tab deleted the file', async () => {
     rendered = await render(<Workspace registry={createFakeRegistry()} persistent viewFor={() => SessionView} />);
     await waitFor(() => expect(live.session?.getState().status).toBe('ready'));
     const copy = 'Guides/Observing plan (conflict 2026-10-22 11.40).md';
@@ -708,6 +737,8 @@ describe('projects saved by a newer Nebula (re-review R5)', () => {
   it('turns off rename, colour and remove in Settings, and keeps Import', async () => {
     const { container } = await readOnlyWorkspace();
     await act(async () => button(container, 'Settings').click());
+    await waitFor(() => expect(document.querySelector('#ws-settings-tab-project')).not.toBeNull());
+    await act(async () => document.querySelector<HTMLButtonElement>('#ws-settings-tab-project')!.click());
     await waitFor(() => expect(document.querySelector('#ws-settings-panel-project')).not.toBeNull());
     const panel = document.querySelector<HTMLElement>('#ws-settings-panel-project')!;
     expect(panel.querySelector<HTMLInputElement>('input.ws-input')!.disabled).toBe(true);
@@ -832,7 +863,7 @@ describe('canvases an older Nebula tab saved after the move (re-review R6)', () 
     await act(async () => byLabel(rendered!.container.querySelector('.ws-older')!, 'Dismiss')!.click());
     expect(rendered.container.querySelector('.ws-older')).toBeNull();
   });
-  it('Dismiss tells the offer which canvases were put away, so they aren’t offered again (round 4, F8)', async () => {
+  it('Dismiss tells the offer which canvases were put away, so they aren’t offered again', async () => {
     const canvases = [
       { key: 'k-main', name: 'Main', updatedAt: '2026-06-01T00:00:00.000Z', projectId: 'pulse' },
       { key: 'k-plan', name: 'Plan', updatedAt: '2026-06-02T00:00:00.000Z', projectId: null },

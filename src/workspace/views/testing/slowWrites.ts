@@ -13,7 +13,7 @@ export function slowWrites(store: FileStore): SlowWrites {
   const write = store.write.bind(store);
   const queue: Array<() => void> = [];
   let holding = true;
-  // The arguments whole, so no write option is dropped (round 5, G4).
+  // The arguments whole, so no write option is dropped.
   store.write = (...args) =>
     holding ? new Promise<void>((resolve, reject) => queue.push(() => void write(...args).then(resolve, reject))) : write(...args);
   return {

@@ -129,7 +129,8 @@ type ProjectMenuProps = {
   open: boolean;
   projects: ProjectRecord[];
   currentId: string | null;
-  location: string;
+  /** Where each project's files live: 'In this browser', 'On this computer'. */
+  location: string | ((project: ProjectRecord) => string);
   dock: boolean;
   anchor: RefObject<HTMLElement | null>;
   onDockChange: (on: boolean) => void;
@@ -138,13 +139,16 @@ type ProjectMenuProps = {
   /** False when the project list can't be changed: New project shows,
    * turned off. */
   canCreate?: boolean;
+  /** Opens a folder on this computer as a project; absent where the
+   * browser can't. */
+  onOpenFolder?: () => void;
   onProjectMenu: (id: string, at: MenuAt) => void;
   onClose: () => void;
 };
 
 /** PROJECTS (with the Dock switch on the right once there are two or more),
  * your projects, then New project. Open a folder and Connect to a Nebula
- * server wait for their slices (docs/slice-3.md, decision 6). */
+ * server wait for their slices. */
 export function ProjectMenu({
   open,
   projects,
@@ -156,6 +160,7 @@ export function ProjectMenu({
   onSwitch,
   onNewProject,
   canCreate = true,
+  onOpenFolder,
   onProjectMenu,
   onClose,
 }: ProjectMenuProps) {
@@ -222,7 +227,7 @@ export function ProjectMenu({
               <Planet color={project.color} />
               <span className="ws-menu-item-text">
                 <b>{project.name}</b>
-                <span>{location}</span>
+                <span>{typeof location === 'function' ? location(project) : location}</span>
               </span>
               {current ? <Icon name="check" className="ws-tick" /> : null}
             </Button>
@@ -234,6 +239,12 @@ export function ProjectMenu({
         <Icon name="plus" />
         New project
       </Button>
+      {onOpenFolder ? (
+        <Button className="ws-menu-action" role="menuitem" disabled={!canCreate} onClick={onOpenFolder}>
+          <Icon name="folder" />
+          Open a folder…
+        </Button>
+      ) : null}
     </div>
   );
 }

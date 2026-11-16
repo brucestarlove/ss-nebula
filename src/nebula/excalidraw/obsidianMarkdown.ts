@@ -188,7 +188,7 @@ const DRAWING_FENCE_RE = /^[^`]*?```(compressed-json|json)[ \t]*\r?\n/;
 const CLOSING_FENCE_RE = /(^|\n)```/;
 
 /** The drawing block: the last `## Drawing` heading followed by a json or
- * compressed-json fence (review finding 9). A text element can hold a
+ * compressed-json fence. A text element can hold a
  * pasted heading and fence of its own, and text elements come first. */
 function findDrawingBlock(value: string): DrawingBlock | null {
   const headings = [...value.matchAll(DRAWING_HEADING_RE)];
@@ -235,7 +235,7 @@ const FALSY_YAML = new Set(['', 'false', 'null', '~', '0']);
 /** True when the text is a drawing the way Obsidian decides it: the
  * `excalidraw-plugin` key, with a value, in the leading frontmatter block.
  * Use this to decide what a `.md` file is; a note that quotes a drawing or
- * mentions the key is still a note (review finding 8).
+ * mentions the key is still a note.
  * isObsidianExcalidrawMarkdown() stays lenient for the explicit Import, where
  * the user picked the file. src/files/kinds.ts repeats this test (the canvas
  * chunk mustn't load with the file tree); its tests keep the two equal. */
@@ -274,8 +274,7 @@ const FENCE_LINE_RE = /^( {0,3})(`{3,}|~{3,})/;
 const SECTION_LINE_RE = /^( {0,3}#{1,2})( +(?:Drawing|Excalidraw Data|Text Elements|Element Links|Embedded Files|Markdown Images)[ \t]*)$/i;
 const ZERO_WIDTH_SPACE = '\u200B';
 
-/** A text element's text as the `## Text Elements` copy shows it (review
- * finding 9): a line that opens a code fence, or that reads as one of the
+/** A text element's text as the `## Text Elements` copy shows it: a line that opens a code fence, or that reads as one of the
  * file's own section headings, gets a zero-width space, so neither Nebula
  * nor the plugin (which takes the first `## Drawing`) can mistake it for the
  * drawing or a section. The drawing's JSON keeps the text exactly; the plugin
@@ -373,7 +372,7 @@ function elementIds(scene: ExcalidrawScene): string[] {
 
 /**
  * Saves `scene` into a drawing file the way the Obsidian plugin would,
- * keeping everything that isn't the drawing (review finding 8): the
+ * keeping everything that isn't the drawing: the
  * frontmatter and its other keys, whatever sits above `# Excalidraw Data`
  * (the back-of-card notes), `## Element Links`, `## Embedded Files` and any
  * other section. Only the entries under `## Text Elements` and the

@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Starscape Nebula: everything your project is made of, in one place</title>
+    <meta
+      name="description"
+      content="Nebula keeps a project's notes, concept art, Excalidraw canvases, PDFs and agent sessions together as real files. Free in your browser, with no account, and open source."
+    />
+    <link rel="canonical" href="https://nebula.starscape.app/" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/ss-nebula-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/ss-nebula-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/ss-nebula-apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta name="theme-color" content="#141a33" />
+    <meta name="color-scheme" content="dark" />
+
+    <meta property="og:title" content="Starscape Nebula" />
+    <meta
+      property="og:description"
+      content="Everything your project is made of, in one place: notes, concept art, Excalidraw canvases, PDFs and agent sessions, as real files. Free in your browser, with no account."
+    />
+    <meta property="og:url" content="https://nebula.starscape.app/" />
+    <meta property="og:image" content="https://nebula.starscape.app/ss-nebula-og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Starscape Nebula" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Starscape Nebula" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Starscape Nebula" />
+    <meta
+      name="twitter:description"
+      content="Everything your project is made of, in one place: notes, concept art, Excalidraw canvases, PDFs and agent sessions, as real files."
+    />
+    <meta name="twitter:image" content="https://nebula.starscape.app/ss-nebula-og.png" />
+
+    <link rel="stylesheet" href="./landing.css" />
+    <script type="module" src="./landing.ts"></script>
+  </head>
+  <body>
+    <a class="skip" href="#what">Skip to the introduction</a>
+    <div class="grain" aria-hidden="true"><div class="milky-way"></div></div>
+
+    <header class="top">
+      <a class="brand" href="/">
+        <img class="brand-mark" src="/ss-nebula-192x192.png" alt="" width="44" height="44" />
+        <span class="brand-text">
+          <strong>Starscape Nebula</strong>
+          <span>Everything your project is made of</span>
+        </span>
+      </a>
+      <nav class="top-nav" aria-label="Nebula">
+        <a class="btn btn-primary" href="/app">Open Nebula</a>
+        <button class="btn-round" type="button" data-prev aria-label="Previous slide">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3.5 5.5 8l4.5 4.5" /></svg>
+        </button>
+        <button class="btn-round" type="button" data-next aria-label="Next slide">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" /></svg>
+        </button>
+      </nav>
+    </header>
+
+    <main class="deck" id="main" data-deck>
+      <!-- 1. What it is, and how to start. -->
+      <section class="slide slide--hero" id="what" data-slide data-title="Everything your project is made of" aria-labelledby="what-title">
+        <div class="copy">
+          <p class="eyebrow">Free in your browser · open source</p>
+          <h1 id="what-title"><span class="line">Everything your</span> <span class="line">project is made&nbsp;of,</span> <span class="line">in one place.</span></h1>
+          <p class="lede">
+            Notes, concept art, Excalidraw canvases, PDFs and your agents’ sessions, kept together as real files.
+            No account, and your files stay on your device.
+          </p>
+          <ol class="steps" aria-label="How to start">
+            <li><strong>Open Nebula.</strong> A sample project shows you around.</li>
+            <li><strong>Bring your files.</strong> Drop them in, or open a folder on your computer.</li>
+            <li><strong>Link to them.</strong> Copy a link to any file or folder for an Orbit card.</li>
+          </ol>
+          <div class="actions">
+            <a class="btn btn-primary btn-lg" href="/app">Open Nebula</a>
+            <a class="btn btn-quiet" href="#files" data-next-slide>See what it holds <span aria-hidden="true">→</span></a>
+          </div>
+        </div>
+        <figure class="shot">
+          <div class="shot-switch" role="group" aria-label="The app by night or by day">
+            <button type="button" data-shot-theme="night" aria-pressed="true">Night</button>
+            <button type="button" data-shot-theme="day" aria-pressed="false">Day</button>
+          </div>
+          <div class="shot-frame">
+            <img
+              class="shot-night"
+              src="./shots/workspace-night-1920.webp"
+              srcset="./shots/workspace-night-960.webp 960w, ./shots/workspace-night-1920.webp 1920w"
+              sizes="(min-width: 981px) 56vw, 100vw"
+              width="1920"
+              height="1200"
+              fetchpriority="high"
+              alt="Nebula with a project open: the file tree on the left holds agent sessions, concept art, designs, inspiration and notes, and the open tab shows a piece of concept art."
+            />
+            <img
+              class="shot-day"
+              src="./shots/workspace-day-1920.webp"
+              srcset="./shots/workspace-day-960.webp 960w, ./shots/workspace-day-1920.webp 1920w"
+              sizes="(min-width: 981px) 56vw, 100vw"
+              width="1920"
+              height="1200"
+              loading="lazy"
+              alt="The same project by day, on parchment."
+            />
+          </div>
+        </figure>
+      </section>
+
+      <!-- 2. Every kind of file. -->
+      <section class="slide" id="files" data-slide data-title="Every kind of file" aria-labelledby="files-title">
+        <div class="copy">
+          <p class="eyebrow">Every kind of file</p>
+          <h2 id="files-title">Write, sketch and gather, side by side.</h2>
+          <p class="lede">
+            Each file opens in its own tab, in a view made for it. Arrange your folders as you like, star the ones you use
+            most, and jump to anything by name with <kbd>Ctrl</kbd> <kbd>K</kbd>.
+          </p>
+          <ul class="kinds">
+            <li><strong>Notes</strong> in Markdown, on a page that reads like one</li>
+            <li><strong>Canvases</strong> in Excalidraw, saved the way Obsidian saves them</li>
+            <li><strong>Images</strong>: concept art and inspiration, made WebP with a right-click</li>
+            <li><strong>PDFs, audio, video, text and code</strong>, each with its own viewer</li>
+          </ul>
+        </div>
+        <figure class="shot">
+          <div class="shot-switch" role="group" aria-label="The app by night or by day">
+            <button type="button" data-shot-theme="night" aria-pressed="true">Night</button>
+            <button type="button" data-shot-theme="day" aria-pressed="false">Day</button>
+          </div>
+          <div class="shot-frame">
+            <img
+              class="shot-night"
+              src="./shots/canvas-night-1920.webp"
+              srcset="./shots/canvas-night-960.webp 960w, ./shots/canvas-night-1920.webp 1920w"
+              sizes="(min-width: 981px) 56vw, 100vw"
+              width="1920"
+              height="1200"
+              loading="lazy"
+              alt="An Excalidraw canvas open in a tab: a star map drawn by hand, with the project's files beside it."
+            />
+            <img
+              class="shot-day"
+              src="./shots/canvas-day-1920.webp"
+              srcset="./shots/canvas-day-960.webp 960w, ./shots/canvas-day-1920.webp 1920w"
+              sizes="(min-width: 981px) 56vw, 100vw"
+              width="1920"
+              height="1200"
+              loading="lazy"
+              alt="The same canvas by day."
+            />
+          </div>
+        </figure>
+      </section>
+
+      <!-- 3. Agent sessions. -->
+      <section class="slide" id="sessions" data-slide data-title="Agent sessions, kept" aria-labelledby="sessions-title">
+        <div class="copy">
+          <p class="eyebrow">Agent sessions, kept</p>
+          <h2 id="sessions-title">Paste what your agent said. It’s filed.</h2>
+          <p class="lede">
+            Copy a reply from Claude Code, Codex or any chat, right-click a folder and choose <em>Paste as note</em>. Nebula
+            saves it as Markdown, named for the moment you pasted it, beside the work it’s about: your own record, apart
+            from the agent’s.
+          </p>
+          <p class="filename" aria-label="For example, a pasted note's name">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1.75h5.25L12.5 5v9.25H4z" /><path d="M9 1.75V5h3.5" /><path d="M6 8.25h4.5M6 10.75h3" /></svg>
+            <span><span class="filename-time">2026-10-26 14.05</span> Landing page plan.md</span>
+          </p>
+          <p class="aside">A reply that opens with a heading lends it to the name.</p>
+        </div>
+        <figure class="shot shot--menu">
+          <div class="shot-switch" role="group" aria-label="The app by night or by day">
+            <button type="button" data-shot-theme="night" aria-pressed="true">Night</button>
+            <button type="button" data-shot-theme="day" aria-pressed="false">Day</button>
+          </div>
+          <div class="shot-frame">
+            <img
+              class="shot-night"
+              src="./shots/paste-night-1520.webp"
+              srcset="./shots/paste-night-760.webp 760w, ./shots/paste-night-1520.webp 1520w"
+              sizes="(min-width: 981px) 56vw, 100vw"
+              width="1520"
+              height="950"
+              loading="lazy"
+              alt="A folder's menu in the file tree, open on Paste as note, over an agent session saved as a note."
+            />
+            <img
+              class="shot-day"
+              src="./shots/paste-day-1520.webp"
+              srcset="./shots/paste-day-760.webp 760w, ./shots/paste-day-1520.webp 1520w"
+              sizes="(min-width: 981px) 56vw, 100vw"
+              width="1520"
+              height="950"
+              loading="lazy"
+              alt="The same menu by day."
+            />
+          </div>
+        </figure>
+      </section>
+
+      <!-- 4. Orbit. -->
+      <section class="slide" id="orbit" data-slide data-title="Works with Orbit" aria-labelledby="orbit-title">
+        <div class="copy">
+          <p class="eyebrow">Works with Orbit</p>
+          <h2 id="orbit-title">Link a card to the files behind it.</h2>
+          <p class="lede">
+            Right-click any file or folder and choose <em>Copy link</em>. Put it on an Orbit card, or in a note, and one
+            click opens Nebula right on it, in a new tab.
+          </p>
+          <p class="pair">
+            <span><a href="https://orbit.starscape.app/">Orbit</a> holds what you’re doing.</span>
+            <span>Nebula holds what you know.</span>
+          </p>
+          <p class="aside">A link opens where its project lives: in that browser, on that computer.</p>
+        </div>
+        <figure class="shot shot--menu">
+          <div class="shot-switch" role="group" aria-label="The app by night or by day">
+            <button type="button" data-shot-theme="night" aria-pressed="true">Night</button>
+            <button type="button" data-shot-theme="day" aria-pressed="false">Day</button>
+          </div>
+          <div class="shot-frame">
+            <img
+              class="shot-night"
+              src="./shots/link-night-1520.webp"
+              srcset="./shots/link-night-760.webp 760w, ./shots/link-night-1520.webp 1520w"
+              sizes="(min-width: 981px) 56vw, 100vw"
+              width="1520"
+              height="950"
+              loading="lazy"
+              alt="The Concept art folder's menu, open on Copy link."
+            />
+            <img
+              class="shot-day"
+              src="./shots/link-day-1520.webp"
+              srcset="./shots/link-day-760.webp 760w, ./shots/link-day-1520.webp 1520w"
+              sizes="(min-width: 981px) 56vw, 100vw"
+              width="1520"
+              height="950"
+              loading="lazy"
+              alt="The same menu by day."
+            />
+          </div>
+        </figure>
+      </section>
+
+      <!-- 5. Yours. -->
+      <section class="slide slide--last" id="yours" data-slide data-title="Private, and open source" aria-labelledby="yours-title">
+        <div class="copy">
+          <p class="eyebrow">Private, and open source</p>
+          <h2 id="yours-title">Your files stay yours.</h2>
+          <p class="lede">
+            Nothing is uploaded and there’s no account. Keep a project in your browser, or in a folder on your computer,
+            and download any project as a <code>.zip</code> whenever you like.
+          </p>
+          <div class="actions">
+            <a class="btn btn-primary btn-lg" href="/app">Open Nebula</a>
+            <a class="btn btn-quiet" href="#what" data-first-slide>Back to the start</a>
+          </div>
+        </div>
+        <div class="places">
+          <article class="place">
+            <svg class="place-mark" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="2.75" y="4.25" width="18.5" height="15.5" rx="2.5" /><path d="M2.75 8.75h18.5" /><circle cx="5.75" cy="6.5" r=".6" /><circle cx="8" cy="6.5" r=".6" />
+            </svg>
+            <div>
+              <h3>In your browser</h3>
+              <p>Kept by your browser for this site, on computers and phones alike. Install Nebula as an app and browsers hold on to it for longer.</p>
+            </div>
+          </article>
+          <article class="place">
+            <svg class="place-mark" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M2.75 6.25a2 2 0 0 1 2-2h4.6l2 2h7.9a2 2 0 0 1 2 2v9.5a2 2 0 0 1-2 2H4.75a2 2 0 0 1-2-2z" />
+            </svg>
+            <div>
+              <h3>In a folder on your computer</h3>
+              <p>Saved straight into the folder, where your other apps see the files too. Chrome, Edge and Opera on desktop.</p>
+            </div>
+          </article>
+          <article class="place">
+            <svg class="place-mark" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m8.25 7.75-4.5 4.25 4.5 4.25M15.75 7.75l4.5 4.25-4.5 4.25M13.5 5.25l-3 13.5" />
+            </svg>
+            <div>
+              <h3>Open source</h3>
+              <p>
+                Nebula is free software under the GNU AGPL-3.0, made by Starscape.
+                <a class="source-link" href="https://github.com/brucestarlove/ss-nebula">Read the source</a>
+              </p>
+            </div>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <nav class="dots" aria-label="Slides">
+        <button type="button" data-dot="0" aria-label="1 of 5: Everything your project is made of" aria-current="step"></button>
+        <button type="button" data-dot="1" aria-label="2 of 5: Every kind of file"></button>
+        <button type="button" data-dot="2" aria-label="3 of 5: Agent sessions, kept"></button>
+        <button type="button" data-dot="3" aria-label="4 of 5: Works with Orbit"></button>
+        <button type="button" data-dot="4" aria-label="5 of 5: Private, and open source"></button>
+      </nav>
+      <p class="legal">© 2026 Starscape LLC · <a href="https://www.gnu.org/licenses/agpl-3.0.html">AGPL-3.0</a> · <a href="https://github.com/brucestarlove/ss-nebula">Source</a> · <a href="https://starscape.biz/privacy/#apps">Privacy</a></p>
+    </footer>
+    <p class="sr-only" aria-live="polite" data-announce></p>
+  </body>
+</html>

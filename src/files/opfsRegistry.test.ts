@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { OpfsFileStore } from './opfsStore';
 import { openBrowserRegistry, probeOpfs } from './opfsRegistry';
 
 type FakeFile = { data: string };
@@ -51,6 +52,9 @@ function fakeOpfs(options: { writable?: boolean; corrupt?: boolean } = {}) {
   return { storage, files, removed };
 }
 
+/** Web Locks as far as the probe asks: that there are some. */
+const webLocksStandIn = { request: <T>(_name: string, callback: () => Promise<T>) => callback() };
+
 describe('probeOpfs', () => {
   it('says no when the browser has no origin private file system', async () => {
     expect(await probeOpfs(undefined)).toEqual({ ok: false, reason: expect.stringMatching(/no origin private file system/i) });
@@ -61,20 +65,20 @@ describe('probeOpfs', () => {
     const storage = {
       getDirectory: () => Promise.reject(new DOMException('The operation failed for an unknown transient reason', 'UnknownError')),
     } as unknown as StorageManager;
-    expect(await probeOpfs(storage)).toEqual({ ok: false, reason: expect.stringContaining('UnknownError: The operation failed for an unknown transient reason') });
+    expect(await probeOpfs(storage, webLocksStandIn)).toEqual({ ok: false, reason: expect.stringContaining('UnknownError: The operation failed for an unknown transient reason') });
   });
 
   it('says no when files cannot be written with createWritable', async () => {
-    expect(await probeOpfs(fakeOpfs({ writable: false }).storage)).toEqual({ ok: false, reason: expect.stringContaining('createWritable') });
+    expect(await probeOpfs(fakeOpfs({ writable: false }).storage, webLocksStandIn)).toEqual({ ok: false, reason: expect.stringContaining('createWritable') });
   });
 
   it('says no when a written file does not read back', async () => {
-    expect(await probeOpfs(fakeOpfs({ corrupt: true }).storage)).toMatchObject({ ok: false, reason: expect.stringMatching(/read back/) });
+    expect(await probeOpfs(fakeOpfs({ corrupt: true }).storage, webLocksStandIn)).toMatchObject({ ok: false, reason: expect.stringMatching(/read back/) });
   });
 
   it('says yes after a round trip on a scratch file, and removes the scratch file', async () => {
     const opfs = fakeOpfs();
-    const probe = await probeOpfs(opfs.storage);
+    const probe = await probeOpfs(opfs.storage, webLocksStandIn);
     expect(probe.ok).toBe(true);
     expect(opfs.removed).toHaveLength(1);
     expect(opfs.files.size).toBe(0);
@@ -95,7 +99,7 @@ describe('openBrowserRegistry without OPFS', () => {
   });
 });
 
-describe('openBrowserRegistry without Web Locks (review finding 10)', () => {
+describe('openBrowserRegistry without Web Locks', () => {
   const locks = { request: <T>(_name: string, callback: () => Promise<T>) => callback() };
 
   it('keeps nothing when the browser has OPFS but no Web Locks, and says why', async () => {
@@ -112,5 +116,22 @@ describe('openBrowserRegistry without Web Locks (review finding 10)', () => {
     const { persistent, reason } = await openBrowserRegistry({ storage: fakeOpfs().storage, locks });
     expect(persistent).toBe(true);
     expect(reason).toBeUndefined();
+  });
+});
+
+describe('without Web Locks, OPFS fails closed', () => {
+  it('the probe says no, and why, before it writes anything', async () => {
+    const opfs = fakeOpfs();
+    expect(await probeOpfs(opfs.storage, null)).toEqual({ ok: false, reason: expect.stringMatching(/Web Locks/) });
+    expect([opfs.files.size, opfs.removed]).toEqual([0, []]);
+  });
+
+  it('a store with no file locks refuses to read or write, rather than go unlocked', async () => {
+    const opfs = fakeOpfs();
+    const store = new OpfsFileStore(await opfs.storage.getDirectory(), { fileLocks: null });
+    await expect(store.write('a.md', 'x')).rejects.toThrow(/Web Locks/);
+    await expect(store.readText('a.md')).rejects.toThrow(/Web Locks/);
+    await expect(store.remove('a.md')).rejects.toThrow(/Web Locks/);
+    expect(opfs.files.size).toBe(0);
   });
 });

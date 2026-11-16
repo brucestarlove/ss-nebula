@@ -96,6 +96,9 @@ test.describe('a web image in a note', () => {
     await page.locator('.ws-section-actions').getByRole('button', { name: 'New note' }).click();
     await page.getByRole('textbox', { name: 'Rename Untitled.md' }).fill('Web image');
     await page.keyboard.press('Enter');
+    // The rename opens the note again under its new name: a click on Edit
+    // before then lands on the view it replaces (seen live, 10 ms after Enter).
+    await expect(page.getByRole('tab', { selected: true })).toHaveText('Web image');
     await page.locator('.ws-stage').getByRole('button', { name: 'Edit' }).click();
     const editor = page.locator('.ws-page .cm-content');
     await expect(editor).toBeVisible({ timeout: 20_000 });

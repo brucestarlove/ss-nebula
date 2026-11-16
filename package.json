@@ -1,6 +1,6 @@
 {
   "name": "@starlove/nebula",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Starscape Nebula: notes, Excalidraw drawings and media as real files in projects, in your browser. Its canvas also ships as a React component.",
   "license": "AGPL-3.0",
   "type": "module",
@@ -34,9 +34,7 @@
     "src/nebula/style.ts",
     "src/workspace/style.ts"
   ],
-  "publishConfig": {
-    "access": "public"
-  },
+  "homepage": "https://nebula.starscape.app",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/brucestarlove/ss-nebula.git"
@@ -44,7 +42,9 @@
   "bugs": {
     "url": "https://github.com/brucestarlove/ss-nebula/issues"
   },
-  "homepage": "https://github.com/brucestarlove/ss-nebula#readme",
+  "publishConfig": {
+    "access": "public"
+  },
   "keywords": [
     "excalidraw",
     "whiteboard",
@@ -65,7 +65,11 @@
     "build": "pnpm run build:app",
     "build:app": "tsc -b && vite build",
     "build:site": "pnpm run typecheck && node scripts/build-site.mjs",
+    "build:landing": "vite build --config vite.site.config.ts",
     "build:vercel": "pnpm run build:site",
+    "build:cloudflare": "pnpm run build:site && node scripts/cloudflare-assets.mjs",
+    "deploy": "pnpm run verify && pnpm run build:cloudflare && wrangler deploy",
+    "deploy:preview": "pnpm run build:cloudflare && wrangler versions upload --preview-alias preview",
     "build:cli-app": "vite build --base=/ --outDir dist/app --emptyOutDir=false",
     "build:package": "pnpm run build:lib && pnpm run build:cli-app",
     "build:lib": "vite build --config vite.lib.config.ts && tsc -p tsconfig.lib.json --pretty false",
@@ -99,9 +103,13 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.14.0",
+    "@codemirror/autocomplete": "^6.20.4",
+    "@codemirror/commands": "^6.11.1",
     "@codemirror/lang-markdown": "^6.5.2",
     "@codemirror/language": "^6.13.1",
     "@codemirror/language-data": "^6.5.2",
+    "@codemirror/state": "^6.7.6",
+    "@codemirror/view": "^6.43.15",
     "@eslint/js": "^9.36.0",
     "@lezer/highlight": "^1.2.5",
     "@playwright/test": "1.64.1",
@@ -123,6 +131,7 @@
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.45.0",
     "vite": "^7.1.7",
-    "vitest": "^4.1.7"
+    "vitest": "^4.1.7",
+    "wrangler": "4.151.3"
   }
 }

@@ -52,7 +52,7 @@ export function legacyCanvasAsExcalidraw(storage: Storage | null, key: string): 
  * to offer: `projectId` is where its earlier version went, if it did. */
 export type OlderTabCanvas = { key: string; name: string; updatedAt: string; projectId: string | null };
 
-/** Older-tab canvases already imported or put away (round 4, F8): a JSON
+/** Older-tab canvases already imported or put away: a JSON
  * object of each localStorage key and the `updatedAt` it had then. */
 export const OLDER_TAB_HANDLED_KEY = 'nebula:older-tab:handled';
 

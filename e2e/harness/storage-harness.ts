@@ -1,5 +1,5 @@
 // Served by the Vite dev server for e2e/storage-*.spec.ts: the storage lane's
-// browser checks (docs/lanes/storage.md), driven from Playwright through
+// browser checks, driven from Playwright through
 // window.storageHarness. Everything lives under nebula/ in OPFS, as in the app.
 import { migrateLegacyCanvases, type MigrationReport } from '../../src/files/migration';
 import { OPFS_TREE, openBrowserRegistry } from '../../src/files/opfsRegistry';

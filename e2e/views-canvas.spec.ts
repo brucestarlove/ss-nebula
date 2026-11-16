@@ -96,7 +96,7 @@ test('a plain .md drawing opens as a canvas and is written back in that format',
   expect(await elementCount(page)).toBe(1);
   await drawRectangle(page, { x: 0.6, y: 0.55 });
   await expect.poll(async () => (await sceneElements(page, path)).length, { timeout: 5_000 }).toBe(2);
-  // Written back as the plugin wrote it: plain JSON, its setting (review finding 8).
+  // Written back as the plugin wrote it: plain JSON, its setting.
   const written = (await peek(page, path)) ?? '';
   expect(written).toContain('excalidraw-plugin: parsed');
   expect(written).toContain('```json');

@@ -112,8 +112,9 @@ function resolveStaticPath(root, requestUrl) {
 
   if (pathname === '/app' || pathname === '/app/') pathname = '/index.html'
   // A file's address (/p/<project>/<path>) and an old canvas link (/b/…) are
-  // the app's, whatever their extension, as vercel.json rewrites them.
-  if (pathname.startsWith('/p/') || pathname.startsWith('/b/')) pathname = '/index.html'
+  // the app's, whatever their extension, as vercel.json rewrites them; so are
+  // the same under /app, where the site mounts the app.
+  if (/^(?:\/app)?\/[pb]\//.test(pathname)) pathname = '/index.html'
   if (pathname.endsWith('/')) pathname += 'index.html'
 
   let filePath = resolve(join(root, pathname))

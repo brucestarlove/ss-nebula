@@ -1,5 +1,5 @@
 /**
- * Asking the browser to keep Nebula's files (PLAN §7: persistent storage).
+ * Asking the browser to keep Nebula's files (persistent storage).
  * Firefox shows a prompt for it, so Nebula doesn't ask on the first load: it
  * asks once there is something worth keeping, after the first edit or the
  * first project made here. Saves Nebula makes for itself (`.nebula/`, such as
@@ -32,7 +32,7 @@ export function askToKeepOnFirstEdit(registry: BrowserRegistry, ask: () => unkno
     readText: (path) => store.readText(path),
     readBlob: (path) => store.readBlob(path),
     watch: (listener) => store.watch(listener),
-    // The arguments whole, so no write option is dropped (round 5, G4).
+    // The arguments whole, so no write option is dropped.
     async write(...args) {
       await store.write(...args);
       if (!isNebulaSettings(args[0])) edited();

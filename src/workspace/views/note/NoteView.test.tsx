@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryFileStore, type MemoryFileStore } from '../../../../e2e/harness/views-store';
 import type { FileEntry } from '../../../files/types';
-import { byLabel, click, render, settle, waitFor } from '../testing/render';
+import { byLabel, click, render, settle, waitFor, type Rendered } from '../testing/render';
+import { PageWidthContext, type PageWidth } from '../shared/pageWidth';
 import NoteView from './NoteView';
 
 const PATH = 'Guides/Observing plan.md';
@@ -42,7 +43,16 @@ describe('NoteView', () => {
     store = createMemoryFileStore({ [PATH]: SOURCE });
   });
 
-  afterEach(() => {
+  // What the width and long-note tests render is unmounted, so nothing of
+  // theirs (the editor loads lazily) mounts after the file's page is gone.
+  const mounted: Rendered[] = [];
+  const keep = (view: Rendered) => {
+    mounted.push(view);
+    return view;
+  };
+
+  afterEach(async () => {
+    for (const view of mounted.splice(0)) await view.unmount();
     vi.restoreAllMocks();
     document.body.innerHTML = '';
   });
@@ -106,7 +116,7 @@ describe('NoteView', () => {
       store = createMemoryFileStore({ [PATH]: 'Just text, and ![a photo](Photos/a.jpg) from the project.' });
       const view = await open();
       expect(byLabel(view.container, 'Load images')).toBeNull();
-      expect(view.container.querySelector('.ws-embed-pending')?.textContent).toBe('a photo');
+      expect(view.container.querySelector('.ws-embed-missing')?.textContent).toBe('a photo');
       await view.unmount();
     });
   });
@@ -160,7 +170,7 @@ describe('NoteView', () => {
     await view.unmount();
   });
 
-  it('opens web links in a new tab, shows wikilinks as plain text, and never renders raw HTML', async () => {
+  it('opens web links in a new tab, shows a wikilink as its words, and never renders raw HTML', async () => {
     const view = await open();
     const prose = view.container.querySelector('.ws-prose');
     const link = prose?.querySelector<HTMLAnchorElement>('a[href="https://example.com/chart"]');
@@ -188,6 +198,90 @@ describe('NoteView', () => {
     await store.write(PATH, '# Rewritten\n\nBy an agent.');
     await waitFor(() => expect(view.container.querySelector('.ws-prose')?.textContent).toContain('By an agent.'));
     await view.unmount();
+  });
+
+  describe('the page width switch (Bruce, 2026-10-25: on the note, left of the book and pencil)', () => {
+    async function openWith(width: PageWidth['width'], props: Partial<Parameters<typeof NoteView>[0]> = {}) {
+      const setWidth = vi.fn();
+      const view = keep(
+        await render(
+          <PageWidthContext.Provider value={{ width, setWidth }}>
+            <NoteView projectId="p" store={store} entry={entry} kind="note" {...props} />
+          </PageWidthContext.Provider>,
+        ),
+      );
+      await waitFor(() => expect(view.container.querySelector('.ws-prose')).not.toBeNull());
+      return { view, setWidth };
+    }
+
+    it('sits left of Edit, and a click stretches a fixed page', async () => {
+      const { view, setWidth } = await openWith('fixed');
+      const tools = [...view.container.querySelectorAll<HTMLButtonElement>('.ws-page-tools button')];
+      expect(tools.map((button) => button.getAttribute('aria-label'))).toEqual(['Stretch the page', 'Edit']);
+      expect(tools[0].getAttribute('aria-pressed')).toBe('false');
+      await click(tools[0]);
+      expect(setWidth).toHaveBeenCalledWith('stretch');
+    });
+
+    it('shows a stretched page as pressed, and a click gives it its fixed width again', async () => {
+      const { view, setWidth } = await openWith('stretch');
+      const toggle = view.container.querySelector<HTMLButtonElement>('.ws-page-tools [aria-label="Stretch the page"]')!;
+      expect(toggle.getAttribute('aria-pressed')).toBe('true');
+      await click(toggle);
+      expect(setWidth).toHaveBeenCalledWith('fixed');
+    });
+
+    it('is there on a read-only note too, where Edit isn’t', async () => {
+      store = createMemoryFileStore({ [PATH]: new Blob([new Uint8Array([...new TextEncoder().encode('Caf'), 0xe9, 0x0a])]) });
+      const { view } = await openWith('fixed');
+      expect([...view.container.querySelectorAll('.ws-page-tools button')].map((button) => button.getAttribute('aria-label'))).toEqual(['Stretch the page']);
+    });
+
+    it('isn’t offered where nothing keeps the preference', async () => {
+      const view = keep(await open());
+      expect(view.container.querySelector('[aria-label="Stretch the page"]')).toBeNull();
+      expect(view.container.querySelector('[aria-label="Edit"]')).not.toBeNull();
+    });
+  });
+
+  describe('a very long note', () => {
+    const long = `# Log\n\n${'Seeing was steady after midnight, and the field stayed sharp.\n\n'.repeat(60)}`;
+
+    it('opens as its source, says why, and reads on request', async () => {
+      store = createMemoryFileStore({ [PATH]: long });
+      const view = keep(await render(<NoteView projectId="p" store={store} entry={entry} kind="note" longNoteChars={1_000} />));
+      await waitFor(() => expect(view.container.querySelector('.ws-long-note')).not.toBeNull());
+      // The source is really there: the editor has loaded.
+      await waitFor(() => expect(view.container.querySelector('.ws-note .cm-editor')).not.toBeNull());
+      expect(view.container.querySelector('.ws-note')?.hasAttribute('data-editing')).toBe(true);
+      expect(view.container.querySelector('.ws-prose')).toBeNull();
+      expect(view.container.querySelector('.ws-long-note')?.textContent).toContain('This note is long (3.8 KB), so it opens as its source, which stays quick.');
+      await click(view.container.querySelector<HTMLButtonElement>('.ws-long-note button')!);
+      await waitFor(() => expect(view.container.querySelector('.ws-prose')).not.toBeNull());
+      expect(view.container.querySelector('.ws-long-note')).toBeNull();
+    });
+
+    it('never puts the reading view on the page first: that render is the slow part', async () => {
+      store = createMemoryFileStore({ [PATH]: long });
+      const added: string[] = [];
+      const observer = new MutationObserver((records) => {
+        for (const record of records)
+          for (const node of record.addedNodes)
+            if (node instanceof Element && (node.matches('.ws-prose') || node.querySelector('.ws-prose'))) added.push('prose');
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+      const view = keep(await render(<NoteView projectId="p" store={store} entry={entry} kind="note" longNoteChars={1_000} />));
+      await waitFor(() => expect(view.container.querySelector('.ws-note .cm-editor')).not.toBeNull());
+      observer.disconnect();
+      expect(added).toEqual([]);
+    });
+
+    it('a note under the limit opens to read, as always', async () => {
+      store = createMemoryFileStore({ [PATH]: long });
+      const view = keep(await render(<NoteView projectId="p" store={store} entry={entry} kind="note" longNoteChars={100_000} />));
+      await waitFor(() => expect(view.container.querySelector('.ws-prose')).not.toBeNull());
+      expect(view.container.querySelector('.ws-long-note')).toBeNull();
+    });
   });
 
   it('falls back to the info card when the note cannot be read', async () => {

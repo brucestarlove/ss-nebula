@@ -31,8 +31,7 @@ function errorText(reason: unknown): string {
   return /[.!?]$/.test(text) ? text : `${text}.`;
 }
 
-/** A name from the user's computer, made safe to keep, or why it can't be
- * (review finding 17). */
+/** A name from the user's computer, made safe to keep, or why it can't be kept. */
 export function uploadName(name: string): { name: string } | { problem: string } {
   const cleaned = fit(name.replace(UNSAFE, '_').trim());
   // Windows' rules are mapped, so the file still goes in: a reserved device

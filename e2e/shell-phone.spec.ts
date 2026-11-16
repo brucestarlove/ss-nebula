@@ -51,10 +51,10 @@ test.describe('phone', () => {
     await expect(page.locator('.ws-root')).not.toHaveAttribute('data-sheet', '');
   });
 
-  test('New offers a note, a canvas, a folder or an upload', async ({ page }) => {
+  test('New offers a note, a pasted note, a canvas, a folder or an upload', async ({ page }) => {
     await page.getByRole('button', { name: 'New', exact: true }).click();
     const menu = page.getByRole('menu', { name: 'New' });
-    await expect(menu.getByRole('menuitem')).toHaveText(['New note', 'New canvas', 'New folder', 'Upload files…']);
+    await expect(menu.getByRole('menuitem')).toHaveText(['New note', 'Paste as note', 'New canvas', 'New folder', 'Upload files…']);
     await menu.getByRole('menuitem', { name: 'New note' }).click();
     await expect(page.locator('.ws-phone-title')).toHaveText('Untitled');
   });

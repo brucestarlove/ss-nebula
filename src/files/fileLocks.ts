@@ -70,6 +70,46 @@ export function holdingListedFiles<T>(
   return attempt(3);
 }
 
+/**
+ * A lock manager whose holder can take files' locks for a while and still
+ * reach them itself: Move to a folder… holds every file
+ * of the browser project exclusively, and reads and deletes them through
+ * the registry's store, which asks this manager. While held, a request here
+ * for one of those names runs at once; every other store (another tab's,
+ * a project store of this tab's, which ask `inner`) waits as ever.
+ */
+export class HoldableLocks implements FileLockManager {
+  readonly inner: FileLockManager;
+  private readonly held = new Set<string>();
+
+  constructor(inner: FileLockManager) {
+    this.inner = inner;
+  }
+
+  request(name: string, options: { mode: FileLockMode }, callback: () => unknown): unknown {
+    return this.held.has(name) ? callback() : this.inner.request(name, options, callback);
+  }
+
+  /** Runs `action` holding the lock of every file `list` names (places, as
+   * fileLockName takes them), listed again once held (holdingListedFiles). */
+  async hold<T>(list: () => string[] | Promise<string[]>, action: () => Promise<T>): Promise<T> {
+    let names: string[] = [];
+    const listing = async () => {
+      const places = await list();
+      names = places.map(fileLockName);
+      return places;
+    };
+    return holdingListedFiles(this.inner, listing, async () => {
+      for (const name of names) this.held.add(name);
+      try {
+        return await action();
+      } finally {
+        for (const name of names) this.held.delete(name);
+      }
+    });
+  }
+}
+
 type Waiter = { mode: FileLockMode; grant: () => void };
 type LockState = { mode: FileLockMode | null; held: number; queue: Waiter[] };
 

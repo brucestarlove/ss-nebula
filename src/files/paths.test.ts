@@ -196,7 +196,7 @@ describe('comparePaths', () => {
   });
 });
 
-describe('newNameProblem, for names people type or upload (review finding 22)', () => {
+describe('newNameProblem, for names people type or upload', () => {
   it('accepts ordinary names in any language, dotfiles and names that only start like reserved ones', () => {
     for (const name of ['Orion.md', 'Été — notes.md', '星図.png', 'خريطة.md', '.gitignore', 'a.b.c', 'CONSOLE.md', 'COM10.txt', 'LPT0.txt', 'con-notes.md', 'Aux plans.md', 'v1.2']) {
       expect(newNameProblem(name), name).toBeNull();

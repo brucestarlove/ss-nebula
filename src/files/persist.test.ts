@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { formatBytes, requestPersistentStorage, storageStatus } from './persist';
+import { formatBytes, onPersistenceAnswer, requestPersistentStorage, storageStatus } from './persist';
 
 function fakeStorage(options: { persisted?: boolean; grant?: boolean; estimate?: StorageEstimate | Error; persistThrows?: boolean } = {}) {
   const persist = vi.fn(async () => {
@@ -38,6 +38,27 @@ describe('requestPersistentStorage', () => {
 
   it('treats a failing request as not persistent, without throwing', async () => {
     expect(await requestPersistentStorage(fakeStorage({ persistThrows: true }).storage)).toBe(false);
+  });
+});
+
+describe('onPersistenceAnswer', () => {
+  it('tells whoever listens what the browser answered, until they stop listening', async () => {
+    const storage = { persisted: async () => false, persist: async () => true } as unknown as StorageManager;
+    const heard: Array<boolean | null> = [];
+    const stop = onPersistenceAnswer((answer) => heard.push(answer));
+    await requestPersistentStorage(storage);
+    stop();
+    await requestPersistentStorage(storage);
+    expect(heard).toEqual([true]);
+  });
+
+  it('tells them a refusal too, and a failed request as one', async () => {
+    const heard: Array<boolean | null> = [];
+    const stop = onPersistenceAnswer((answer) => heard.push(answer));
+    await requestPersistentStorage({ persisted: async () => false, persist: async () => false } as unknown as StorageManager);
+    await requestPersistentStorage({ persisted: async () => false, persist: async () => Promise.reject(new Error('no')) } as unknown as StorageManager);
+    stop();
+    expect(heard).toEqual([false, false]);
   });
 });
 

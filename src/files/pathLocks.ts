@@ -1,6 +1,6 @@
 /**
  * Keeps a store's changes to overlapping paths in the order they were asked
- * for (review findings 1 and 13): a rename or a remove waits for every write
+ * for: a rename or a remove waits for every write
  * in flight to the path or anywhere inside it, and anything asked for later
  * waits for the rename or remove in turn. Changes to unrelated paths still run
  * side by side.

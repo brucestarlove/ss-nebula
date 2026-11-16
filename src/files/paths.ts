@@ -144,7 +144,7 @@ export function comparePaths(a: string, b: string): number {
 }
 
 // Names a project should never be given, so it unpacks and reads the same
-// everywhere (review finding 22). Stores still take them: files that already
+// everywhere. Stores still take them: files that already
 // have them keep working, and projectToZip maps them (portableName).
 const DIRECTION_CONTROLS = /[\u202a-\u202e\u2066-\u2069]/g;
 const LINE_SEPARATORS = /[\u2028\u2029]/g;
@@ -193,4 +193,24 @@ export function portableName(name: string): string {
   const device = deviceStem(portable);
   if (WINDOWS_RESERVED_NAME.test(device)) portable = `${device}_${portable.slice(portable.indexOf(device) + device.length)}`;
   return portable;
+}
+
+/** Groups of paths that are one name on a case-insensitive disk (macOS,
+ * Windows), such as `Docs` and `docs`, or `a/Note.md` and `a/note.md`. Only
+ * the topmost of each: `Docs/a.md` and `docs/a.md` follow from `Docs` and
+ * `docs`, so they aren't named again. Each group is sorted. */
+export function caseCollisions(paths: string[]): string[][] {
+  const groups = new Map<string, string[]>();
+  for (const path of new Set(paths)) {
+    const key = path.toLowerCase();
+    groups.set(key, [...(groups.get(key) ?? []), path]);
+  }
+  const colliding = new Set([...groups].filter(([, members]) => members.length > 1).map(([key]) => key));
+  const out: string[][] = [];
+  for (const key of colliding) {
+    let inside = false;
+    for (let at = key.indexOf('/'); at !== -1 && !inside; at = key.indexOf('/', at + 1)) inside = colliding.has(key.slice(0, at));
+    if (!inside) out.push([...groups.get(key)!].sort(comparePaths));
+  }
+  return out.sort((a, b) => comparePaths(a[0], b[0]));
 }

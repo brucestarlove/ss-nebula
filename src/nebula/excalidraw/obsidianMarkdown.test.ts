@@ -215,7 +215,7 @@ function pluginReads(markdown: string): string | undefined {
   return /(\n##? Drawing\n[^`]*(?:```compressed-json\n))([\s\S]*?)(```\n)/gm.exec(markdown)?.[2];
 }
 
-describe('a drawing quoted inside a text element (review finding 9)', () => {
+describe('a drawing quoted inside a text element', () => {
   const thirty: ExcalidrawScene = {
     ...scene,
     elements: Array.from({ length: 30 }, (_, index) => ({ id: `rect-${index}`, type: 'rectangle', x: index * 10, y: 0, width: 5, height: 5 })),

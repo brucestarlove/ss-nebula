@@ -259,7 +259,7 @@ async function corruptCopies(): Promise<string[]> {
   return (await root.list()).map((entry) => entry.path).filter((path) => path.startsWith('registry.corrupt'));
 }
 
-describe('the registry when registry.json is lost, empty or damaged (review findings 10, 11, 24)', () => {
+describe('the registry when registry.json is lost, empty or damaged', () => {
   it('adopts a project folder that registry.json lost, as when two tabs wrote it at once', async () => {
     const a = await registry.create({ name: 'A', color: '#7c8cff' });
     const before = await root.readText('registry.json');
@@ -360,7 +360,7 @@ describe('the registry when registry.json is lost, empty or damaged (review find
   });
 });
 
-describe('a registry.json this build does not fully understand (review finding 12)', () => {
+describe('a registry.json this build does not fully understand', () => {
   it('opens one written by a newer Nebula read-only, says so, and never writes it', async () => {
     const a = await registry.create({ name: 'A', color: '#7c8cff' });
     const dir = await dirOf(a.id);

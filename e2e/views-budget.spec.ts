@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { openFile, openHarness } from './harness/views-page';
 
-// Lane C, PLAN §10: each view brings its own weight. Reading a note never
+// The load budget: each view brings its own weight. Reading a note never
 // downloads Excalidraw or CodeMirror; CodeMirror arrives with edit mode,
 // Excalidraw with a canvas. (Dev server: dependencies are separate modules.)
 

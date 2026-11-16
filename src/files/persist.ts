@@ -1,5 +1,5 @@
 /**
- * Persistent storage for the browser tier (PLAN §7): ask the browser not to
+ * Persistent storage for the browser tier: ask the browser not to
  * clear Nebula's files under storage pressure, and read how much they take,
  * for the status line. Browsers without the Storage API get null answers,
  * never errors. Chrome decides on its own; Firefox may ask the user, so call
@@ -33,12 +33,34 @@ async function isPersisted(storage: StorageManager | undefined): Promise<boolean
  * the browser's answer; null: this browser has no way to ask. */
 export async function requestPersistentStorage(storage: StorageManager | undefined = defaultStorage()): Promise<boolean | null> {
   if (typeof storage?.persist !== 'function') return null;
-  if ((await isPersisted(storage)) === true) return true;
+  if ((await isPersisted(storage)) === true) return tell(true);
   try {
-    return await storage.persist();
+    return tell(await storage.persist());
   } catch {
-    return false;
+    return tell(false);
   }
+}
+
+const listeners = new Set<(answer: boolean) => void>();
+
+/** Listens for the browser's answer whenever Nebula asks it to keep the
+ * files (the rail's status follows it). Returns a function that stops listening. */
+export function onPersistenceAnswer(listener: (answer: boolean) => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+function tell(answer: boolean): boolean {
+  for (const listener of [...listeners]) {
+    try {
+      listener(answer);
+    } catch {
+      // One listener's failure doesn't keep the answer from the others.
+    }
+  }
+  return answer;
 }
 
 /** Whether storage is persistent, and the usage estimate, as far as the browser says. */

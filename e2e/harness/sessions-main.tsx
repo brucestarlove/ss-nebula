@@ -11,7 +11,7 @@ import { initMotionFromStorage } from '../../src/nebula/ui/useMotion';
 import { initThemeFromStorage, resolveStoredTheme } from '../../src/nebula/ui/useTheme';
 import { Workspace, initPreferencesFromStorage } from '../../src/workspace';
 import { buildFixtures, PROJECT_ID } from './sessions-files';
-import { instrumentStore, type StoreCall } from './storeWrappers';
+import { instrumentStore, type ReadFaults, type StoreCall } from './storeWrappers';
 
 // What main.tsx does before first paint.
 initThemeFromStorage();
@@ -24,11 +24,12 @@ const params = new URLSearchParams(location.search);
 const slow = Number(params.get('slow') ?? 0);
 
 const calls: StoreCall[] = [];
+const faults: ReadFaults = { next: null };
 
 /** Logs the store's calls; `slow` holds each write back that long first, so
  * a save is still in flight when the next step comes. */
 function instrument(store: FileStore): FileStore {
-  return instrumentStore(store, calls, slow);
+  return instrumentStore(store, calls, slow, faults);
 }
 
 async function start() {
@@ -48,6 +49,11 @@ async function start() {
     calls,
     writes: (path: string) => calls.filter((call) => call.op === 'write' && call.path === path).length,
     lists: () => calls.filter((call) => call.op === 'list').length,
+    /** The workspace's next `skip` reads of `path` go through, the `fail`
+     * after them fail. */
+    failReads(path: string, skip: number, fail: number) {
+      faults.next = { path, skip, fail };
+    },
     async read(path: string): Promise<string | null> {
       const store = await files();
       return (await store.stat(path)) ? store.readText(path) : null;

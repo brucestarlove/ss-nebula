@@ -1,5 +1,5 @@
 import { isInside, joinPath, normalizePath } from './paths';
-import type { FileChange, FileEntry, FileStore } from './types';
+import { isProjectSignal, type FileChange, type FileEntry, type FileStore } from './types';
 
 const HIDDEN = '.nebula';
 
@@ -20,10 +20,12 @@ export function scopedStore(root: FileStore, prefix: string): FileStore {
   };
 
   // The folder itself, or one above it, removed or moved away: from in here,
-  // everything is gone (review finding 23).
+  // everything is gone.
   const gone: FileChange = { type: 'remove', path: '' };
 
   function translate(change: FileChange): FileChange | null {
+    // The tree's own reach is this scope's too.
+    if (isProjectSignal(change)) return change;
     if (change.type === 'remove' && isInside(prefix, change.path)) return gone;
     if (change.type === 'rename' && isInside(prefix, change.from)) return gone;
     if (change.type !== 'rename') return inside(change.path) ? { ...change, path: inner(change.path) } : null;
@@ -49,7 +51,7 @@ export function scopedStore(root: FileStore, prefix: string): FileStore {
     }),
     readText: (path) => run([path], () => root.readText(outer(path))),
     readBlob: (path) => run([path], () => root.readBlob(outer(path))),
-    // The rest of the arguments whole, so no option is dropped (round 5, G4).
+    // The rest of the arguments whole, so no option is dropped.
     write: (path, ...rest) => run([path], () => root.write(outer(path), ...rest)),
     mkdir: (path) => run([path], () => root.mkdir(outer(path))),
     rename: (from, to) => run([from, to], () => root.rename(outer(from), outer(to))),

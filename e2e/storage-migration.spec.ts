@@ -1,4 +1,4 @@
-// The migration in real browsers (review findings 5, 6 and 19): Web Locks
+// The migration in real browsers: Web Locks
 // across two tabs, a tab closed part-way, and the record in OPFS.
 import { readFileSync } from 'node:fs';
 import type { Page } from '@playwright/test';

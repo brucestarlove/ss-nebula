@@ -38,11 +38,18 @@ async function walk(folder: FileSystemDirectoryHandle, prefix: string, into: str
   return into;
 }
 
+/** Reads a file under its shared Web Lock, as Nebula does (see e2e/app-fixtures.ts:
+ * WebKit can show a file empty to a read while a write closes). */
 async function readOpfs(path: string): Promise<string> {
-  let folder = await navigator.storage.getDirectory();
-  const segments = path.split('/');
-  for (const segment of segments.slice(0, -1)) folder = await folder.getDirectoryHandle(segment);
-  return (await (await folder.getFileHandle(segments.at(-1) as string)).getFile()).text();
+  const read = async (): Promise<string> => {
+    let folder = await navigator.storage.getDirectory();
+    const segments = path.split('/');
+    for (const segment of segments.slice(0, -1)) folder = await folder.getDirectoryHandle(segment);
+    return (await (await folder.getFileHandle(segments.at(-1) as string)).getFile()).text();
+  };
+  const tree = `${OPFS_TREE}/`;
+  if (!path.startsWith(tree)) return read();
+  return navigator.locks.request(`nebula:file:${path.slice(tree.length)}`, { mode: 'shared' }, read);
 }
 
 const harness = {

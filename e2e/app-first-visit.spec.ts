@@ -1,6 +1,6 @@
 import { addressPath, closeIntro, expect, openApp, row, storedProjects, switcherTitle, test } from './app-fixtures';
 
-// A brand-new visitor (docs/slice-3.md, decision 5): the welcome, the Night
+// A brand-new visitor: the welcome, the Night
 // Sky sample with the Nebula logo standing in for its planet, and the
 // observing plan open. A reload keeps all of it and never welcomes twice.
 

@@ -15,7 +15,8 @@ type QuickOpenProps = {
   projects: ProjectRecord[];
   currentId: string | null;
   /** Where other projects live, shown beside them. */
-  location: string;
+  /** Where a project's files live, as the switcher says it. */
+  location: string | ((project: ProjectRecord) => string);
   onOpenFile: (path: string) => void;
   onSwitchProject: (id: string) => void;
   onClose: () => void;
@@ -159,7 +160,7 @@ function QuickOpenBody({
                 <span>
                   <Marked text={other.project.name} ranges={other.ranges} />
                 </span>
-                <small>{location}</small>
+                <small>{typeof location === 'function' ? location(other.project) : location}</small>
               </div>
             ))}
           </div>

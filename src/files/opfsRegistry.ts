@@ -2,9 +2,12 @@
  * Where the browser tier keeps its tree: `nebula/` in the origin private file
  * system when OPFS really works here, and memory when it doesn't (private
  * browsing, Playwright's ephemeral WebKit). Then nothing is kept, and the UI
- * must say so (docs/slice-3.md, decision 8).
+ * must say so.
  */
 import { blobToText } from './bytes';
+import { HoldableLocks, browserFileLocks } from './fileLocks';
+import { indexedDbFolderHandles, type FolderHandleStore } from './folderHandles';
+import { folderFileStore } from './folderStore';
 import { MemoryFileStore } from './memoryStore';
 import { OpfsFileStore } from './opfsStore';
 import { webLocks, type LockManagerLike } from './locks';
@@ -33,12 +36,17 @@ function defaultStorage(): StorageManager | undefined {
   return typeof navigator !== 'undefined' ? navigator.storage : undefined;
 }
 
-/** Whether OPFS really keeps files here: getDirectory(), then a createWritable
- * round trip on a scratch file, which is removed again. */
-export async function probeOpfs(storage: StorageManager | undefined = defaultStorage()): Promise<OpfsProbe> {
+const NO_WEB_LOCKS = 'This browser has no Web Locks, so Nebula can’t keep its tabs from overwriting each other’s changes, and keeps nothing here.';
+
+/** Whether OPFS really keeps files here: Web Locks (round 6, H10: without
+ * them no store can keep two tabs' writes apart, so this fails closed),
+ * getDirectory(), then a createWritable round trip on a scratch file, which
+ * is removed again. */
+export async function probeOpfs(storage: StorageManager | undefined = defaultStorage(), locks: LockManagerLike | null = webLocks()): Promise<OpfsProbe> {
   if (!storage || typeof storage.getDirectory !== 'function') {
     return { ok: false, reason: 'This browser has no origin private file system.' };
   }
+  if (!locks) return { ok: false, reason: NO_WEB_LOCKS };
   let root: FileSystemDirectoryHandle;
   try {
     root = await storage.getDirectory();
@@ -66,12 +74,26 @@ type IterableDirectory = FileSystemDirectoryHandle & { values(): AsyncIterable<F
 
 /** The registry on OPFS's `nebula/` tree, each project a store of its own
  * whose watchers hear the project's other tabs. The stores share one set of
- * path locks, so removing a project waits for its writes in flight. */
-export async function createOpfsRegistry(root: FileSystemDirectoryHandle, options: { locks?: LockManagerLike | null } = {}): Promise<BrowserRegistry> {
+ * path locks, so removing a project waits for its writes in flight. Folder
+ * projects keep their folders in IndexedDB, by project id. */
+export async function createOpfsRegistry(
+  root: FileSystemDirectoryHandle,
+  options: { locks?: LockManagerLike | null; folderHandles?: FolderHandleStore } = {},
+): Promise<BrowserRegistry> {
   const tree = await root.getDirectoryHandle(OPFS_TREE, { create: true });
   const locks = new PathLocks();
-  return createBrowserRegistry(new OpfsFileStore(tree, { channel: 'nebula:registry', locks: { locks, prefix: '' } }), {
+  // The root store's file locks are the project stores' (`projects/<dir>/…`
+  // in both), through a HoldableLocks, so Move to a folder… can hold a
+  // project's files and still read and delete them (S3).
+  const base = browserFileLocks();
+  const fileLocks = base ? new HoldableLocks(base) : null;
+  return createBrowserRegistry(new OpfsFileStore(tree, { channel: 'nebula:registry', locks: { locks, prefix: '' }, fileLocks }), {
     ...('locks' in options ? { locks: options.locks } : {}),
+    fileLocks,
+    folders: {
+      handles: options.folderHandles ?? indexedDbFolderHandles(),
+      store: (handle, id) => folderFileStore(handle, id, locks),
+    },
     async projectStore(dir, id) {
       const projects = await tree.getDirectoryHandle('projects', { create: true });
       return new OpfsFileStore(await projects.getDirectoryHandle(dir, { create: true }), {
@@ -99,14 +121,14 @@ export async function createOpfsRegistry(root: FileSystemDirectoryHandle, option
  * OPFS is used only with Web Locks, which keep two tabs from writing
  * registry.json at once. Every engine with OPFS and createWritable has them;
  * one without keeps nothing rather than risk tabs undoing each other
- * (review finding 10; a lock file can outlive a crashed tab). */
+ * (a lock file can outlive a crashed tab). */
 export async function openBrowserRegistry(options: { storage?: StorageManager; locks?: LockManagerLike | null } = {}): Promise<BrowserRegistryHandle> {
-  const probe = await probeOpfs('storage' in options ? options.storage : defaultStorage());
   const locks = 'locks' in options ? options.locks : webLocks();
-  if (probe.ok && locks) return { registry: await createOpfsRegistry(probe.root, 'locks' in options ? { locks } : {}), persistent: true };
+  const probe = await probeOpfs('storage' in options ? options.storage : defaultStorage(), locks ?? null);
+  if (probe.ok) return { registry: await createOpfsRegistry(probe.root, 'locks' in options ? { locks } : {}), persistent: true };
   return {
     registry: createBrowserRegistry(new MemoryFileStore(), { lockName: 'nebula:registry:memory' }),
     persistent: false,
-    reason: probe.ok ? 'This browser has no Web Locks, so Nebula can’t keep its tabs from overwriting each other’s changes, and keeps nothing here.' : probe.reason,
+    reason: probe.reason,
   };
 }

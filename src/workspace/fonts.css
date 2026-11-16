@@ -2,7 +2,7 @@
  * display and long reading, JetBrains Mono for code. Self-hosted subsets
  * from starscape.biz under the SIL Open Font License (the licences sit next
  * to the files in src/assets/fonts/). ss-ui 3.4's blend brings the same faces
- * into @starlove/ui; until then Nebula carries them (PLAN §9). */
+ * into @starlove/ui; until then Nebula carries them. */
 @font-face {
   font-family: "Mona Sans";
   src: url("../assets/fonts/mona-sans.woff2") format("woff2");

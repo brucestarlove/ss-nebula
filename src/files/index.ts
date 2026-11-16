@@ -1,8 +1,8 @@
 /**
- * The storage layer's public surface (docs/slice-3.md, lane A). The workspace
+ * The storage layer's public surface. The workspace
  * and the app import from here.
  *
- * First run, in order (docs/slice-3.md, Integration 2):
+ * First run, in order:
  *
  *   const { registry, persistent, reason } = await openBrowserRegistry();
  *   const migration = await migrateLegacyCanvases({ storage: localStorage, registry, persistent });
@@ -22,6 +22,9 @@ export type {
   FileKind,
   FileStore,
   FileViewProps,
+  FolderAccess,
+  FolderHandle,
+  NewProject,
   Preferences,
   ProjectMeta,
   ProjectRecord,
@@ -55,8 +58,12 @@ export { OpfsFileStore, type OpfsFileStoreOptions } from './opfsStore';
 export { PathLocks } from './pathLocks';
 export { webLocks, withLock, type LockManagerLike } from './locks';
 export { scopedStore } from './scopedStore';
+export { FOLDER_DB, MemoryFolderHandles, indexedDbFolderHandles, type FolderHandleStore } from './folderHandles';
+export { FolderFileStore, folderFileStore } from './folderStore';
+export { FolderUnavailableError, folderAccess, folderExists, requestFolderAccess, type FolderTier } from './folderTier';
 export {
   InvalidProjectError,
+  NoFolderTierError,
   ReadOnlyRegistryError,
   createBrowserRegistry,
   isValidProjectId,
@@ -85,4 +92,4 @@ export {
 } from './migration';
 export { SAMPLE_PROJECT, seedSampleProject, type SampleOptions, type SampleResult } from './sample';
 export { projectToZip, zipFileName, type ZipOptions } from './zip';
-export { formatBytes, requestPersistentStorage, storageStatus, type StorageStatus } from './persist';
+export { formatBytes, onPersistenceAnswer, requestPersistentStorage, storageStatus, type StorageStatus } from './persist';

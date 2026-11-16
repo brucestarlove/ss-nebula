@@ -1,8 +1,7 @@
 import { drawRectangle, editNote, expect, files, openPath, openSessions, PATHS, renameRow, row, shownElements, test } from './harness/sessions-test';
 
 // Saves land where the file is, when it's still there, and nothing is
-// mounted again or walked again for them (review findings 1, 2, 4, 13, 15,
-// 21, 26), on the real OPFS store.
+// mounted again or walked again for them, on the real OPFS store.
 
 test('a note being saved follows its folder’s rename', async ({ page }) => {
   // Each write is held back 400 ms, so the rename comes while the save is in flight.

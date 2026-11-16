@@ -154,7 +154,7 @@ function checksum(bytes: ArrayLike<number>): number {
   return sum;
 }
 
-describe('projectToZip, streamed (review finding 25)', () => {
+describe('projectToZip, streamed', () => {
   it('makes the same archive as building it in one go: names, order, methods, UTF-8 flags, times, CRCs and sizes', async () => {
     const store = await sampleStore();
     const streamed = await blobToBytes(await projectToZip(store));
@@ -189,7 +189,7 @@ describe('projectToZip, streamed (review finding 25)', () => {
   });
 });
 
-describe('projectToZip names (review finding 22)', () => {
+describe('projectToZip names', () => {
   it('maps names that would not unpack on Windows or macOS, keeping every file', async () => {
     const store = new MemoryFileStore();
     const files: Record<string, string> = {

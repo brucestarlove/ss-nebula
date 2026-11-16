@@ -174,7 +174,7 @@ describe('text file session', () => {
     expect(session.getState()).toMatchObject({ dirty: false });
   });
 
-  it('writes nothing more once its whole project folder is removed (review finding 23)', async () => {
+  it('writes nothing more once its whole project folder is removed', async () => {
     const tree = createMemoryFileStore({ 'projects/p1/Guides/plan.md': 'first' });
     const scoped = createTextSession(scopedStore(tree, 'projects/p1'), 'Guides/plan.md');
     await scoped.ready;
@@ -200,7 +200,7 @@ describe('text file session', () => {
     slow.release();
     await first;
     await second;
-    // Neither lands. The write in flight expects the file's text (round 5),
+    // Neither lands. The write in flight expects the file's text,
     // and the file is gone, so even this store, which would make the folder
     // again, writes nothing.
     expect(store.writes.map((write) => write.data)).toEqual([]);

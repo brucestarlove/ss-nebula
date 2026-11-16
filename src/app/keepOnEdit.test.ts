@@ -42,7 +42,7 @@ describe('askToKeepOnFirstEdit', () => {
     expect(await (await inner.files(projectId)).readText('Guides/Orion.md')).toBe('# Orion\n\nRigel\n');
   });
 
-  it('passes an exclusive write through, refusing a file that exists (round 4, F1)', async () => {
+  it('passes an exclusive write through, refusing a file that exists', async () => {
     const store = await registry.open(projectId);
     await expect(store.write('Guides/Orion.md', 'over', { exclusive: true })).rejects.toMatchObject({ name: 'FileExistsError' });
     expect(await store.readText('Guides/Orion.md')).toBe('# Orion\n');

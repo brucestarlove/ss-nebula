@@ -1,4 +1,4 @@
-import { isInside } from '../../../files/paths';
+import { basename, isInside } from '../../../files/paths';
 import type { FileStore } from '../../../files/types';
 
 /**
@@ -6,8 +6,7 @@ import type { FileStore } from '../../../files/types';
  * sessions), so that:
  *
  * - the workspace can write what's pending under a path, and hold further
- *   writes there, while it renames, moves or deletes it (review findings 1
- *   and 13): nothing is written to a path that is going away;
+ *   writes there, while it renames, moves or deletes it: nothing is written to a path that is going away;
  * - a session opened while another one is still saving the same file waits
  *   for that save before it reads (finding 2);
  * - the page can tell whether anything isn't saved yet (finding 15).
@@ -74,6 +73,11 @@ export function hasUnsavedChanges(): boolean {
   return unsavedNow;
 }
 
+/** True while an open session of the file at `path` (in this project) has a change that isn't on disk yet. */
+export function hasUnsavedAt(scope: SessionScope, path: string): boolean {
+  return [...sessions].some((session) => session.scope === scope && session.path() === path && session.unsaved());
+}
+
 export function subscribeUnsaved(listener: () => void): () => void {
   listeners.add(listener);
   return () => {
@@ -97,11 +101,24 @@ async function settle(list: () => OpenFileSession[]): Promise<void> {
   }
 }
 
-/** Settles once no other session of this file has a write queued or in
- * flight: a session opened while another one is still saving the same file
- * reads what that save wrote. */
+/** Sessions opened before `session`, oldest first (a Set keeps its order). */
+function openedBefore(session: OpenFileSession): Set<OpenFileSession> {
+  const before = new Set<OpenFileSession>();
+  for (const other of sessions) {
+    if (other === session) break;
+    before.add(other);
+  }
+  return before;
+}
+
+/** Settles once no session of this file opened before `except` has a write
+ * queued or in flight: a session opened while another one is still saving
+ * the same file reads what that save wrote. Only older sessions count: two
+ * sessions each waiting for the other's writes would never settle (round 6,
+ * close and reopen twice). */
 export function writesSettled(scope: SessionScope, path: string, except?: OpenFileSession): Promise<void> {
-  return settle(() => inScope(scope, (session) => session.path() === path, except));
+  const older = except && sessions.has(except) ? openedBefore(except) : null;
+  return settle(() => inScope(scope, (session) => session.path() === path && (older === null || older.has(session)), except));
 }
 
 /** Settles once no rename, move or delete in this workspace holds the
@@ -116,7 +133,7 @@ export async function writeAllowed(scope: SessionScope, path: () => string): Pro
 }
 
 /** True while a rename, move or delete in this workspace holds the file at
- * `path`: a change heard now was made in this tab (round 4, F5). */
+ * `path`: a change heard now was made in this tab. */
 export function heldHere(scope: SessionScope, path: string): boolean {
   return [...holds].some((hold) => hold.scope === scope && isInside(path, hold.path));
 }
@@ -141,9 +158,11 @@ export async function holdWrites(scope: SessionScope, path: string, options: { f
 
 /** A change held in a conflict when its view closed, kept beside the file
  * (re-review R1): `copy` is where. Or null with `error` when it couldn't be
- * written (round 4, F2): `download` is the change as the copy would have
+ * written: `download` is the change as the copy would have
  * been, its name and its text in the file's own format, for the user to
- * save. The session stays unsaved, so closing the page still asks, until
+ * save. `failedSave`: there was no conflict, the change's own save failed
+ * as the view closed, and `download` has the file's own name.
+ * The session stays unsaved, so closing the page still asks, until
  * `release()`: call it once the user has downloaded it or chosen not to. */
 export type KeptCopy =
   /** `deleted`: another tab deleted the file, and the copy is where it was. */
@@ -154,6 +173,7 @@ export type KeptCopy =
       copy: null;
       error: unknown;
       download: { filename: string; text: string };
+      failedSave?: true;
       release: () => void;
     };
 
@@ -169,4 +189,71 @@ export function subscribeKeptCopies(listener: (copy: KeptCopy) => void): () => v
   return () => {
     keptListeners.delete(listener);
   };
+}
+
+/** A session closed while its folder was out of reach: its edit is kept as
+ * a download, and this says why (S2). */
+export class FolderUnreachableError extends Error {
+  constructor(folder: string) {
+    super(unreachableMessage(folder));
+    this.name = 'FolderUnreachableError';
+  }
+}
+
+/** What a view says while its folder is out of reach (S2). */
+export function unreachableMessage(folder: string): string {
+  return `Nebula can’t reach the folder ${folder ? `‘${folder}’` : 'this project is in'} right now. Your changes are kept here and saved when it’s back.`;
+}
+
+/** An edit a session held when its project moved to a folder (S3), waiting
+ * for the session that opens the file from the folder. */
+export type CarriedEdit = { text: string; base: string; done: () => void };
+
+/** How long a carried edit waits for its file to open again before it's
+ * offered as a download instead. */
+export const CARRY_MS = 10_000;
+
+const carried = new Map<string, CarriedEdit>();
+const carryKey = (scope: string, path: string) => `${scope}\n${path}`;
+
+/** Keeps an edit for the session that opens `path` in the project's new
+ * home: the page stays unsaved until one takes it, and if none does within
+ * CARRY_MS, it's offered as a download, never dropped. */
+export function carryEdit(scope: string, path: string, edit: { text: string; base: string }): void {
+  const key = carryKey(scope, path);
+  // idle() gives the same promise each time: settle() waits until they stop changing.
+  const settled = Promise.resolve();
+  const handle = openFileSession({ scope, path: () => path, flush: () => settled, idle: () => settled, unsaved: () => true });
+  handle.changed();
+  const entry: CarriedEdit = {
+    ...edit,
+    done: () => {
+      clearTimeout(timer);
+      handle.close();
+    },
+  };
+  const timer = setTimeout(() => {
+    if (carried.get(key) !== entry) return;
+    carried.delete(key);
+    reportKeptCopy({
+      scope,
+      path,
+      copy: null,
+      error: new Error('The project moved to a folder before this change was saved.'),
+      download: { filename: basename(path), text: edit.text },
+      failedSave: true,
+      release: () => handle.close(),
+    });
+  }, CARRY_MS);
+  carried.get(key)?.done();
+  carried.set(key, entry);
+}
+
+/** The edit carried for `path`, taken: call done() once it's applied. */
+export function claimCarried(scope: SessionScope, path: string): CarriedEdit | null {
+  if (typeof scope !== 'string') return null;
+  const key = carryKey(scope, path);
+  const entry = carried.get(key) ?? null;
+  carried.delete(key);
+  return entry;
 }

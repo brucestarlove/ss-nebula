@@ -23,6 +23,9 @@ const DRAG_TYPE = 'application/x-nebula-path';
 
 export type FileTreeProps = {
   tree: TreeNode[];
+  /** What an empty tree says, when not the usual invitation (a folder
+   * Nebula can't open yet isn't empty). */
+  emptyText?: string;
   expanded: ReadonlySet<string>;
   activePath: string | null;
   kinds: Readonly<Record<string, FileKind>>;
@@ -342,7 +345,7 @@ export function FileTree(props: FileTreeProps) {
       >
         {renderNodes(tree, 1)}
       </div>
-      {tree.length === 0 ? <p className="ws-tree-empty">No files yet. Make a note or a canvas, or drop files here.</p> : null}
+      {tree.length === 0 ? <p className="ws-tree-empty">{props.emptyText ?? 'No files yet. Make a note or a canvas, or drop files here.'}</p> : null}
     </div>
   );
 }

@@ -14,6 +14,13 @@ type RailProps = {
   location: string;
   usage: string;
   ephemeral: boolean;
+  /** The browser hasn't promised to keep the files: the status says they may be cleared. */
+  attention: boolean;
+  /** A folder project's folder: the status names it, on this computer. */
+  folderName?: string | null;
+  /** Why a folder project's folder can't be opened now ('Needs your OK'):
+   * the status says it, amber, and nothing offers to make files. */
+  blocked?: string | null;
   night: boolean;
   collapsed: boolean;
   menuOpen: boolean;
@@ -30,11 +37,14 @@ type RailProps = {
   onSearch: () => void;
   onNewNote: () => void;
   onNewCanvas: () => void;
+  onNewFolder: () => void;
   onUpload: () => void;
   onOpenStarred: (path: string) => void;
   onStarredMenu: (path: string, at: MenuAt) => void;
   onToggleTheme: () => void;
   onSettings: () => void;
+  /** Opens Settings at the project's files; absent without a project. */
+  onWhere?: () => void;
   onHelp: () => void;
   onToggleCollapsed: () => void;
 };
@@ -103,12 +113,16 @@ export function Rail(props: RailProps) {
           >
             <Icon name="files" />
           </Button>
-          <Button className="ws-icon-btn" aria-label="New note" title="New note" onClick={props.onNewNote}>
-            <Icon name="note-plus" />
-          </Button>
-          <Button className="ws-icon-btn" aria-label="New canvas" title="New canvas" onClick={props.onNewCanvas}>
-            <Icon name="canvas-plus" />
-          </Button>
+          {props.blocked ? null : (
+            <>
+              <Button className="ws-icon-btn" aria-label="New note" title="New note" onClick={props.onNewNote}>
+                <Icon name="note-plus" />
+              </Button>
+              <Button className="ws-icon-btn" aria-label="New canvas" title="New canvas" onClick={props.onNewCanvas}>
+                <Icon name="canvas-plus" />
+              </Button>
+            </>
+          )}
         </div>
       ) : null}
 
@@ -150,28 +164,45 @@ export function Rail(props: RailProps) {
             <div className="page-sidebar-section-label" aria-hidden="true">
               Files
             </div>
-            <div className="ws-section-actions">
-              <Button className="ws-icon-btn" aria-label="New note" title="New note" onClick={props.onNewNote}>
-                <Icon name="note-plus" />
-              </Button>
-              <Button className="ws-icon-btn" aria-label="New canvas" title="New canvas" onClick={props.onNewCanvas}>
-                <Icon name="canvas-plus" />
-              </Button>
-              <Button className="ws-icon-btn" aria-label="Upload files" title="Upload files" onClick={props.onUpload}>
-                <Icon name="upload" />
-              </Button>
-            </div>
+            {props.blocked ? null : (
+              <div className="ws-section-actions">
+                <Button className="ws-icon-btn" aria-label="New note" title="New note" onClick={props.onNewNote}>
+                  <Icon name="note-plus" />
+                </Button>
+                <Button className="ws-icon-btn" aria-label="New canvas" title="New canvas" onClick={props.onNewCanvas}>
+                  <Icon name="canvas-plus" />
+                </Button>
+                <Button className="ws-icon-btn" aria-label="New folder" title="New folder" onClick={props.onNewFolder}>
+                  <Icon name="folder-plus" />
+                </Button>
+                <Button className="ws-icon-btn" aria-label="Upload files" title="Upload files" onClick={props.onUpload}>
+                  <Icon name="upload" />
+                </Button>
+              </div>
+            )}
           </div>
           <FileTree {...props.tree} />
         </div>
       </nav>
 
       <div className="page-sidebar-footer ws-rail-footer">
-        <span className="ws-store-dot" data-ephemeral={props.ephemeral ? '' : undefined} aria-hidden="true" />
-        <div className="page-sidebar-footer-text">
-          <span className="page-sidebar-footer-name">{props.location}</span>
-          <span className="page-sidebar-footer-meta">{props.usage}</span>
-        </div>
+        <span
+          className="ws-store-dot"
+          data-ephemeral={props.ephemeral ? '' : undefined}
+          data-attention={props.attention || props.blocked ? '' : undefined}
+          aria-hidden="true"
+        />
+        {props.onWhere ? (
+          <Button className="page-sidebar-footer-text ws-rail-where" title="Where your files are kept" onClick={props.onWhere}>
+            <span className="page-sidebar-footer-name">{props.folderName ?? props.location}</span>
+            <span className="page-sidebar-footer-meta">{props.blocked ?? (props.folderName ? 'On this computer' : props.attention ? 'May be cleared' : props.usage)}</span>
+          </Button>
+        ) : (
+          <div className="page-sidebar-footer-text">
+            <span className="page-sidebar-footer-name">{props.folderName ?? props.location}</span>
+            <span className="page-sidebar-footer-meta">{props.blocked ?? (props.folderName ? 'On this computer' : props.attention ? 'May be cleared' : props.usage)}</span>
+          </div>
+        )}
         <Button
           className="ws-icon-btn"
           aria-label={props.night ? 'Switch to day' : 'Switch to night'}

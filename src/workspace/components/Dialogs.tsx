@@ -1,8 +1,13 @@
+import { FOLDERS_NEED_CHROMIUM } from '../folders';
 import { useId, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode, type RefObject } from 'react';
 import { NEBULA_LOGO_SRC } from '../../nebula/ui/logo';
 import { Button, Planet } from './Button';
+import { handleRadioKeys } from './hooks';
 import { Icon } from './icons';
 import { Swatches } from './Swatches';
+
+/** Major and minor of the build's version ("2.0"), from package.json (vite.config.ts define). */
+const NEBULA_VERSION = typeof __NEBULA_VERSION__ === 'string' ? __NEBULA_VERSION__.split('.').slice(0, 2).join('.') : '';
 
 type WsDialogProps = {
   open: boolean;
@@ -191,18 +196,30 @@ function PromptBody({
 type NewProjectProps = {
   open: boolean;
   /** False when this browser keeps nothing: the dialog says so, as the
-   * welcome does (review finding 7). */
+   * welcome does. */
   persistent: boolean;
   initialColour: string;
   /** The name it suggests, and takes when none is typed. */
   defaultName?: string;
-  onCreate: (input: { name: string; color: string }) => void;
+  /** This browser can keep a project in a folder on this computer:
+   * the dialog asks where its files live. */
+  canUseFolders?: boolean;
+  onCreate: (input: { name: string; color: string; where: ProjectHome }) => void;
   onCancel: () => void;
 };
 
+/** Where a new project's files live. */
+export type ProjectHome = 'browser' | 'folder';
+
+const HOMES: Array<{ value: ProjectHome; label: string }> = [
+  { value: 'browser', label: 'In this browser' },
+  { value: 'folder', label: 'In a folder on this computer' },
+];
+
 /** New project: the planet takes shape as you name and colour it. Its files
- * stay in this browser (docs/slice-3.md, decision 6: no storage choice yet). */
-export function NewProjectDialog({ open, persistent, initialColour, defaultName, onCreate, onCancel }: NewProjectProps) {
+ * stay in this browser, or, where the browser can, go in a folder on this
+ * computer that the person picks next. */
+export function NewProjectDialog({ open, persistent, initialColour, defaultName, canUseFolders, onCreate, onCancel }: NewProjectProps) {
   const id = useId();
   const input = useRef<HTMLInputElement>(null);
   return (
@@ -213,6 +230,7 @@ export function NewProjectDialog({ open, persistent, initialColour, defaultName,
         persistent={persistent}
         initialColour={initialColour}
         defaultName={defaultName}
+        canUseFolders={canUseFolders}
         onCreate={onCreate}
         onCancel={onCancel}
       />
@@ -226,16 +244,20 @@ function NewProjectBody({
   persistent,
   initialColour,
   defaultName = 'Untitled project',
+  canUseFolders = false,
   onCreate,
   onCancel,
 }: Omit<NewProjectProps, 'open'> & { titleId: string; inputRef: RefObject<HTMLInputElement | null> }) {
   const [name, setName] = useState('');
   const [colour, setColour] = useState(initialColour);
+  const [home, setHome] = useState<ProjectHome>('browser');
   const shown = name.trim() || defaultName;
+  const inFolder = canUseFolders && home === 'folder';
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    onCreate({ name: shown, color: colour });
+    // Straight from the click: a folder picker needs it.
+    onCreate({ name: shown, color: colour, where: inFolder ? 'folder' : 'browser' });
   };
 
   return (
@@ -271,10 +293,45 @@ function NewProjectBody({
             </span>
             <Swatches value={colour} onChange={setColour} label="Colour" />
           </div>
+          {canUseFolders ? (
+            <div className="ws-field">
+              <span className="ws-set-label" aria-hidden="true">
+                Where
+              </span>
+              <div
+                className="segmented ws-np-where"
+                role="radiogroup"
+                aria-label="Where its files live"
+                onKeyDown={(event) =>
+                  handleRadioKeys(
+                    event,
+                    HOMES.map((option) => option.value),
+                    home,
+                    setHome,
+                  )
+                }
+              >
+                {HOMES.map((option) => (
+                  <Button
+                    key={option.value}
+                    className="segmented-option"
+                    role="radio"
+                    aria-checked={option.value === home}
+                    tabIndex={option.value === home ? 0 : -1}
+                    onClick={() => setHome(option.value)}
+                  >
+                    {option.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          ) : null}
           <p className="ws-np-note">
-            {persistent
-              ? 'Its files are saved in this browser, on this device.'
-              : 'This browser can’t keep files here, so its files last until you close this tab.'}
+            {inFolder
+              ? 'You’ll choose the folder next. Files already in it open as they are, with Nebula’s own settings in a .nebula folder beside them. Other apps can open them too.'
+              : persistent
+                ? `Its files are saved in this browser, on this device.${canUseFolders ? '' : ` ${FOLDERS_NEED_CHROMIUM}`}`
+                : 'This browser can’t keep files here, so its files last until you close this tab.'}
           </p>
         </div>
       </div>
@@ -283,7 +340,7 @@ function NewProjectBody({
           Cancel
         </Button>
         <Button type="submit" className="welcome-dialog-cta">
-          Create project
+          {inFolder ? 'Choose folder…' : 'Create project'}
         </Button>
       </footer>
     </form>
@@ -315,12 +372,12 @@ type IntroProps = {
 
 /** The welcome (Orbit's dialog shell), for brand-new visitors, over the
  * sample project; and the one-time note for people whose canvases moved in.
- * It describes only what has shipped (PLAN §8.3). */
+ * It describes only what has shipped. */
 export function IntroDialog({ variant, open, persistent, projectName, canDownload, onExplore, onStartEmpty, leftBehind, onDownloadLeftBehind }: IntroProps) {
   const id = useId();
   const main = useRef<HTMLButtonElement>(null);
   const keep = persistent
-    ? `Projects you start here are saved in this browser, on this device.${canDownload ? ' Download any project as a .zip.' : ''}`
+    ? `Projects you start here are saved in this browser, on this device, and nowhere else.${canDownload ? ' Browsers can clear what websites keep, so download a project as a .zip to keep a copy.' : ''}`
     : `This browser can’t keep files here, so projects last until you close this tab.${canDownload ? ' Download a project as a .zip to keep it.' : ''}`;
 
   const stayed = leftBehind?.canvases ?? [];
@@ -371,7 +428,8 @@ export function IntroDialog({ variant, open, persistent, projectName, canDownloa
       <div className="welcome-dialog-inner">
         <div className="welcome-dialog-head">
           <img className="welcome-dialog-logo" src={NEBULA_LOGO_SRC} alt="" />
-          <span className="welcome-dialog-edition-pill">Powered by Excalidraw</span>
+          {/* Nebula is more than its canvases now: the pill names the version. */}
+          {NEBULA_VERSION ? <span className="welcome-dialog-edition-pill">Version {NEBULA_VERSION}</span> : null}
         </div>
         <div>
           <h2 id={id} className="welcome-dialog-title">

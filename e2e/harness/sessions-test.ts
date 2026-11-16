@@ -3,8 +3,7 @@
  * the workspace with its real views over the real OPFS registry
  * (e2e/harness/sessions.html).
  *
- * WebKit keeps OPFS only in a persistent context (docs/slice-3.md, decision
- * 8), so every test gets a fresh persistent profile in both browsers; a
+ * WebKit keeps OPFS only in a persistent context, so every test gets a fresh persistent profile in both browsers; a
  * second page in the same context is another tab of the same browser.
  */
 import { test as base, expect, type Page } from '@playwright/test';

@@ -83,9 +83,9 @@ describe('Settings', () => {
     expect(dialog.querySelector('.drawer-header')!.textContent).not.toMatch(/nebula/i);
   });
 
-  it('puts Project before Appearance', async () => {
+  it('puts Appearance before Project (Bruce, 2026-10-25: back to that order)', async () => {
     rendered = await render(<SettingsDrawer {...props()} />);
-    expect([...document.querySelectorAll('.ws-settings [role="tab"]')].map((tab) => tab.textContent)).toEqual(['Project', 'Appearance']);
+    expect([...document.querySelectorAll('.ws-settings [role="tab"]')].map((tab) => tab.textContent)).toEqual(['Appearance', 'Project']);
   });
 });
 

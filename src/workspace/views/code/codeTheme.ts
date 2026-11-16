@@ -22,8 +22,40 @@ export const nebulaHighlightStyle = HighlightStyle.define([
   { tag: t.strikethrough, textDecoration: 'line-through' },
 ]);
 
+/** The code token colours of nebulaHighlightStyle (above), for the note
+ * editor's style: a fenced block in a note is coloured as the code view
+ * colours its file. */
+const TOKEN_COLOURS = [
+  { tag: [t.keyword, t.controlKeyword, t.operatorKeyword, t.definitionKeyword, t.moduleKeyword, t.modifier, t.self], color: 'var(--ws-code-keyword)' },
+  { tag: [t.string, t.special(t.string), t.character, t.regexp, t.escape], color: 'var(--ws-code-string)' },
+  { tag: [t.number, t.bool, t.null, t.atom, t.unit, t.constant(t.variableName)], color: 'var(--ws-code-number)' },
+  { tag: [t.comment, t.lineComment, t.blockComment, t.docComment], color: 'var(--ws-code-comment)', fontStyle: 'italic' },
+  { tag: [t.typeName, t.className, t.namespace, t.tagName, t.labelName], color: 'var(--ws-code-type)' },
+  { tag: [t.invalid, t.deleted], color: 'var(--ws-code-invalid)' },
+];
+
+/**
+ * The note editor's style (live preview, editor/): the code colours inside
+ * fenced blocks, and Markdown drawn as the page draws it. Headings take their
+ * size and weight from their line (editor.css), so here they are plain; marks
+ * (#, **, >, list markers) are quiet; links are the page's links.
+ */
+export const nebulaNoteHighlightStyle = HighlightStyle.define([
+  ...TOKEN_COLOURS,
+  // Not t.list: Markdown tags a list's whole text with it, and a list reads in ink.
+  { tag: [t.meta, t.annotation, t.processingInstruction, t.contentSeparator], color: 'var(--ws-muted, var(--muted))' },
+  { tag: [t.link, t.url], color: 'var(--accent)' },
+  { tag: t.strong, fontWeight: '650' },
+  { tag: t.emphasis, fontStyle: 'italic' },
+  { tag: t.strikethrough, textDecoration: 'line-through', color: 'var(--ws-muted, var(--muted))' },
+  { tag: t.monospace, fontFamily: 'var(--ws-mono, ui-monospace, monospace)', fontSize: '0.86em' },
+]);
+
 /** The highlight style as an editor extension. */
 export const nebulaHighlighting = syntaxHighlighting(nebulaHighlightStyle);
+
+/** The note editor's highlight style as an editor extension. */
+export const nebulaNoteHighlighting = syntaxHighlighting(nebulaNoteHighlightStyle);
 
 /**
  * The editor's look, from the page's CSS variables, so it follows night and

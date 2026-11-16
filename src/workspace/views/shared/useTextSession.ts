@@ -9,6 +9,8 @@ const LOADING: TextSessionState = {
   dirty: false,
   conflict: false,
   removed: false,
+  unreachable: null,
+  moving: false,
   readOnly: false,
   revision: 0,
 };

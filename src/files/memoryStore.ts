@@ -1,10 +1,10 @@
 import { blobToText, holdsText } from './bytes';
 import { ChangeListeners } from './listeners';
 import { EntryTypeError, FileChangedError, FileExistsError, FileNotFoundError } from './errors';
-import { PageLockManager, holdingListedFiles } from './fileLocks';
+import { HoldableLocks, PageLockManager, holdingListedFiles, type FileLockManager } from './fileLocks';
 import { InvalidPathError, ancestors, basename, comparePaths, dirname, isInside, normalizePath } from './paths';
 import { PathLocks } from './pathLocks';
-import type { FileChange, FileEntry, FileStore, WriteOptions } from './types';
+import type { FileChange, FileEntry, FileStore, PathChange, WriteOptions } from './types';
 
 type Node = { type: 'dir' } | { type: 'file'; data: Blob; modified: number };
 
@@ -16,6 +16,9 @@ export type MemoryFileStoreOptions = {
    * (or hold one in flight) the way a real disk does. Without it, every change
    * applies at once, inside the call. */
   delay?: (change: FileChange) => Promise<void> | void;
+  /** This store asks its locks through a HoldableLocks (`holdableLocks`),
+   * as the registry's store does in OPFS; its twins ask the locks direct. */
+  holdable?: boolean;
 };
 
 /** What twins share: the files, the watchers and the per-file locks, as
@@ -27,7 +30,10 @@ type Shared = { nodes: Map<string, Node>; listeners: ChangeListeners; fileLocks:
 export class MemoryFileStore implements FileStore {
   private readonly nodes: Map<string, Node>;
   private readonly listeners: ChangeListeners;
-  private readonly fileLocks: PageLockManager;
+  private readonly fileLocks: FileLockManager;
+  private readonly baseLocks: PageLockManager;
+  /** With `holdable`: the locks this store asks, which a holder can take. */
+  readonly holdableLocks: HoldableLocks | undefined;
   private readonly locks = new PathLocks();
   private readonly delay: MemoryFileStoreOptions['delay'];
   /** Files this store has read or written (see write()). */
@@ -37,7 +43,9 @@ export class MemoryFileStore implements FileStore {
     this.delay = options.delay;
     this.nodes = shared?.nodes ?? new Map();
     this.listeners = shared?.listeners ?? new ChangeListeners();
-    this.fileLocks = shared?.fileLocks ?? new PageLockManager();
+    this.baseLocks = shared?.fileLocks ?? new PageLockManager();
+    this.holdableLocks = options.holdable ? new HoldableLocks(this.baseLocks) : undefined;
+    this.fileLocks = this.holdableLocks ?? this.baseLocks;
   }
 
   /** Another store over the same files, as another tab's store of this
@@ -45,7 +53,7 @@ export class MemoryFileStore implements FileStore {
    * changes, but it keeps its own path locks, its own delay and its own idea
    * of which files it has seen. Tests use it to play two tabs. */
   twin(options: MemoryFileStoreOptions = {}): MemoryFileStore {
-    return new MemoryFileStore(options, { nodes: this.nodes, listeners: this.listeners, fileLocks: this.fileLocks });
+    return new MemoryFileStore(options, { nodes: this.nodes, listeners: this.listeners, fileLocks: this.baseLocks });
   }
 
   private entry(path: string, node: Node): FileEntry {
@@ -72,7 +80,7 @@ export class MemoryFileStore implements FileStore {
 
   /** The files a change holds: the one written, or every file a rename
    * moves (at both ends) or a remove deletes. */
-  private filesOf(change: FileChange): string[] {
+  private filesOf(change: PathChange): string[] {
     if (change.type === 'mkdir') return [];
     if (change.type === 'write') return [change.path];
     const root = change.type === 'rename' ? change.from : change.path;
@@ -84,7 +92,7 @@ export class MemoryFileStore implements FileStore {
    * settled, every file it touches is free in every twin, and the delay (if
    * any) has passed; at once otherwise, so that without a delay the change is
    * made inside the call. */
-  private change<T>(change: FileChange, apply: () => T): Promise<T> {
+  private change<T>(change: PathChange, apply: () => T): Promise<T> {
     const paths = change.type === 'rename' ? [change.from, change.to] : [change.path];
     return this.locks.run(paths, () =>
       holdingListedFiles(this.fileLocks, () => this.filesOf(change), () => {

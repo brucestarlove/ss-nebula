@@ -10,7 +10,7 @@ function file(name: string, text = name): File {
 }
 
 describe('upload names', () => {
-  it('maps a name Windows reserves instead of refusing the file (review finding 22)', () => {
+  it('maps a name Windows reserves instead of refusing the file', () => {
     expect(uploadName('CON.txt')).toEqual({ name: 'CON_.txt' });
     expect(uploadName('draft.')).toEqual({ name: 'draft' });
   });

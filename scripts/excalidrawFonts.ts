@@ -1,6 +1,5 @@
 /**
- * Excalidraw's fonts, served by this site rather than esm.sh (review finding
- * 20). Excalidraw loads each font from `window.EXCALIDRAW_ASSET_PATH` +
+ * Excalidraw's fonts, served by this site rather than esm.sh. Excalidraw loads each font from `window.EXCALIDRAW_ASSET_PATH` +
  * `fonts/<Family>/<file>.woff2`, and only falls back to esm.sh when that
  * fails; main.tsx points the path at the app's base. This plugin puts the
  * package's fonts there: copied into every app build's `fonts/` folder, and

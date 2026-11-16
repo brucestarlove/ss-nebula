@@ -597,7 +597,7 @@ describe('where each old canvas went', () => {
   });
 });
 
-describe('migrateLegacyCanvases with a canvas that does not read back the same (review finding 9)', () => {
+describe('migrateLegacyCanvases with a canvas that does not read back the same', () => {
   /** The registry, with one file's read-back broken the way a bad payload would be. */
   function breaking(path: string): BrowserRegistry {
     const wrap = (store: FileStore) =>

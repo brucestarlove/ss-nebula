@@ -1,7 +1,7 @@
 import { Component, useCallback, useEffect, useMemo, useState, type ErrorInfo, type ReactNode } from 'react'
 import { bootNebula, hasLegacyCanvases, readLegacyRoutes, type Boot } from './app/boot'
 import { askToKeepOnFirstEdit } from './app/keepOnEdit'
-import { fileUrl, parseRoute, resolveLegacyRoute, type OpenTarget } from './app/routes'
+import { appBase, appHome, fileUrl, parseRoute, resolveLegacyRoute, type OpenTarget } from './app/routes'
 import { openBrowserRegistry } from './files/opfsRegistry'
 import { requestPersistentStorage } from './files/persist'
 import type { BrowserRegistry } from './files/registry'
@@ -92,11 +92,21 @@ function start(): Promise<Ready> {
   return starting
 }
 
+/** Where the app is mounted: `/app` on the site, '' at the root (`pnpm dev`,
+ * `nebula run`). Read once, from the address the app was opened at. */
+const APP_BASE = appBase(window.location.pathname)
+
 /** The address follows the open file, so a reload (or a bookmark) returns to it. */
 function followInAddress(projectId: string | null, path: string | null) {
-  const url = projectId ? fileUrl(projectId, path) : '/'
+  const url = projectId ? fileUrl(projectId, path, APP_BASE) : appHome(APP_BASE)
   if (window.location.pathname + window.location.search + window.location.hash === url) return
   window.history.replaceState(window.history.state, '', url)
+}
+
+/** The full address of a file or folder, for Copy link: what an Orbit card
+ * holds. It opens wherever this project lives (this browser, this computer). */
+function linkTo(projectId: string, path: string | null): string {
+  return new URL(fileUrl(projectId, path, APP_BASE), window.location.origin).href
 }
 
 // Fade out the boot splash (index.html) once the workspace is ready, but keep
@@ -172,7 +182,7 @@ function App() {
       find: async () => (await load()).findOlderTabCanvases(storage, target),
       importCopy: async (key, projectId) => (await load()).importOlderTabCopy({ storage, registry: target, key, projectId }),
       download: downloadLeftBehind,
-      // Put away: not offered again until an older tab saves it again (round 4, F8).
+      // Put away: not offered again until an older tab saves it again.
       dismiss: (canvases) => void load().then(({ recordOlderTabHandled }) => recordOlderTabHandled(storage, canvases)),
     }
   }, [ready, downloadLeftBehind])
@@ -191,6 +201,7 @@ function App() {
           notice={ready.boot.notice}
           initialFile={ready.initialFile}
           onActiveFileChange={followInAddress}
+          linkTo={linkTo}
           downloadProject={downloadProject}
           deviceStore={deviceStore}
         />

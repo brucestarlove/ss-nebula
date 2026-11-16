@@ -312,11 +312,11 @@ describe('file scene store', () => {
       slow.release();
       await first;
       await second;
-      // Neither lands. The write in flight expects the file's text (round 5),
+      // Neither lands. The write in flight expects the file's text,
       // and the file is gone, so even this store, which would make the folder
       // again, writes nothing.
       expect(files.writes.map((write) => write.path)).toEqual([]);
-      // Another tab deleted it, so the queued change is kept (round 4, F5):
+      // Another tab deleted it, so the queued change is kept:
       // still unsaved, and written as a copy where the file was on dispose.
       expect(sceneStore.getState()).toMatchObject({ removed: true, pending: true });
       await sceneStore.dispose();
@@ -539,7 +539,7 @@ describe('file scene store', () => {
       await sceneStore.flush();
       expect(files.peek(PATH)).toBeUndefined();
       late.deliver();
-      // The change is kept for a copy where the file was (round 4, F5).
+      // The change is kept for a copy where the file was.
       expect(sceneStore.getState()).toMatchObject({ removed: true, pending: true });
       await sceneStore.dispose();
       expect(files.peek(PATH)).toBeUndefined();
@@ -629,7 +629,7 @@ describe('file scene store', () => {
       expect(reloaded.scene.elements.map((item) => item.id)).toEqual(['rect', 'img']);
     });
 
-    it('keeps everything in an Obsidian drawing that isn’t the drawing (review finding 8)', async () => {
+    it('keeps everything in an Obsidian drawing that isn’t the drawing', async () => {
       const extras = zipcode
         .replace('tags: [excalidraw]', 'tags: [excalidraw]\naliases: [Zip plan]\nexcalidraw-autoexport: png')
         .replace('# Excalidraw Data', 'Back of the card: call the post office first.\n\n# Excalidraw Data')
@@ -642,7 +642,7 @@ describe('file scene store', () => {
       expect(reloaded.scene.elements.map((item) => item.id)).toEqual(['rect', 'img']);
     });
 
-    it('writes nothing more once its whole project folder is removed (review finding 23)', async () => {
+    it('writes nothing more once its whole project folder is removed', async () => {
       const path = 'Sketches/Trip.excalidraw.md';
       const tree = createMemoryFileStore({ [`projects/p1/${path}`]: toObsidianExcalidrawMarkdown(scene([element('a')]), { compressed: true }) });
       const sceneStore = createFileSceneStore({ store: scopedStore(tree, 'projects/p1'), path });
@@ -656,5 +656,31 @@ describe('file scene store', () => {
       expect(tree.peek(`projects/p1/${path}`)).toBeUndefined();
       expect(sceneStore.getState()).toMatchObject({ removed: true });
     });
+  });
+});
+
+describe('drawings that hold images (Bruce, 2026-10-25: "too many images")', () => {
+  const photo = (id: string, kb: number) => ({ mimeType: 'image/jpeg', id, dataURL: `data:image/jpeg;base64,${'Q'.repeat(kb * 1024)}`, created: 1 });
+  const holding = (kb: number) => scene([element('pic', { type: 'image', fileId: 'img-1' } as Partial<ExcalidrawElementLike>)], { 'img-1': photo('img-1', kb) });
+
+  it('are written as plain JSON once their images pass 256 KB: LZ can’t shrink image data, and took seconds each save', () => {
+    const text = serialize('', holding(300));
+    expect(text).toContain('```json\n');
+    expect(text).not.toContain('```compressed-json');
+    const back = readObsidianExcalidrawMarkdown(text);
+    expect(back.elements.map((item) => item.id)).toEqual(['pic']);
+    expect((back.files as Record<string, { dataURL: string }>)['img-1'].dataURL).toBe(photo('img-1', 300).dataURL);
+  });
+
+  it('switch a compressed drawing to plain JSON when a large image arrives', () => {
+    const compressed = serialize('', scene([element('a')]));
+    expect(compressed).toContain('```compressed-json');
+    expect(serialize(compressed, holding(300))).toContain('```json\n');
+  });
+
+  it('stay compressed while their images are small', () => {
+    const compressed = serialize('', scene([element('a')]));
+    const text = serialize(compressed, holding(4));
+    expect(text).toContain('```compressed-json');
   });
 });

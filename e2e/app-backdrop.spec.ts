@@ -1,7 +1,7 @@
 import type { BrowserContext, Locator, Page } from '@playwright/test';
 import { closeIntro, expect, failOpfs, openApp, pngFile, test } from './app-fixtures';
 
-// Settings and backgrounds (Bruce, 2026-10-22; docs/slice-3.md): the drawer
+// Settings and backgrounds: the drawer
 // is titled Settings and opens on Project, before Appearance; each theme's
 // background is its own sky, a colour of your choosing, or an image of your
 // own, kept in this browser. Runs under the site's Content-Security-Policy,
@@ -22,12 +22,11 @@ async function shown(page: Page): Promise<Shown> {
   });
 }
 
-/** Settings, on Appearance: it opens on Project the first time. */
+/** Settings, on Appearance: where it opens the first time. */
 async function appearance(page: Page): Promise<Locator> {
   await page.getByRole('button', { name: 'Settings' }).click();
   const drawer = page.getByRole('dialog', { name: 'Settings' });
-  await expect(drawer.getByRole('tab', { name: 'Project' })).toHaveAttribute('aria-selected', 'true');
-  await drawer.getByRole('tab', { name: 'Appearance' }).click();
+  await expect(drawer.getByRole('tab', { name: 'Appearance' })).toHaveAttribute('aria-selected', 'true');
   return drawer;
 }
 
@@ -77,13 +76,14 @@ async function chooseImage(page: Page, drawer: Locator, file: { name: string; mi
   await expect(drawer.getByRole('button', { name: 'Replace the background image' })).toBeVisible({ timeout: 20_000 });
 }
 
-test('Settings is titled Settings, and opens on Project, before Appearance', async ({ page }) => {
+test('Settings is titled Settings, and opens on Appearance, before Project', async ({ page }) => {
   const errors = await openApp(page);
   await closeIntro(page);
   await page.getByRole('button', { name: 'Settings' }).click();
   const drawer = page.getByRole('dialog', { name: 'Settings' });
-  await expect(drawer.getByRole('tab')).toHaveText(['Project', 'Appearance']);
-  await expect(drawer.getByRole('tab', { name: 'Project' })).toHaveAttribute('aria-selected', 'true');
+  // Appearance, then Project.
+  await expect(drawer.getByRole('tab')).toHaveText(['Appearance', 'Project']);
+  await expect(drawer.getByRole('tab', { name: 'Appearance' })).toHaveAttribute('aria-selected', 'true');
   await expect(drawer.locator('.drawer-header')).not.toContainText('Nebula');
   expect(errors).toEqual([]);
 });

@@ -7,7 +7,7 @@ test.describe('projects', () => {
     await filesReady(page);
   });
 
-  test('the switcher lists projects with a tick, and Escape hands focus back', async ({ page }) => {
+  test('the switcher lists projects with a tick, and Escape hands focus back', async ({ page, browserName }) => {
     const switcher = page.locator('.ws-switcher');
     await switcher.click();
     await expect(switcher).toHaveAttribute('aria-expanded', 'true');
@@ -17,7 +17,10 @@ test.describe('projects', () => {
     await expect(menu.getByRole('menuitemradio', { name: /Night Sky/ })).toBeFocused();
     await expect(menu.getByRole('menuitemcheckbox', { name: 'Dock' })).toHaveAttribute('aria-checked', 'false');
     await expect(menu.getByRole('menuitem', { name: 'New project' })).toBeVisible();
-    await expect(menu.getByText('Open a folder')).toHaveCount(0);
+    // The folder tier is offered only where the browser can pick a folder: Chromium,
+    // not WebKit. The server tier hasn't shipped, so it's never named.
+    if (browserName === 'chromium') await expect(menu.getByRole('menuitem', { name: /Open a folder/ })).toBeVisible();
+    else await expect(menu.getByText('Open a folder')).toHaveCount(0);
     await expect(menu.getByText('Connect to a Nebula server')).toHaveCount(0);
     await page.keyboard.press('ArrowDown');
     await expect(menu.getByRole('menuitemradio', { name: /Starscape Biz/ })).toBeFocused();
@@ -156,9 +159,8 @@ test.describe('settings', () => {
 
   test('Appearance sets the theme and the workspace preferences', async ({ page }) => {
     const drawer = page.getByRole('dialog', { name: 'Settings' });
-    // Project comes first, and Settings opens on it (Bruce, 10-22).
-    await expect(drawer.getByRole('tab', { name: 'Project' })).toBeFocused();
-    await drawer.getByRole('tab', { name: 'Appearance' }).click();
+    // Appearance comes first, and Settings opens on it.
+    await expect(drawer.getByRole('tab', { name: 'Appearance' })).toBeFocused();
     await drawer.getByRole('radio', { name: 'Day' }).click();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
     await expect(drawer.getByRole('radiogroup', { name: 'Day background' })).toBeVisible();
