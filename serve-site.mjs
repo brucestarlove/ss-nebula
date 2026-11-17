@@ -12,6 +12,9 @@ import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs'
 import { extname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
+// The mark a Nebula server puts on every response (cli/nebula-files.mjs SERVER_TIMING).
+const SERVER_TIMING = 'nebula-files;desc="1"'
+
 const HERE = resolve(fileURLToPath(import.meta.url), '..')
 const SITE_ROOT = join(HERE, 'dist', 'site')
 
@@ -154,14 +157,23 @@ export function resolveSiteHeaders(config, url) {
   return headers
 }
 
-export function startSiteServer({ port = Number(process.env.PORT || 4311), host = '127.0.0.1', root = SITE_ROOT } = {}) {
+/**
+ * Serves the built site. With `files` (createFilesApi from cli/nebula-files.mjs), it is a Nebula
+ * server too: the file API answers under /nebula-api/, and every response carries the
+ * Server-Timing mark the app looks for (src/app/serverTier.ts).
+ */
+export function startSiteServer({ port = Number(process.env.PORT || 4311), host = '127.0.0.1', root = SITE_ROOT, files = null } = {}) {
   const config = JSON.parse(readFileSync(join(HERE, 'vercel.json'), 'utf8'))
   const exists = (pathname) => {
     const filePath = join(root, pathname)
     return filePath.startsWith(root) && existsSync(filePath) && statSync(filePath).isFile()
   }
 
-  const server = createServer((req, res) => {
+  const server = createServer(async (req, res) => {
+    if (files) {
+      res.setHeader('server-timing', SERVER_TIMING)
+      if (await files.handle(req, res)) return
+    }
     for (const [name, value] of Object.entries(resolveSiteHeaders(config, req.url ?? '/'))) res.setHeader(name, value)
     let result
     try {
@@ -197,7 +209,15 @@ if (runDirectly) {
     console.error(`Missing ${SITE_ROOT}. Run "pnpm run build:site" first.`)
     process.exit(1)
   }
-  const server = await startSiteServer()
+  // NEBULA_FILES_PROJECTS=<folder>: a Nebula server too, every folder inside that one a project
+  // (the server tier's browser tests, e2e/app-server.spec.ts).
+  let files = null
+  if (process.env.NEBULA_FILES_PROJECTS) {
+    const { createFilesApi } = await import('./cli/nebula-files.mjs')
+    files = createFilesApi({ projectsDirs: [process.env.NEBULA_FILES_PROJECTS], label: process.env.NEBULA_FILES_LABEL || 'this server', log: (line) => console.error(line) })
+    await files.ready()
+  }
+  const server = await startSiteServer({ files })
   const { port } = server.address()
-  console.log(`Serving dist/site at http://127.0.0.1:${port} with vercel.json's routing`)
+  console.log(`Serving dist/site at http://127.0.0.1:${port} with vercel.json's routing${files ? `, and the folders in ${process.env.NEBULA_FILES_PROJECTS}` : ''}`)
 }

@@ -1,6 +1,6 @@
 import { exportToSvg } from '@excalidraw/excalidraw';
 import type { FileStore } from '../../../../files/types';
-import { drawableScene } from './canvasScene';
+import { drawableScene, EXPORT_PADDING } from './canvasScene';
 import { firstFamily, fontFaceCss } from './canvasFonts';
 
 /**
@@ -15,15 +15,15 @@ import { firstFamily, fontFaceCss } from './canvasFonts';
  */
 export type CanvasTheme = 'light' | 'dark';
 
-/** The drawing at `path` as an SVG image, transparent, for the night or day theme; null for a drawing with nothing on it. */
-export async function renderCanvasSvg(store: FileStore, path: string, theme: CanvasTheme): Promise<Blob | null> {
-  const drawing = drawableScene(await store.readText(path), path);
+/** The drawing at `path` as an SVG image, transparent, for the night or day theme; null for a drawing with nothing on it. `text` is the file's text when the caller has read it already. */
+export async function renderCanvasSvg(store: FileStore, path: string, theme: CanvasTheme, text?: string): Promise<Blob | null> {
+  const drawing = drawableScene(text ?? (await store.readText(path)), path);
   if (!drawing) return null;
   const svg = await exportToSvg({
     elements: drawing.elements as unknown as Parameters<typeof exportToSvg>[0]['elements'],
     appState: { exportBackground: false, exportWithDarkMode: theme === 'dark', exportEmbedScene: false, viewBackgroundColor: 'transparent' },
     files: drawing.files as unknown as Parameters<typeof exportToSvg>[0]['files'],
-    exportPadding: 12,
+    exportPadding: EXPORT_PADDING,
     // Excalidraw's own font embedding needs eval, which the site's policy refuses (canvasFonts.ts).
     skipInliningFonts: true,
   });

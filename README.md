@@ -38,6 +38,8 @@ Nebula asks the browser to keep them (persistent storage) after your first edit.
 
 **Or in a folder on your computer** (Chrome, Edge and Opera on desktop, through the File System Access API): a folder project's files are the folder's own, and the browser remembers only the permission to reach it.
 
+**Or in folders on a machine you run** (the server tier, any browser): `nebula run --projects <folder>` serves every folder in it as a project, and the app it serves lists them beside the browser's own. Nebula reads and writes their files there and shows changes other apps and agents make as they land.
+
 **From Nebula 1.x:** canvases saved in `localStorage` (`nebula:excalidraw:<board>:<canvas>`) are copied into projects on the first visit, one project per board (the default board becomes "My First Project"), and the originals stay where they are. Old links (`/b/<board>/c/<canvas>` and `?board=&canvas=`) open the file each canvas became. A file's or folder's own address is `/app/p/<project>/<path>` on the site (`/p/<project>/<path>` where the app is served at the root, as `pnpm dev` and `nebula run` do); 2.0's `/p/…` links redirect into `/app`.
 
 ## Security headers
@@ -92,7 +94,16 @@ pnpm run build:package
 node bin/nebula.mjs run
 ```
 
-`nebula run` (or `nebula serve`) serves the packaged app from your own machine and prints the local URL; `nebula run --port 4321` picks the port. `nebula init` checks there's nothing to configure. The CLI is a static server: no Orbit board engine, database or daemon.
+`nebula run` (or `nebula serve`) serves the packaged app from your own machine and prints the local URL; `nebula run --port 4321` picks the port. `nebula init` checks there's nothing to configure.
+
+With folders it serves them too, as projects:
+
+```sh
+nebula run --project ~/Notes                 # one folder, one project
+nebula run --projects ~/Work --label studio  # every folder inside ~/Work
+```
+
+It answers only loopback names (`127.0.0.1`, `localhost`) unless told another with `--allow-host <name>` (a tailnet name behind `tailscale serve`), and refuses requests from other sites. It has no accounts: keep it on your own machine or a private network. No Orbit board engine, database or daemon.
 
 Projects made there live in the browser that opens it, for that address: the ones at `http://127.0.0.1:4321` aren't the ones at nebula.starscape.app. Download a project as a `.zip` to move it.
 

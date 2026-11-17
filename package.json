@@ -1,6 +1,6 @@
 {
   "name": "@starlove/nebula",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "Starscape Nebula: notes, Excalidraw drawings and media as real files in projects, in your browser. Its canvas also ships as a React component.",
   "license": "AGPL-3.0",
   "type": "module",

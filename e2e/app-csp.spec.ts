@@ -22,7 +22,8 @@ test('a canvas loads Excalidraw’s fonts from this site, and nothing leaves the
   // The hexagon's labels are in Excalifont: the browser has it, from /fonts/.
   await expect.poll(() => page.evaluate(() => document.fonts.check('20px Excalifont')), { timeout: 15_000 }).toBe(true);
   await expect.poll(() => fonts.filter((entry) => entry.startsWith('200 /fonts/Excalifont/')).length).toBeGreaterThan(0);
-  expect(fonts.every((entry) => /^200 \/(fonts|assets)\//.test(entry)), fonts.join('\n')).toBe(true);
+  // A 304 is the browser revalidating its own copy from this site (WebKit does, on the drawing's second read).
+  expect(fonts.every((entry) => /^(200|304) \/(fonts|assets)\//.test(entry)), fonts.join('\n')).toBe(true);
 
   // Select everything, then open what Excalidraw draws over the canvas: the
   // stroke colour picker, the help and the image export.

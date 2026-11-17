@@ -88,8 +88,9 @@ test.describe('tabs, stage, outline and status', () => {
     await toggle.click();
     await expect(toggle).toHaveAttribute('aria-pressed', 'true');
     const outline = page.getByRole('complementary', { name: 'Outline' });
-    await expect(outline.getByRole('button')).toHaveText(['Observing plan', 'Targets', 'Pack']);
-    await outline.getByRole('button', { name: 'Pack' }).click();
+    // The panel also holds Linked from and Tags: the headings are the outline's list.
+    await expect(outline.locator('.ws-outline').getByRole('button')).toHaveText(['Observing plan', 'Targets', 'Pack']);
+    await outline.locator('.ws-outline').getByRole('button', { name: 'Pack' }).click();
     await expect(page.locator('#ws-stage h2', { hasText: 'Pack' })).toBeFocused();
     await page.getByRole('tab', { name: 'Winter hexagon' }).click();
     await expect(outline).toContainText('Open a note to see its headings here.');

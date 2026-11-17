@@ -1,7 +1,7 @@
 // A rename in another tab while one canvas write is in flight and a newer one is queued behind it.
 // No other change is made anywhere: the newest drawing must end up in the file.
 import { expect, it } from 'vitest';
-import hexagonText from '../../../../sketches/workspace/assets/winter-hexagon.excalidraw?raw';
+import hexagonText from '../../../../e2e/assets/images/winter-hexagon.excalidraw?raw';
 import { MemoryFileStore } from '../../../../src/files/memoryStore';
 import { readObsidianExcalidrawMarkdown, toObsidianExcalidrawMarkdown } from '../../../../src/nebula/excalidraw/obsidianMarkdown';
 import type { ExcalidrawScene } from '../../../../src/nebula/excalidraw/scene';

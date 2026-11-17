@@ -1,4 +1,4 @@
-import { useContext, useRef, type CSSProperties } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
 import { kindFromName } from '../../../../files/kinds';
 import type { FileEntry } from '../../../../files/types';
 import { formatBytes } from '../../shared/format';
@@ -7,18 +7,14 @@ import { useFileBlob } from '../../shared/useFileBlob';
 import { useProjectLinks } from '../../shared/projectLinks';
 import { parseWikilink, resolveLink, wikilinkLabel } from '../links';
 import { CanvasEmbed } from './CanvasEmbed';
+import { boxKey, knownBox, pictureStyle, placeStyle, rememberBox, sizeStyle, type Box, type EmbedSize } from './embedBoxes';
+import { readImageSize } from './imageSize';
 import { NoteEnvContext } from './NoteEnv';
 import { NoteEmbed } from './NoteEmbed';
 import { FileLink } from './WikiLink';
 import { useNearScreen } from './useNearScreen';
 
-/** How big an embedded picture or video is asked to be: `![[a.png|300]]`, `|300x200`. */
-export type EmbedSize = { width: number; height?: number } | null;
-
-function sizeStyle(size: EmbedSize): CSSProperties | undefined {
-  if (!size) return undefined;
-  return size.height ? { width: `${size.width}px`, height: `${size.height}px` } : { width: `${size.width}px` };
-}
+export type { EmbedSize };
 
 /** What stands where an embed's file isn't: its name, muted. No broken-image icon. */
 export function MissingEmbed({ name, why }: { name: string; why?: string }) {
@@ -30,21 +26,46 @@ export function MissingEmbed({ name, why }: { name: string; why?: string }) {
   );
 }
 
+/** Where a picture will be, until it is: the size asked for, or its own once it's known (embedBoxes.ts), else a modest box. */
+function PictureWait({ size, box }: { size: EmbedSize; box: Box | null | undefined }) {
+  return <span className="ws-embed-wait ws-embed-wait-image" style={placeStyle(size, box)} aria-hidden="true" />;
+}
+
 function ImageLoaded({ file, alt, size, title }: { file: FileEntry; alt: string; size: EmbedSize; title?: string }) {
   const env = useContext(NoteEnvContext);
   const blob = useFileBlob(env!.store, file.path, file.name);
+  const key = boxKey(env!.projectId, file);
+  // The picture's size comes from its file's first bytes, before the picture is
+  // put on the page, so its place is exact from the moment it appears. Null:
+  // the bytes don't say (an SVG), and the picture settles as it loads.
+  const [read, setRead] = useState<{ key: string; box: Box | null } | null>(null);
+  const box = knownBox(key) ?? (read?.key === key ? read.box : undefined);
+  const bytes = blob.status === 'ready' ? blob.blob : null;
+  useEffect(() => {
+    if (!bytes || box !== undefined) return undefined;
+    let cancelled = false;
+    void readImageSize(bytes).then((found) => {
+      if (cancelled) return;
+      if (found) rememberBox(key, found);
+      setRead({ key, box: found });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [bytes, box, key]);
   if (blob.status === 'error') return <MissingEmbed name={alt} why={`Couldn’t read ${file.path}`} />;
-  if (blob.status !== 'ready') return <span className="ws-embed-wait" style={sizeStyle(size)} aria-hidden="true" />;
-  return <img src={blob.url} alt={alt} title={title} loading="lazy" decoding="async" style={sizeStyle(size)} />;
+  if (blob.status !== 'ready' || box === undefined) return <PictureWait size={size} box={box} />;
+  return <img src={blob.url} alt={alt} title={title} loading="lazy" decoding="async" width={box?.width} height={box?.height} style={pictureStyle(size, box)} />;
 }
 
-/** A picture from the project. Its file is read when it is near the screen; the <img> is lazy as well, and its blob URL goes when the note does. */
+/** A picture from the project. Its file is read when it is near the screen; the <img> is lazy as well, and its blob URL goes when the note does. Its place is kept from the first frame when its size is known (embedBoxes.ts). */
 export function ImageEmbed({ file, alt, size, title }: { file: FileEntry; alt: string; size: EmbedSize; title?: string }) {
   const ref = useRef<HTMLSpanElement>(null);
+  const env = useContext(NoteEnvContext);
   const near = useNearScreen(ref);
   return (
     <span className="ws-embed-image" ref={ref}>
-      {near ? <ImageLoaded file={file} alt={alt} size={size} title={title} /> : <span className="ws-embed-wait" style={sizeStyle(size)} aria-hidden="true" />}
+      {near ? <ImageLoaded file={file} alt={alt} size={size} title={title} /> : <PictureWait size={size} box={env ? knownBox(boxKey(env.projectId, file)) : undefined} />}
     </span>
   );
 }
@@ -104,7 +125,7 @@ export function FileEmbed({ file, alt, size, title, block }: { file: FileEntry; 
     case 'image':
       return <ImageEmbed file={file} alt={alt || file.name} size={shown} title={title} />;
     case 'canvas':
-      return <CanvasEmbed file={file} />;
+      return <CanvasEmbed file={file} size={shown} />;
     case 'note':
       return block ? <NoteEmbed file={file} /> : <FileLink file={file} label={alt || undefined} />;
     case 'audio':

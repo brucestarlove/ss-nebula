@@ -97,10 +97,10 @@ export interface FileStore {
  * content says so (Obsidian Excalidraw frontmatter); see src/files/kinds.ts. */
 export type FileKind = 'note' | 'canvas' | 'image' | 'pdf' | 'audio' | 'video' | 'text' | 'other';
 
-/** Where a project's files live: the browser's own storage (OPFS), or a
- * folder on this computer the person picked (slice 7; Chromium on a desktop).
- * 'server' arrives with the sync layer. */
-export type ProjectTier = 'browser' | 'folder';
+/** Where a project's files live: the browser's own storage (OPFS), a
+ * folder on this computer the person picked (slice 7; Chromium on a desktop),
+ * or a folder on the Nebula server that served the app. */
+export type ProjectTier = 'browser' | 'folder' | 'server';
 
 /** Whether Nebula can open a folder project's folder now:
  * - 'granted': it can;
@@ -140,6 +140,9 @@ export type ProjectRecord = ProjectMeta & {
   /** A folder project's folder: its name as the computer shows it, and
    * whether Nebula can open it now. Absent for the browser tier. */
   folder?: { name: string; access: FolderAccess };
+  /** A server project: what the server calls itself ('vps-starscape'), and
+   * the project's folder there. Absent for the other tiers. */
+  server?: { label: string; folder: string };
 };
 
 /** What New project and Open a folder… give the registry. With `folder`,

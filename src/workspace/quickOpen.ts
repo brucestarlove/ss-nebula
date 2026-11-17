@@ -62,6 +62,19 @@ export function quickOpenProjects(projects: ProjectRecord[], currentId: string |
   return results.map(({ project, ranges }) => ({ project, ranges }));
 }
 
+/**
+ * What quick open searches the notes and canvases for: the
+ * query's words and `#tags`, or null for a query too short to be worth it
+ * (one character, or a lone `#`). Words keep their case; the index folds them.
+ */
+export function searchWords(query: string): { words: string[]; tags: string[] } | null {
+  const parts = query.trim().split(/\s+/).filter(Boolean);
+  const words = parts.filter((part) => !part.startsWith('#'));
+  const tags = parts.filter((part) => part.startsWith('#')).map((part) => part.replace(/^#+/, '')).filter(Boolean);
+  if (tags.length === 0 && words.join(' ').length < 2) return null;
+  return { words, tags };
+}
+
 /** Text cut into plain and marked runs, for rendering a match. */
 export function splitHighlights(text: string, ranges: Highlight[]): { text: string; mark: boolean }[] {
   const runs: { text: string; mark: boolean }[] = [];

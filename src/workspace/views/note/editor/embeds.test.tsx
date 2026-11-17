@@ -173,10 +173,19 @@ describe('embeds in the editor: the widgets', () => {
       flushParkedEmbeds();
     });
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
     document.body.innerHTML = '';
   });
 
   async function editor(doc = DOC, cursor = 0, links = linksFor()) {
+    // jsdom has no layout: every box is 0 high, so CodeMirror sees only its 1,000 px margin, and
+    // the space pictures and drawings reserve (2.0.2) pushes the later widgets out of its
+    // viewport. A tall window and a tall editor keep the test note in view.
+    vi.stubGlobal('innerHeight', 20_000);
+    const box = HTMLElement.prototype.getBoundingClientRect;
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains('cm-content') || this.classList.contains('cm-scroller') ? new DOMRect(0, 0, 800, 20_000) : box.call(this);
+    });
     const parent = document.body.appendChild(document.createElement('div'));
     let view!: EditorView;
     await act(async () => {
@@ -194,6 +203,7 @@ describe('embeds in the editor: the widgets', () => {
   it('draws a picture, a drawing, a note and a markdown image with the reading view’s own components', async () => {
     const { view } = await editor();
     const widgets = () => [...view.contentDOM.querySelectorAll<HTMLElement>('.ws-cm-embed')];
+    await waitFor(() => expect(widgets()).toHaveLength(5));
     await waitFor(() => expect(view.contentDOM.querySelectorAll('.ws-cm-embed img[src^="blob:"]').length).toBeGreaterThanOrEqual(2));
     const [sky, canvas, note, chart, nowhere] = widgets();
     expect(sky.querySelector('img')?.style.width).toBe('300px');
@@ -220,7 +230,7 @@ describe('embeds in the editor: the widgets', () => {
 
   it('shows the source when the cursor comes onto the line, and draws it again when it leaves', async () => {
     const { view } = await editor();
-    expect(view.contentDOM.querySelectorAll('.ws-cm-embed')).toHaveLength(5);
+    await waitFor(() => expect(view.contentDOM.querySelectorAll('.ws-cm-embed')).toHaveLength(5));
     await act(async () => view.dispatch({ selection: { anchor: view.state.doc.line(6).from } }));
     expect(view.contentDOM.querySelectorAll('.ws-cm-embed')).toHaveLength(4);
     expect([...view.contentDOM.querySelectorAll('.cm-line')].some((line) => line.textContent === '![[Sky.png|300]]')).toBe(true);

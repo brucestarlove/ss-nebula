@@ -2,6 +2,7 @@ import { memo, useContext, useEffect, useMemo, type ComponentProps } from 'react
 import Markdown, { type Components, type ExtraProps, type Options } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Glyph } from '../shared/Glyph';
+import { TagButton } from '../../components/TagButton';
 import { NoteContext, WebImagesContext } from './noteContexts';
 import { FileEmbed, MissingEmbed, WikiEmbed } from './embeds/Embed';
 import { NoteEnvContext } from './embeds/NoteEnv';
@@ -166,11 +167,12 @@ function fileNameOf(src: string): string {
   }
 }
 
-/** The elements remarkNebula made from `[[ ]]`: a link. Any other span is as it was. */
+/** The elements remarkNebula made from `[[ ]]` (a link) and from `#tags` (a button that searches for it). Any other span is as it was. */
 function ProseSpan(props: ComponentProps<'span'> & ExtraProps) {
   const { node, children, ...rest } = props;
   void node;
   const data = rest as Record<string, unknown>;
+  if (hasClass(rest.className, 'ws-tag-inline') && typeof children === 'string') return <TagButton tag={children} className="ws-tag-inline" />;
   if (typeof data['data-wikilink'] === 'string') return <WikiLink raw={data['data-wikilink']} />;
   if (typeof data['data-embed'] === 'string') return <WikiEmbed raw={data['data-embed']} block={false} />;
   return <span {...rest}>{children}</span>;

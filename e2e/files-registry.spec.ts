@@ -167,7 +167,7 @@ test.describe('the first run on OPFS', () => {
   });
 
   test('migrates Nebula 1.x canvases into OPFS once, leaving the old keys in place', async ({ persistentContext }) => {
-    const hexagon = JSON.parse(readFileSync('sketches/workspace/assets/winter-hexagon.excalidraw', 'utf8'));
+    const hexagon = JSON.parse(readFileSync('e2e/assets/images/winter-hexagon.excalidraw', 'utf8'));
     const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
     const files = { photo: { mimeType: 'image/png', id: 'photo', dataURL: png, created: 1761100000000 } };
     const image = { id: 'img', type: 'image', x: 0, y: 0, width: 10, height: 10, angle: 0, fileId: 'photo', status: 'saved', scale: [1, 1], groupIds: [], frameId: null, boundElements: null, link: null, locked: false };

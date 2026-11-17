@@ -1,5 +1,26 @@
 # Changelog
 
+## 2.0.2 (2026-11-17)
+
+Find anything you wrote or drew, see what links where, and serve your own folders.
+
+### Highlights
+
+- **Search inside your notes and drawings.** **Search or jump to…** (Ctrl+K, or ⌘K) now finds the words in your notes and the words drawn on your canvases, as well as file names. Pick a result and the note opens at that line. Search ignores case and accents, and `#tag` finds what carries a tag.
+- **Linked from.** The right panel lists every note and canvas that links to the file you have open, whatever kind it is, with the line each link sits on. **Not linked yet** lists the notes that name it without a link.
+- **Tags.** `#tags` in a note, and `tags:` in its front matter, are now buttons that search for the tag. The panel lists the open note's tags and every tag in the project, with nested tags (`#project/nebula`) under their parent.
+- **Links in drawings.** Write `[[Orion]]` in a canvas's text and it becomes a link, as in Obsidian Excalidraw: click its icon and the note opens in a tab.
+- **The outline follows you.** It marks the heading you're reading, keeps it in view, and works while you edit: a click moves the cursor there.
+- **Folders on a machine you run.** `nebula run --project <folder>` or `--projects <folder>` serves real folders as projects, and the app lists them beside your browser's, in any browser. Changes other apps and agents make show up as they land, usually in a fraction of a second; when the machine is out of reach, your edits wait and are saved once it's back. The server answers only its own page: other sites, and names it doesn't serve, are refused.
+
+### Also
+
+- **Tables are drawn as tables** in the editor. Click a cell to edit its Markdown; a wide table scrolls on its own.
+- **Pictures and drawings keep their place** while they load, in the page and in the editor, so nothing below them jumps.
+- **The editor reads well with a screen reader:** headings keep their level, task boxes say whether they're done, links and embeds are named, and Escape leaves the editor for the note's toolbar.
+- **Convert images** now updates the links to a picture it replaces, as a rename does.
+- **On a server:** big folders, `.git` and `node_modules` cost the server almost nothing to watch; disks without hard links (exFAT, some network drives) work; a read-only, full or locked disk says so instead of "can't reach".
+
 ## 2.0.1 (2026-11-15)
 
 Notes link to everything now, and the editor draws what it says.

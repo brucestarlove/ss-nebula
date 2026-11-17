@@ -87,7 +87,7 @@ export function Help({ open, persistent, canDownload, canUseFolders = false, onC
   const close = useRef<HTMLButtonElement>(null);
   const mod = isApple() ? '⌘' : 'Ctrl';
   const keys: { keys: string[]; label: string }[] = [
-    { keys: [mod, 'K'], label: 'Search, or jump to a file' },
+    { keys: [mod, 'K'], label: 'Search notes and canvases, or jump to a file' },
     { keys: [mod, '\\'], label: 'Show or hide the sidebar' },
     { keys: [mod, 'E'], label: 'Edit or read a note' },
     { keys: [mod, 'Shift', 'E'], label: 'Live preview or the Markdown source, while editing' },

@@ -341,8 +341,13 @@
   cursor: pointer;
 }
 
-/* An embedded note fills the column, as on the page. */
-.ws-cm-live .ws-cm-embed-body:has(> .ws-embed-note) {
+/* An embedded note fills the column, as on the page. So does a drawing, and a
+ * picture keeping its place: their boxes are a width of 100% capped at their
+ * own size (embedBoxes.ts), which inside fit-content has nothing to resolve
+ * against (WebKit drew such a drawing 0 wide on some loads). */
+.ws-cm-live .ws-cm-embed-body:has(> .ws-embed-note),
+.ws-cm-live .ws-cm-embed-body:has(.ws-embed-canvas),
+.ws-cm-live .ws-cm-embed-body:has(.ws-embed-wait-image) {
   width: auto;
 }
 
@@ -411,4 +416,110 @@
   .ws-cm-live .cm-cursorLayer {
     animation: none !important;
   }
+}
+
+/* Tags */
+
+/* editor/tags.ts marks each #tag (the pill itself is .ws-tag-inline above); with
+ * Ctrl/⌘ held a click opens search, so it shows the pointer that says so. */
+.ws-cm-live .ws-cm-mod .ws-cm-tag {
+  cursor: pointer;
+}
+
+/* Tables (2.0.2) ------------------------------------------------------------ */
+
+/* A table drawn in place of its source (tables.ts): the reading view's table,
+ * from note.css's shared --ws-table-* values. CodeMirror measures a block
+ * widget without its margins, so the page's gap after a table is padding here.
+ * While the cursor is on the table the source shows instead, in the style the
+ * "Tables" section above gives it. */
+.ws-cm-live .ws-cm-table-block {
+  padding-bottom: var(--ws-table-gap);
+  white-space: normal;
+  text-indent: 0;
+  cursor: text;
+}
+
+/* A wide table scrolls inside its own box, never the page. */
+.ws-cm-live .ws-cm-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  border-radius: 4px;
+}
+
+.ws-cm-live .ws-cm-table-scroll:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.ws-cm-live .ws-cm-table-grid {
+  border-collapse: collapse;
+  font-size: var(--ws-table-size);
+}
+
+.ws-cm-live .ws-cm-table-grid th,
+.ws-cm-live .ws-cm-table-grid td {
+  padding: var(--ws-table-cell-pad);
+  border-bottom: var(--ws-table-rule);
+  text-align: start;
+  vertical-align: top;
+}
+
+.ws-cm-live .ws-cm-table-grid th {
+  font-weight: var(--ws-table-head-weight);
+}
+
+.ws-cm-live .ws-cm-table-grid .ws-cm-table-left {
+  text-align: left;
+}
+
+.ws-cm-live .ws-cm-table-grid .ws-cm-table-center {
+  text-align: center;
+}
+
+.ws-cm-live .ws-cm-table-grid .ws-cm-table-right {
+  text-align: right;
+}
+
+.ws-cm-live .ws-cm-table-grid strong {
+  font-weight: 650;
+}
+
+/* note.css .ws-prose code and del, for the cell's inline marks. */
+.ws-cm-live .ws-cm-table-grid code {
+  padding: 0.1em 0.35em;
+  border: 1px solid var(--ws-page-line, var(--line));
+  border-radius: 5px;
+  background: var(--subtle-bg);
+  font-family: var(--ws-mono, ui-monospace, monospace);
+  font-size: 0.86em;
+}
+
+.ws-cm-live .ws-cm-table-grid del {
+  color: var(--ws-muted, var(--muted));
+}
+
+/* A picture in a cell can't be drawn there: its words, quietly. */
+.ws-cm-live .ws-cm-table-image {
+  color: var(--ws-muted, var(--muted));
+  font-style: italic;
+}
+
+/* The words of a table that couldn't be drawn from the tree. */
+.ws-cm-live .ws-cm-table-source {
+  margin: 0;
+  font-family: var(--ws-mono, ui-monospace, monospace);
+  font-size: var(--ws-code-size);
+  white-space: pre-wrap;
+}
+
+/* Keyboard focus (2.0.2) ----------------------------------------------------- */
+
+/* A pointer's focus is the caret, as in any text field. Focus that came by
+ * keyboard (Tab, Escape and back, a shortcut) gets the app's focus ring, as
+ * the toolbar's buttons have (accessibility.ts's keyboardFocus adds the class). */
+.ws-cm-note .cm-editor.ws-cm-kbd.cm-focused {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: 4px;
 }

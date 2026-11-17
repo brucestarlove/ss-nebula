@@ -1,6 +1,7 @@
 import { Component, useCallback, useEffect, useMemo, useState, type ErrorInfo, type ReactNode } from 'react'
 import { bootNebula, hasLegacyCanvases, readLegacyRoutes, type Boot } from './app/boot'
 import { askToKeepOnFirstEdit } from './app/keepOnEdit'
+import { withServerTier } from './app/serverTier'
 import { appBase, appHome, fileUrl, parseRoute, resolveLegacyRoute, type OpenTarget } from './app/routes'
 import { openBrowserRegistry } from './files/opfsRegistry'
 import { requestPersistentStorage } from './files/persist'
@@ -77,7 +78,7 @@ function start(): Promise<Ready> {
     const route = parseRoute(window.location)
     const boot = await bootNebula({
       storage,
-      openRegistry: () => openBrowserRegistry(),
+      openRegistry: async () => withServerTier(await openBrowserRegistry(), storage),
       migrate: async (input) => (await import('./files/migration')).migrateLegacyCanvases(input),
       seed: async (registry) => (await import('./files/sample')).seedSampleProject(registry),
     })

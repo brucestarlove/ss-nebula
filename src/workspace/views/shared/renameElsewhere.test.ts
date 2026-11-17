@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import hexagonText from '../../../../sketches/workspace/assets/winter-hexagon.excalidraw?raw';
+import hexagonText from '../../../../e2e/assets/images/winter-hexagon.excalidraw?raw';
 import { MemoryFileStore } from '../../../files/memoryStore';
 import type { FileStore } from '../../../files/types';
 import { createEmptyNebulaMetadata } from '../../../nebula/excalidraw/metadata';

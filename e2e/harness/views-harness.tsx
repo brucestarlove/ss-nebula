@@ -10,8 +10,8 @@ import { startStarscape } from '@starlove/ui/starscape';
 import '@starlove/ui/templates/sidebar';
 import { StrictMode, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import '../../sketches/workspace/fonts/fonts.css';
-import '../../sketches/workspace/sketch.css';
+import '../../e2e/assets/fonts/fonts.css';
+import '../../e2e/assets/sketch.css';
 import { kindFromName } from '../../src/files/kinds';
 import type { FileEntry, FileKind } from '../../src/files/types';
 import { isObsidianExcalidrawMarkdown, readObsidianExcalidrawMarkdown } from '../../src/nebula/excalidraw/obsidianMarkdown';
@@ -105,7 +105,7 @@ export function Harness({ store, initial }: { store: MemoryFileStore; initial: s
     <div className="ws page-sidebar-app" id="ws">
       <aside className="page-sidebar ws-rail" aria-label="Project">
         <div className="page-sidebar-header ws-switcher">
-          <img className="ws-switcher-logo" src="/sketches/workspace/assets/nebula-logo.png" alt="" width="32" height="28" />
+          <img className="ws-switcher-logo" src="/e2e/assets/images/nebula-logo.png" alt="" width="32" height="28" />
           <span className="page-sidebar-titles">
             <span className="page-sidebar-title">Night Sky</span>
             <span className="page-sidebar-subtitle">Views harness · in memory</span>

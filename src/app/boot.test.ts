@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import hexagonText from '../../sketches/workspace/assets/winter-hexagon.excalidraw?raw';
+import hexagonText from '../../e2e/assets/images/winter-hexagon.excalidraw?raw';
 import { createEmptyNebulaMetadata } from '../nebula/excalidraw/metadata';
 import type { ExcalidrawScene } from '../nebula/excalidraw/scene';
 import type { NebulaExcalidrawDocument } from '../nebula/storage/types';

@@ -8,11 +8,16 @@ import type { FileEntry } from '../../../files/types';
  * provides it around the stage; a view rendered alone gets no files and a
  * no-op, so it still draws.
  */
+/** A line in a file, found by its words when its view has drawn it (slice 6:
+ * a search hit, a Linked from line). `text` is the line as a reader sees it;
+ * `words` are tried when the whole line isn't found. */
+export type LinePlace = { text: string; words?: string[] };
+
 export type ProjectLinks = {
   /** Every file of the project (no folders), kept current as the files change. */
   files: readonly FileEntry[];
-  /** Opens a file in a tab (or goes to its tab), and to a heading in it where the view can. */
-  open(path: string, heading?: string): void;
+  /** Opens a file in a tab (or goes to its tab), and to a heading or a line in it where the view can. */
+  open(path: string, heading?: string, place?: LinePlace): void;
   /** Makes the note a link to nothing names, in the folder of the note it's written in (`from`), and opens it. It says why when it can't. */
   create(target: string, from: string): void;
 };

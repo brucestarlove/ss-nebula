@@ -1,12 +1,17 @@
 import { useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 import { kindFromName } from '../../files/kinds';
 import type { FileEntry, FileKind, ProjectRecord } from '../../files/types';
-import { quickOpenFiles, quickOpenProjects, splitHighlights, type Highlight } from '../quickOpen';
+import { quickOpenFiles, quickOpenProjects, resultTitle, searchWords, splitHighlights, type Highlight } from '../quickOpen';
+import { useProjectIndex, type SearchHit } from '../projectIndex';
+import type { LinePlace } from '../views/shared/projectLinks';
 import { WsDialog } from './Dialogs';
 import { Planet } from './Button';
 import { iconForFile } from './fileIcon';
 import { Icon } from './icons';
-import { basename } from '../../files/paths';
+import { basename, dirname } from '../../files/paths';
+
+/** Hits in notes and canvases shown at most. */
+const HIT_LIMIT = 30;
 
 type QuickOpenProps = {
   open: boolean;
@@ -18,16 +23,21 @@ type QuickOpenProps = {
   /** Where a project's files live, as the switcher says it. */
   location: string | ((project: ProjectRecord) => string);
   onOpenFile: (path: string) => void;
+  /** Opens a file at a line found by its words (a search hit in a note). */
+  onOpenAt?: (path: string, place?: LinePlace) => void;
   onSwitchProject: (id: string) => void;
   onClose: () => void;
+  /** What the field starts with (a tag clicked: `#tag`), and a count that starts it again when the palette is already open. */
+  initialQuery?: { query: string; n: number };
 };
 
-/** ⌘K / Ctrl+K: this project's files by name, then your other projects. */
+/** ⌘K / Ctrl+K: this project's files by name, your other projects, then the
+ * notes and canvases holding the words (the project index, slice 6). */
 export function QuickOpen(props: QuickOpenProps) {
   const input = useRef<HTMLInputElement>(null);
   return (
     <WsDialog open={props.open} onClose={props.onClose} bare className="ws-palette ws-surface" label="Search or jump to" initialFocus={input}>
-      <QuickOpenBody {...props} inputRef={input} />
+      <QuickOpenBody key={props.initialQuery?.n ?? 0} {...props} inputRef={input} />
     </WsDialog>
   );
 }
@@ -49,20 +59,37 @@ function QuickOpenBody({
   currentId,
   location,
   onOpenFile,
+  onOpenAt,
   onSwitchProject,
+  initialQuery,
   inputRef,
 }: QuickOpenProps & { inputRef: RefObject<HTMLInputElement | null> }) {
-  const [query, setQuery] = useState('');
+  const projectIndex = useProjectIndex();
+  const [query, setQuery] = useState(initialQuery?.query ?? '');
   const [active, setActive] = useState(0);
   const list = useRef<HTMLDivElement>(null);
   const base = `qo${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
 
   const files = useMemo(() => quickOpenFiles(entries, query), [entries, query]);
   const others = useMemo(() => quickOpenProjects(projects, currentId, query), [projects, currentId, query]);
+  // Words in notes and canvases, from two characters (one finds too much to help).
+  const asked = searchWords(query);
+  const searched = asked !== null;
+  const hits = useMemo(() => {
+    if (!searched) return [];
+    const named = new Set(files.map((file) => file.path));
+    // A file found only by its name is already among the files above.
+    return projectIndex.search(query, HIT_LIMIT).filter((hit) => hit.snippet || !named.has(hit.path));
+  }, [projectIndex, query, searched, files]);
+  const openHit = (hit: SearchHit) => {
+    if (hit.kind === 'note' && hit.snippet && onOpenAt) onOpenAt(hit.path, { text: hit.snippet, words: asked?.words });
+    else onOpenFile(hit.path);
+  };
 
   const options: Option[] = [
     ...files.map((file) => ({ choose: () => onOpenFile(file.path) })),
     ...others.map((other) => ({ choose: () => onSwitchProject(other.project.id) })),
+    ...hits.map((hit) => ({ choose: () => openHit(hit) })),
   ];
   const current = Math.min(active, Math.max(0, options.length - 1));
   const optionId = (index: number) => `${base}-o${index}`;
@@ -116,7 +143,7 @@ function QuickOpenBody({
           aria-controls={`${base}-list`}
           aria-activedescendant={options.length ? optionId(current) : undefined}
           aria-autocomplete="list"
-          aria-label="Search files and projects"
+          aria-label="Search files, projects and words in notes"
           placeholder="Search or jump to…"
           value={query}
           autoComplete="off"
@@ -165,8 +192,42 @@ function QuickOpenBody({
             ))}
           </div>
         ) : null}
-        {options.length === 0 ? <p className="ws-results-empty">Nothing here is called “{query.trim()}”.</p> : null}
+        {hits.length > 0 ? (
+          <div role="group" aria-labelledby={`${base}-words`}>
+            <div className="ws-results-h" id={`${base}-words`}>
+              {asked && asked.words.length === 0 ? `Tagged ${asked.tags.map((tag) => `#${tag}`).join(' ')}` : 'In notes and canvases'}
+            </div>
+            {hits.map((hit) => {
+              const name = basename(hit.path);
+              const folder = dirname(hit.path);
+              return (
+                <div key={`${hit.path}:${hit.line ?? ''}`} {...option(() => openHit(hit))} data-hit="">
+                  <Icon name={iconForFile(name, kinds[hit.path] ?? hit.kind)} />
+                  <span className="ws-hit">
+                    <span className="ws-hit-name">{resultTitle(name)}</span>
+                    {hit.snippet ? (
+                      <span className="ws-hit-line">
+                        <Marked text={hit.snippet} ranges={hit.ranges} />
+                      </span>
+                    ) : null}
+                  </span>
+                  {folder ? <small>{folder}</small> : null}
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
+        {options.length === 0 ? (
+          <p className="ws-results-empty">
+            Nothing here is called “{query.trim()}”.{searched && projectIndex.ready ? ' No note or canvas holds those words.' : null}
+          </p>
+        ) : null}
       </div>
+      {searched && !projectIndex.ready && entries.length > 0 ? (
+        <p className="ws-palette-note" role="status">
+          Still reading the project…
+        </p>
+      ) : null}
       <div className="ws-palette-foot" aria-hidden="true">
         <span>
           <kbd>↑↓</kbd>move

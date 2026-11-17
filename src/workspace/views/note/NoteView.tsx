@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { FileViewProps } from '../../../files/types';
+import { TagButton } from '../../components/TagButton';
 import OtherView from '../other/OtherView';
 import { downloadEntry } from '../shared/download';
 import { folderOf, formatBytes, formatCount, formatEdited, titleFromName } from '../shared/format';
@@ -78,6 +79,10 @@ export default function NoteView(props: FileViewProps & { longNoteChars?: number
   const sourceShortcut = apple ? '⌘⇧E' : 'Ctrl+Shift+E';
   // Live preview or the Markdown source: a per-device choice, while editing.
   const [editMode, setEditMode] = useEditMode();
+  // What a screen reader is told when the mode changes under a shortcut (focus stays in the editor).
+  const [modeStatus, setModeStatus] = useState('');
+  const editRef = useRef<HTMLButtonElement | null>(null);
+  const wasEditing = useRef(false);
 
   const body = useMemo(() => parseFrontmatter(state.text).body, [state.text]);
   const tags = useMemo(() => noteTags(state.text), [state.text]);
@@ -111,7 +116,19 @@ export default function NoteView(props: FileViewProps & { longNoteChars?: number
     if (editing) void session?.flush();
     setEditing(!editing && !readOnly);
     setLongNote(null);
+    setModeStatus('');
   }, [editing, session, readOnly]);
+
+  // Leaving the editor removes it, and its focus with it: it goes to the Edit
+  // button, where the keyboard was, instead of the top of the page.
+  useEffect(() => {
+    const was = wasEditing.current;
+    wasEditing.current = editing;
+    if (was && !editing && (!document.activeElement || document.activeElement === document.body)) editRef.current?.focus();
+  }, [editing]);
+
+  // Escape in the editor goes to the toolbar.
+  const leaveEditor = useCallback(() => editRef.current?.focus(), []);
 
   // A note too long for live preview is edited as its source whatever the switch says.
   const plainSource = longNote !== null || state.text.length > longNoteChars;
@@ -122,7 +139,10 @@ export default function NoteView(props: FileViewProps & { longNoteChars?: number
   if (!editing && plainAtOpen !== null) setPlainAtOpen(null);
   const sourceForced = editing && (plainAtOpen ?? plainSource);
   const toggleSource = useCallback(() => {
-    if (!sourceForced) setEditMode(editMode === 'source' ? 'live' : 'source');
+    if (sourceForced) return;
+    const next = editMode === 'source' ? 'live' : 'source';
+    setEditMode(next);
+    setModeStatus(next === 'source' ? 'Markdown source' : 'Live preview');
   }, [sourceForced, editMode, setEditMode]);
 
   useEffect(() => {
@@ -156,7 +176,7 @@ export default function NoteView(props: FileViewProps & { longNoteChars?: number
       <SessionBars session={session} state={state} onDownload={() => void downloadEntry(store, entry).catch(() => undefined)} />
       <article className="ws-page">
         {readOnly && !pageWidth ? null : (
-          <div className="ws-page-tools">
+          <div className="ws-page-tools" role="group" aria-label="Note tools">
             {pageWidth ? (
               <button
                 type="button"
@@ -178,6 +198,7 @@ export default function NoteView(props: FileViewProps & { longNoteChars?: number
                 aria-label="Markdown source"
                 aria-pressed={sourceForced || editMode === 'source'}
                 aria-disabled={sourceForced || undefined}
+                aria-keyshortcuts={apple ? 'Meta+Shift+E' : 'Control+Shift+E'}
                 title={
                   sourceForced
                     ? 'This note is long, so it’s edited as its source, which stays quick.'
@@ -195,8 +216,10 @@ export default function NoteView(props: FileViewProps & { longNoteChars?: number
                 type="button"
                 className="ws-view-icon"
                 data-no-arc
+                ref={editRef}
                 aria-label="Edit"
                 aria-pressed={editing}
+                aria-keyshortcuts={apple ? 'Meta+E' : 'Control+E'}
                 title={editing ? `Back to reading (${shortcut})` : `Edit the source (${shortcut})`}
                 onClick={toggleEditing}
               >
@@ -214,10 +237,9 @@ export default function NoteView(props: FileViewProps & { longNoteChars?: number
             </>
           )}
           {edited && <span>{edited}</span>}
+          {/* TAGS lane: the header's tags open search, like the ones in the text. */}
           {tags.map((tag) => (
-            <span key={tag} className="ws-tag">
-              #{tag}
-            </span>
+            <TagButton key={tag} tag={tag} />
           ))}
         </div>
         {!loadImages && heldImages > 0 && !(editing && !readOnly) ? (
@@ -243,6 +265,11 @@ export default function NoteView(props: FileViewProps & { longNoteChars?: number
           </div>
         ) : null}
         {editing && !readOnly ? (
+          <span className="ws-visually-hidden" role="status">
+            {modeStatus}
+          </span>
+        ) : null}
+        {editing && !readOnly ? (
           <Suspense fallback={<ViewLoading name="the editor" />}>
             <NoteEditor
               value={state.text}
@@ -252,7 +279,8 @@ export default function NoteView(props: FileViewProps & { longNoteChars?: number
               path={entry.path}
               store={store}
               projectId={projectId}
-              label={`${title}, markdown source`}
+              label={sourceForced || editMode === 'source' ? `${title}, Markdown source` : `${title}, live preview`}
+              onLeave={leaveEditor}
               plainSource={plainSource}
               source={editMode === 'source'}
               autoFocus

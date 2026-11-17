@@ -1,6 +1,6 @@
 // Round 4, F5 (heldHere) and F2 (download when the copy can't be written).
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import hexagonText from '../../../../sketches/workspace/assets/winter-hexagon.excalidraw?raw';
+import hexagonText from '../../../../e2e/assets/images/winter-hexagon.excalidraw?raw';
 import busText from '../../../../src/files/fixtures/obsidian/Edraw - Bus timetable.md?raw';
 import { MemoryFileStore } from '../../../../src/files/memoryStore';
 import { scopedStore } from '../../../../src/files/scopedStore';

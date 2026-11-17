@@ -1,6 +1,6 @@
 /**
- * Link updates after a rename or a move, run against a store (reading lane,
- * task 3). `updateLinks.ts` decides what a note's text becomes; this reads
+ * Link updates after a rename, a move or a batch of replaced images, run
+ * against a store (reading lane, task 3; the batch form, 2.0.2). `updateLinks.ts` decides what a note's text becomes; this reads
  * the project's notes, and writes each one that changed, safely:
  *
  *   - a write is `ifUnchanged` against the text read, as a tab's save is: a
@@ -60,12 +60,19 @@ function namesOf(oldPaths: string[]): string[] {
   return [...names];
 }
 
-export async function updateLinksAfterMove(store: FileStore, { from, to, unsaved }: LinkRunOptions): Promise<LinkRun> {
+/** What each run reads before it rewrites: the files as they are now, and where each moved file was. */
+type MoveSet = {
+  /** Every file now. */
+  files: Array<{ path: string; size?: number }>;
+  /** Old path → new path, for each file that moved. */
+  moved: Map<string, string>;
+  /** Where a file (by its path now) was before the move. */
+  oldPath(path: string): string;
+};
+
+/** The one run behind a rename and a batch: reads each note once and writes the ones whose links change. */
+async function followMoves(store: FileStore, { files, moved, oldPath }: MoveSet, unsaved: (path: string) => boolean): Promise<LinkRun> {
   const run: LinkRun = { links: 0, notes: 0, unsaved: 0, changed: 0, long: 0, failed: 0 };
-  const files = (await store.list()).filter((entry) => entry.type === 'file');
-  const oldPath = (path: string) => (isInside(path, to) ? from + path.slice(to.length) : path);
-  const moved = new Map<string, string>();
-  for (const { path } of files) if (isInside(path, to) && oldPath(path) !== path) moved.set(oldPath(path), path);
   if (moved.size === 0) return run;
   const world = linkWorld(
     files.map((entry) => oldPath(entry.path)),
@@ -75,7 +82,7 @@ export async function updateLinksAfterMove(store: FileStore, { from, to, unsaved
   const names = moved.size > MANY ? null : namesOf([...moved.keys()]);
 
   const one = async (path: string, size: number | undefined): Promise<void> => {
-    const moving = isInside(path, to);
+    const moving = oldPath(path) !== path;
     try {
       const { text, utf8 } = await readFileText(store, path);
       if (!utf8 || !mayHaveLinks(text)) return;
@@ -113,6 +120,31 @@ export async function updateLinksAfterMove(store: FileStore, { from, to, unsaved
   };
   await Promise.all([worker(), worker(), worker(), worker()]);
   return run;
+}
+
+export async function updateLinksAfterMove(store: FileStore, { from, to, unsaved }: LinkRunOptions): Promise<LinkRun> {
+  const files = (await store.list()).filter((entry) => entry.type === 'file');
+  const oldPath = (path: string) => (isInside(path, to) ? from + path.slice(to.length) : path);
+  const moved = new Map<string, string>();
+  for (const { path } of files) if (isInside(path, to) && oldPath(path) !== path) moved.set(oldPath(path), path);
+  return followMoves(store, { files, moved, oldPath }, unsaved);
+}
+
+/** One file that went and the file that took its place (an image Convert images replaced). */
+export type FileMove = { from: string; to: string };
+
+/**
+ * The same run for a batch of single-file moves, as a folder's *Convert
+ * images* makes them: each note is read once and every move is applied to it
+ * together, with the rules above. The files are already at their new paths
+ * (and the old ones gone) when it runs. Notes themselves don't move here.
+ */
+export async function updateLinksAfterMoves(store: FileStore, moves: readonly FileMove[], { unsaved }: Pick<LinkRunOptions, 'unsaved'>): Promise<LinkRun> {
+  const moved = new Map(moves.filter((move) => move.from !== move.to).map((move) => [move.from, move.to] as const));
+  if (moved.size === 0) return { links: 0, notes: 0, unsaved: 0, changed: 0, long: 0, failed: 0 };
+  const files = (await store.list()).filter((entry) => entry.type === 'file');
+  const back = new Map([...moved].map(([from, to]) => [to, from] as const));
+  return followMoves(store, { files, moved, oldPath: (path) => back.get(path) ?? path }, unsaved);
 }
 
 const plural = (count: number, one: string, many: string) => (count === 1 ? one : many);

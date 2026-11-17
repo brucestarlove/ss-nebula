@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react';
 import type { ReactNode } from 'react';
+import type { ExcalidrawProps } from '@excalidraw/excalidraw/types';
 import type { NebulaContextInput } from './context';
 import type { SceneStore } from './storage/types';
 
@@ -17,6 +18,10 @@ export type LazyNebulaExcalidrawShellProps = {
   /** `false` renders the canvas alone, without Nebula's chrome; see
    * NebulaExcalidrawShellProps.chrome. Defaults to `true`. */
   chrome?: boolean;
+  /** See NebulaExcalidrawShellProps.onLinkOpen. */
+  onLinkOpen?: ExcalidrawProps['onLinkOpen'];
+  /** See NebulaExcalidrawShellProps.linksFromText. */
+  linksFromText?: boolean;
 };
 
 export function LazyNebulaExcalidrawShell(props: LazyNebulaExcalidrawShellProps) {

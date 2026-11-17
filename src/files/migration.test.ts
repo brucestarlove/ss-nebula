@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import hexagonText from '../../sketches/workspace/assets/winter-hexagon.excalidraw?raw';
+import hexagonText from '../../e2e/assets/images/winter-hexagon.excalidraw?raw';
 import { createEmptyNebulaMetadata, type NebulaExcalidrawMetadata } from '../nebula/excalidraw/metadata';
 import { isObsidianExcalidrawMarkdown, readObsidianExcalidrawMarkdown, toObsidianExcalidrawMarkdown } from '../nebula/excalidraw/obsidianMarkdown';
 import { createEmptyExcalidrawScene, type ExcalidrawScene } from '../nebula/excalidraw/scene';

@@ -10,7 +10,7 @@ const HARNESS = '/e2e/harness/storage-harness.html';
 // The harness pages are served by the Vite dev server only.
 test.skip(process.env.NEBULA_E2E_BUILT === '1', 'needs the dev server for e2e/harness/');
 
-const hexagon = JSON.parse(readFileSync('sketches/workspace/assets/winter-hexagon.excalidraw', 'utf8'));
+const hexagon = JSON.parse(readFileSync('e2e/assets/images/winter-hexagon.excalidraw', 'utf8'));
 
 function legacy(boardId: string, canvasId: string, name: string): [string, string] {
   const key = `nebula:excalidraw:${encodeURIComponent(boardId)}:${encodeURIComponent(canvasId)}`;

@@ -11,6 +11,8 @@
  * the tree is walked by hand.
  */
 
+import { INLINE_TAG } from './markdown';
+
 type MdNode = {
   type: string;
   value?: string;
@@ -21,7 +23,15 @@ type MdNode = {
 
 const SKIP = new Set(['code', 'inlineCode', 'html', 'math', 'inlineMath']);
 
-const EXTRAS = /(!?)\[\[([^[\]\n]+?)\]\]|(^|\s)#([\p{L}\p{N}_/-]*[\p{L}_/-][\p{L}\p{N}_/-]*)/gu;
+/**
+ * What the reading view finds in a run of text: a wikilink or embed (groups 1
+ * and 2), or an inline tag (3 and 4). The tag half is markdown.ts's INLINE_TAG,
+ * the one rule the editor and the project index (tags.ts) share, so the page,
+ * the editor and the index can't disagree about what a tag is. Exported as a
+ * pattern to copy with `new RegExp(EXTRAS.source, 'gu')`: this one keeps no
+ * state of its own between callers.
+ */
+export const EXTRAS = new RegExp(`(!?)\\[\\[([^[\\]\\n]+?)\\]\\]|${INLINE_TAG.source}`, 'gu');
 
 /** What a wikilink shows: its alias, else its target ('Note > Heading'). */
 export function wikilinkText(inner: string): string {

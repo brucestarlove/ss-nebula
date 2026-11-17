@@ -1,4 +1,5 @@
-import { useContext, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import type { ExcalidrawProps } from '@excalidraw/excalidraw/types';
 import '@excalidraw/excalidraw/index.css';
 import type { FileViewProps } from '../../../files/types';
 import { LazyNebulaExcalidrawShell } from '../../../nebula/LazyNebulaExcalidrawShell';
@@ -9,6 +10,8 @@ import { formatCount, titleFromName } from '../shared/format';
 import { ViewLoading } from '../shared/SessionBars';
 import { useLeaveFlush } from '../shared/useTextSession';
 import { ViewActionsContext } from '../shared/viewActions';
+import { useProjectLinks } from '../shared/projectLinks';
+import { linkHeading, makesNote, parseWikilink, resolveLink, resolveMarkdownPath } from '../note/links';
 import '../views.css';
 import './canvas.css';
 import { createFileSceneStore, type FileSceneState, type FileSceneStore } from './fileSceneStore';
@@ -67,6 +70,40 @@ export default function CanvasView(props: FileViewProps) {
 
   const context = useMemo(() => ({ boardId: projectId, canvasId: entry.path }), [projectId, entry.path]);
 
+  // An element's link: `[[Note]]`, as Obsidian Excalidraw
+  // writes it on text that holds a link, opens the note in a tab, and a link to
+  // a note that isn't there makes it, as in a note. A path in the project
+  // opens that file. Anything else that isn't a web address is kept from
+  // Excalidraw, which would load it in this tab and leave Nebula.
+  // Read when a link is clicked, so the handler (and Excalidraw) stays the
+  // same while the project's files change with every save.
+  const project = useProjectLinks();
+  const projectRef = useRef(project);
+  useEffect(() => {
+    projectRef.current = project;
+  });
+  const onLinkOpen = useCallback<NonNullable<ExcalidrawProps['onLinkOpen']>>(
+    (element, event) => {
+      const project = projectRef.current;
+      const link = (element.link ?? '').trim();
+      const wiki = /^!?\[\[([^[\]\n]+)\]\]$/.exec(link);
+      if (wiki) {
+        event.preventDefault();
+        const target = parseWikilink(wiki[1]);
+        if (!target.target) return;
+        const file = resolveLink(target.target, entry.path, project.files);
+        if (file) project.open(file.path, linkHeading(target));
+        else if (makesNote(target.target)) project.create(target.target, entry.path);
+        return;
+      }
+      if (!link || /^[a-z][a-z0-9+.-]*:/i.test(link) || link.startsWith('//')) return;
+      event.preventDefault();
+      const file = resolveMarkdownPath(link, entry.path, project.files);
+      if (file) project.open(file.path);
+    },
+    [entry.path],
+  );
+
   if (phase.status === 'error') {
     // A file that isn't a drawing after all can still be read: a note for markdown, text for an .excalidraw file.
     const { openAs } = actions;
@@ -115,6 +152,8 @@ export default function CanvasView(props: FileViewProps) {
           chrome={false}
           context={context}
           store={sceneStore}
+          onLinkOpen={onLinkOpen}
+          linksFromText
           fallback={<ViewLoading name={entry.name} />}
         />
       ) : (

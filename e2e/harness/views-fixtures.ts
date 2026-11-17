@@ -1,7 +1,7 @@
 /** Lane C's fixtures: one small file per kind, built in the page. */
 import { toObsidianExcalidrawMarkdown } from '../../src/nebula/excalidraw/obsidianMarkdown';
 import type { ExcalidrawScene } from '../../src/nebula/excalidraw/scene';
-import winterHexagon from '../../sketches/workspace/assets/winter-hexagon.excalidraw?raw';
+import winterHexagon from '../../e2e/assets/images/winter-hexagon.excalidraw?raw';
 
 export const NOTE_PATH = 'Guides/Observing plan.md';
 
@@ -157,7 +157,7 @@ async function fetchBlob(url: string): Promise<Blob> {
 
 /** An SVG that tries to run a script: it must never run. */
 async function hostileSvg(): Promise<string> {
-  const svg = await (await fetch('/sketches/workspace/assets/winter-hexagon-night.svg')).text();
+  const svg = await (await fetch('/e2e/assets/images/winter-hexagon-night.svg')).text();
   return svg.replace('</svg>', '<script>window.__svgScriptRan = true</script></svg>');
 }
 
@@ -170,7 +170,7 @@ export async function buildFixtures(): Promise<Record<string, string | Blob>> {
     'Sketches/Telescope setup.excalidraw': JSON.stringify(SMALL_SCENE, null, 2),
     'Sketches/Obsidian drawing.md': obsidianJsonMarkdown(SMALL_SCENE),
     'Sketches/Empty.excalidraw.md': '',
-    'Photos/Nebula logo.png': await fetchBlob('/sketches/workspace/assets/nebula-logo.png'),
+    'Photos/Nebula logo.png': await fetchBlob('/e2e/assets/images/nebula-logo.png'),
     'Photos/Winter hexagon.svg': await hostileSvg(),
     'Photos/Moonrise timelapse.webm': await fetchBlob('/e2e/harness/views-media/moonrise.webm'),
     'Photos/Moonrise timelapse.mp4': await fetchBlob('/e2e/harness/views-media/moonrise.mp4'),

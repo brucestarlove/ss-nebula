@@ -1,9 +1,11 @@
 import { Compartment } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { FileStore } from '../../../../files/types';
 import CodeEditor, { type CodeEditorProps } from '../../code/CodeEditor';
+import { isApplePlatform } from '../../shared/hooks';
 import { useProjectLinks } from '../../shared/projectLinks';
+import { editorNames } from './accessibility';
 import { projectLinksFacet, type EditorLinks } from './projectLinks';
 import { modeExtensions, noteEditorSetup } from './setup';
 import '../../code/code.css';
@@ -21,6 +23,8 @@ export type NoteEditorProps = Omit<CodeEditorProps, 'variant' | 'onLanguage'> & 
   plainSource?: boolean;
   /** Show the plain Markdown, every decoration off (the source switch). Changes without a new editor. */
   source?: boolean;
+  /** Escape: the page takes the focus (its toolbar). Without it Escape does nothing here. */
+  onLeave?: () => void;
 };
 
 /**
@@ -32,12 +36,13 @@ export type NoteEditorProps = Omit<CodeEditorProps, 'variant' | 'onLanguage'> & 
 export default function NoteEditor(props: NoteEditorProps) {
   const [plain] = useState(Boolean(props.plainSource));
   if (plain) {
-    const { path, plainSource, store, projectId, source, ...rest } = props;
+    const { path, plainSource, store, projectId, source, onLeave, ...rest } = props;
     void path;
     void plainSource;
     void store;
     void projectId;
     void source;
+    void onLeave;
     return <CodeEditor {...rest} variant="note" />;
   }
   return <LiveEditor {...props} />;
@@ -50,7 +55,10 @@ function LiveEditor(props: NoteEditorProps) {
   const viewRef = useRef<EditorView | null>(null);
   const linksRef = useRef(new Compartment());
   const modeRef = useRef(new Compartment());
+  const namesRef = useRef(new Compartment());
+  const descriptionId = useId();
   const appliedSource = useRef(source);
+  const appliedLabel = useRef(props.label);
   const latest = useRef(props);
   const appliedRevision = useRef(revision);
   const links: EditorLinks = { ...projectLinks, path, store, projectId };
@@ -66,11 +74,25 @@ function LiveEditor(props: NoteEditorProps) {
     if (!host) return undefined;
     appliedRevision.current = latest.current.revision;
     appliedSource.current = Boolean(latest.current.source);
+    appliedLabel.current = latest.current.label;
     const view = new EditorView({
       parent: host,
       doc: latest.current.value,
       extensions: [
-        noteEditorSetup({ label: latest.current.label, readOnly, source: appliedSource.current, mode: modeRef.current }),
+        noteEditorSetup({
+          label: latest.current.label,
+          readOnly,
+          source: appliedSource.current,
+          mode: modeRef.current,
+          names: namesRef.current,
+          describedBy: descriptionId,
+          leave: () => {
+            const leave = latest.current.onLeave;
+            if (!leave) return false;
+            leave();
+            return true;
+          },
+        }),
         linksRef.current.of(projectLinksFacet.of(latestLinks.current)),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) latest.current.onChange(update.state.doc.toString());
@@ -83,7 +105,15 @@ function LiveEditor(props: NoteEditorProps) {
       view.destroy();
       viewRef.current = null;
     };
-  }, [readOnly]);
+  }, [readOnly, descriptionId]);
+
+  // The name says which mode the editor is in, so it changes with the switch.
+  const { label } = props;
+  useEffect(() => {
+    if (appliedLabel.current === label) return;
+    appliedLabel.current = label;
+    viewRef.current?.dispatch({ effects: namesRef.current.reconfigure(editorNames(label, readOnly, descriptionId)) });
+  }, [label, readOnly, descriptionId]);
 
   // The project's files reach the editor without rebuilding it.
   const { files, open, create } = projectLinks;
@@ -117,7 +147,24 @@ function LiveEditor(props: NoteEditorProps) {
     if (current !== value && current !== value.replace(/\r\n?/g, '\n')) view.dispatch({ changes: { from: 0, to: current.length, insert: value } });
   }, [revision, value]);
 
-  return <div ref={hostRef} className={`ws-cm ws-cm-note ${source ? 'ws-cm-source' : 'ws-cm-live'}`} data-testid="note-editor" />;
+  return (
+    <>
+      <div ref={hostRef} className={`ws-cm ws-cm-note ${source ? 'ws-cm-source' : 'ws-cm-live'}`} data-testid="note-editor" />
+      <span id={descriptionId} className="ws-visually-hidden">
+        {describe(source)}
+      </span>
+    </>
+  );
+}
+
+/** What a screen reader is told about the editor when it arrives: the mode, the keys the drawn page can't show, and the way out. */
+function describe(source: boolean): string {
+  const mod = isApplePlatform() ? '⌘' : 'Ctrl';
+  const open = `${mod}+Enter opens the link at the cursor, or ticks the task on its line.`;
+  const leave = 'Escape leaves the editor for the toolbar.';
+  return source
+    ? `Markdown source. ${open} ${mod}+Shift+E returns to live preview. ${leave}`
+    : `Live preview. The line you are on shows its Markdown. ${open} ${mod}+Shift+E shows the Markdown source. ${leave}`;
 }
 
 /** The scrolling element the editor sits in (the stage), or null. */

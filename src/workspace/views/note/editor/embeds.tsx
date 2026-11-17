@@ -2,7 +2,11 @@ import { syntaxTree } from '@codemirror/language';
 import { type EditorState, type Extension, Prec, type Range, StateField, type Transaction } from '@codemirror/state';
 import { Decoration, type DecorationSet, EditorView, keymap, WidgetType } from '@codemirror/view';
 import { createRoot, type Root } from 'react-dom/client';
-import { embedFile, type EmbedLine } from './embedLine';
+import { kindFromName } from '../../../../files/kinds';
+import { boxKey, estimateEmbedHeight, knownBox } from '../embeds/embedBoxes';
+import { parseWikilink } from '../links';
+import { isApplePlatform } from '../../shared/hooks';
+import { embedFile, embedName, type EmbedLine } from './embedLine';
 import { EmbedView } from './EmbedView';
 import { frontmatterLines } from './livePreview';
 import { projectLinksFacet, projectLinksOf, type EditorLinks } from './projectLinks';
@@ -136,6 +140,26 @@ export function flushParkedEmbeds(): void {
   parked.clear();
 }
 
+let hintCount = 0;
+
+/** What an embedded file is called to a screen reader. */
+function kindName(kind: string): string {
+  switch (kind) {
+    case 'image':
+      return 'picture';
+    case 'canvas':
+      return 'drawing';
+    case 'pdf':
+      return 'PDF';
+    case 'note':
+    case 'audio':
+    case 'video':
+      return kind;
+    default:
+      return 'file';
+  }
+}
+
 /** What the cursor may do inside a widget: nothing; clicks are the components'. */
 const INTERACTIVE = 'a, button, audio, video, input, select, textarea, summary';
 
@@ -161,6 +185,27 @@ class EmbedWidget extends WidgetType {
     return `embed(${this.embed.raw})`;
   }
 
+  private height: number | undefined;
+
+  /**
+   * CodeMirror lays the note out by this before the widget is drawn, so the
+   * scroll doesn't jump when a picture or a drawing arrives. Exact when the
+   * size is asked for (`|300x200`) or known from an earlier look at the file
+   * (embeds/embedBoxes.ts), a guess otherwise. Worked out once per widget:
+   * it names the file, which is a search of the project's files.
+   */
+  get estimatedHeight(): number {
+    if (this.height === undefined) {
+      const file = embedFile(this.embed, this.links);
+      if (!file) this.height = 40;
+      else {
+        const size = this.embed.kind === 'wiki' ? parseWikilink(this.embed.raw, true).size : null;
+        this.height = estimateEmbedHeight(kindFromName(file.name), size, knownBox(boxKey(this.links.projectId, file)));
+      }
+    }
+    return this.height;
+  }
+
   private render(mounted: Mounted) {
     mounted.embed = this.embed;
     mounted.root.render(<EmbedView embed={this.embed} links={this.links} />);
@@ -176,9 +221,19 @@ class EmbedWidget extends WidgetType {
     const dom = document.createElement('div');
     dom.className = 'ws-cm-embed';
     dom.dataset.kind = this.embed.kind;
+    // Named for a screen reader, with the keys that reach it: the drawing is
+    // the page's own (alt text, an Open button), and its line is the way in.
+    const file = embedFile(this.embed, this.links);
+    const hint = document.createElement('span');
+    hint.id = `ws-cm-embed-hint-${(hintCount += 1)}`;
+    hint.className = 'ws-visually-hidden';
+    hint.textContent = `Up or down arrow reaches its line, which shows the Markdown. ${isApplePlatform() ? '⌘' : 'Ctrl'}+Enter there opens ${file ? 'the file' : 'nothing: it isn’t in this project'}.`;
+    dom.setAttribute('role', 'group');
+    dom.setAttribute('aria-label', `Embedded ${file ? kindName(kindFromName(file.name)) : 'file'}: ${embedName(this.embed)}`);
+    dom.setAttribute('aria-describedby', hint.id);
     const body = document.createElement('div');
     body.className = 'ws-cm-embed-body ws-prose';
-    dom.append(body);
+    dom.append(body, hint);
     // Clicks inside are the components' (Open, play, a link) or open the file;
     // they never move the editor's cursor or take its focus.
     body.addEventListener('mousedown', (event) => {

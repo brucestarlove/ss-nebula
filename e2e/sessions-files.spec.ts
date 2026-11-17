@@ -174,7 +174,7 @@ test('Settings says whether the browser has agreed to keep the files', async ({ 
 
 test('web images in a note wait for a click; the project’s own aren’t touched', async ({ page, browserName }) => {
   const asked: string[] = [];
-  const png = await readFile('sketches/workspace/assets/nebula-logo.png');
+  const png = await readFile('e2e/assets/images/nebula-logo.png');
   await page.route(/^https:\/\/(tracker|charts)\.example\//, async (route) => {
     asked.push(route.request().url());
     await route.fulfill({ status: 200, contentType: 'image/png', body: png });

@@ -1,4 +1,5 @@
 import { basename, isInside } from '../../../files/paths';
+import { isServerPlace } from '../../../files/places';
 import type { FileStore } from '../../../files/types';
 
 /**
@@ -200,8 +201,9 @@ export class FolderUnreachableError extends Error {
   }
 }
 
-/** What a view says while its folder is out of reach (S2). */
+/** What a view says while its folder, or its server, is out of reach (S2). */
 export function unreachableMessage(folder: string): string {
+  if (folder && isServerPlace(folder)) return `Nebula can’t reach ‘${folder}’ right now. Your changes are kept here and saved when it’s back.`;
   return `Nebula can’t reach the folder ${folder ? `‘${folder}’` : 'this project is in'} right now. Your changes are kept here and saved when it’s back.`;
 }
 

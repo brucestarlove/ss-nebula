@@ -13,6 +13,7 @@ import { iconForFile } from './components/fileIcon';
 import { useEscapeLayer, useMediaQuery } from './components/hooks';
 import { Icon } from './components/icons';
 import { MenuEntries, ProjectContextMenu, ProjectMenu, WsContextMenu, type MenuEntry } from './components/Menus';
+import { SEARCH_EVENT, type SearchRequest } from './searchEvent';
 import { QuickOpen } from './components/QuickOpen';
 import { Rail, type StarredItem } from './components/Rail';
 import { SettingsDrawer, type SettingsTab } from './components/Settings';
@@ -33,16 +34,18 @@ import { pastedNoteName } from './pasteNote';
 import { addFiles } from './upload';
 import { errorName, folderTooBigMessage } from '../files/errors';
 import { usePreferences } from './preferences';
-import { ProjectLinksContext, type ProjectLinks } from './views/shared/projectLinks';
+import { ProjectLinksContext, type LinePlace, type ProjectLinks } from './views/shared/projectLinks';
+import { ProjectIndexProvider } from './ProjectIndexProvider';
+import { useProjectIndexBuild } from './useProjectIndexBuild';
 import { planNewNote } from './views/note/links';
 import { PageWidthContext } from './views/shared/pageWidth';
-import { describeConversions, isConvertible, type ConvertOutcome, type ImageTools } from './imageConvert';
+import { describeConversions, isConvertible, replacedMoves, type ConvertOutcome, type ImageTools } from './imageConvert';
 import { ConvertImagesDialog } from './components/ConvertImages';
 import { buildTree } from './tree';
 import { useProjectSession } from './useProjectSession';
 import { viewFor as defaultViewFor } from './views';
 import { hasUnsavedAt, hasUnsavedChanges, holdWrites, subscribeKeptCopies, subscribeUnsaved } from './views/shared/fileSessions';
-import { linkRunMessage, updateLinksAfterMove } from './updateLinksRun';
+import { linkRunMessage, updateLinksAfterMove, updateLinksAfterMoves } from './updateLinksRun';
 
 export type WorkspaceProps = {
   /** `readOnly`, when the registry has it (the browser tier's), is true once
@@ -313,6 +316,22 @@ export function Workspace({
   const [sheet, setSheet] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  // A tag clicked anywhere (a note, the editor, the Tags panel) opens search with `#tag` (searchEvent.ts).
+  const [paletteQuery, setPaletteQuery] = useState<{ query: string; n: number } | undefined>(undefined);
+  useEffect(() => {
+    const onSearch = (event: Event) => {
+      const { query } = (event as CustomEvent<SearchRequest>).detail;
+      event.preventDefault();
+      setPaletteQuery((last) => ({ query, n: (last?.n ?? 0) + 1 }));
+      setPaletteOpen(true);
+    };
+    window.addEventListener(SEARCH_EVENT, onSearch);
+    return () => window.removeEventListener(SEARCH_EVENT, onSearch);
+  }, []);
+  // Ctrl/⌘-K after a tag search starts empty again.
+  useEffect(() => {
+    if (!paletteOpen) setPaletteQuery((last) => (last && last.query ? { query: '', n: last.n } : last));
+  }, [paletteOpen]);
   const [menuOpen, setMenuOpen] = useState(false);
   const [projectMenu, setProjectMenu] = useState<{ id: string; at: MenuAt; fromSwitcher: boolean } | null>(null);
   const [fileMenu, setFileMenu] = useState<FileMenuState>(null);
@@ -409,15 +428,31 @@ export function Workspace({
   const tree = useMemo(() => buildTree(entries), [entries]);
   const expanded = useMemo(() => new Set(ws.expanded), [ws.expanded]);
   const files = useMemo(() => entries.filter((entry) => entry.type === 'file'), [entries]);
+  // The project index: every note's and canvas's words and links, for search and Linked from.
+  const projectIndex = useProjectIndexBuild(store, files);
   const usage = usageLabel(entries);
   // Where the files live, as the switcher, the menu and quick open say it.
   const browserLocation = persistent ? 'In this browser' : 'In this tab only';
-  const locationOf = useCallback((record: ProjectRecord) => (record.tier === 'folder' ? 'On this computer' : browserLocation), [browserLocation]);
+  const locationOf = useCallback(
+    (record: ProjectRecord) => (record.tier === 'folder' ? 'On this computer' : record.tier === 'server' ? `On ${record.server?.label ?? 'the server'}` : browserLocation),
+    [browserLocation],
+  );
   const location = project ? locationOf(project) : browserLocation;
   // A folder project's folder: the status names it, and the browser can't clear it.
   const folderName = project?.tier === 'folder' ? (project.folder?.name ?? project.name) : null;
+  // A server project: what the server calls itself, and the project's folder there.
+  const serverPlace = useMemo(
+    () => (project?.tier === 'server' ? (project.server ?? { label: 'the server', folder: project.name }) : null),
+    [project],
+  );
   // How a file's delete says where it goes from.
-  const deletedFrom = folderName ? `the folder ‘${folderName}’ on this computer` : persistent ? 'this browser' : 'this tab';
+  const deletedFrom = serverPlace
+    ? `the folder ‘${serverPlace.folder}’ on ${serverPlace.label}`
+    : folderName
+      ? `the folder ‘${folderName}’ on this computer`
+      : persistent
+        ? 'this browser'
+        : 'this tab';
   const activeEntry = ws.active ? (entryByPath.get(ws.active) ?? null) : null;
   const activeKind: FileKind | null = activeEntry ? (kindOverrides[activeEntry.path] ?? kinds[activeEntry.path] ?? null) : null;
   const iconKind = (path: string) => kinds[path] ?? kindFromName(basename(path));
@@ -444,11 +479,11 @@ export function Workspace({
   const [jump, setJump] = useState<HeadingJump | null>(null);
   const jumps = useRef(0);
   const openLinked = useCallback(
-    (path: string, heading?: string) => {
+    (path: string, heading?: string, place?: LinePlace) => {
       openFile(path);
-      if (heading) {
+      if (heading || place) {
         jumps.current += 1;
-        setJump({ path, heading, n: jumps.current });
+        setJump({ path, heading: heading ?? '', place, n: jumps.current });
       }
     },
     [openFile],
@@ -838,13 +873,17 @@ export function Workspace({
       const shown = entry.type === 'dir' ? entry.name : describeName(entry.name).label;
       const inside = entry.type === 'dir' ? entries.filter((other) => other.type === 'file' && isInside(other.path, path)).length : 0;
       // A folder's files go for good: the system's bin never sees them.
-      const undone = folderName ? 'It won’t go to your computer’s bin, so this can’t be undone.' : 'This can’t be undone.';
+      const undone = serverPlace
+        ? 'It won’t go to a bin, so this can’t be undone here.'
+        : folderName
+          ? 'It won’t go to your computer’s bin, so this can’t be undone.'
+          : 'This can’t be undone.';
       setDialog({
         type: 'confirm',
         title: `Delete “${shown}”?`,
         body:
           entry.type === 'dir'
-            ? `The folder and the ${countLabel(inside, 'file')} in it will be deleted from ${deletedFrom}. ${undone}`
+            ? `The folder and the ${countLabel(inside, 'file')} in it will be deleted from ${deletedFrom}.${serverPlace ? ' Hidden files in it, such as .git, go with it.' : ''} ${undone}`
             : `It will be deleted from ${deletedFrom}. ${undone}`,
         confirmLabel: 'Delete',
         danger: true,
@@ -869,7 +908,7 @@ export function Workspace({
         },
       });
     },
-    [entryByPath, store, entries, deletedFrom, folderName, currentId, removing, dispatch, refresh, notify, fail],
+    [entryByPath, store, entries, deletedFrom, folderName, serverPlace, currentId, removing, dispatch, refresh, notify, fail],
   );
 
   const sizeByPath = useMemo(() => new Map(entries.flatMap((entry) => (entry.type === 'file' ? [[entry.path, entry.size ?? 0] as const] : []))), [entries]);
@@ -883,14 +922,29 @@ export function Workspace({
     [dispatch, moveMeta],
   );
 
+  /** After Convert images: the status line says what was converted, then,
+   * once the notes that link to a replaced image have followed it (one run
+   * for the whole batch, as a rename's is), how many links did. The
+   * conversion's own words never wait for it. */
   const finishConvert = useCallback(
     async (outcomes: ConvertOutcome[], single: boolean) => {
       await refresh();
-      notify(describeConversions(outcomes, { folder: !single }));
+      const converted = describeConversions(outcomes, { folder: !single });
+      notify(converted);
       const first = outcomes.find((outcome) => outcome.status === 'converted');
       if (single && first?.status === 'converted') requestFocus(first.to);
+      const moves = replacedMoves(outcomes);
+      if (!store || !currentId || moves.length === 0) return;
+      const scope = currentId;
+      updateLinksAfterMoves(store, moves, { unsaved: (path) => hasUnsavedAt(scope, path) }).then(
+        (run) => {
+          const said = linkRunMessage(run);
+          if (said) notify(`${converted} ${said}`);
+        },
+        (reason: unknown) => console.error('Nebula: links weren’t updated after converting', reason),
+      );
     },
-    [refresh, notify, requestFocus],
+    [store, currentId, refresh, notify, requestFocus],
   );
 
   /* ---- projects ----------------------------------------------------- */
@@ -1016,6 +1070,11 @@ export function Workspace({
       const record = projects.find((item) => item.id === id);
       if (!record || listLocked) return;
       closeOverlays();
+      if (record.tier === 'server') {
+        // Its folder is on the server, which lists it while it's there.
+        notify(`${record.name} lives on ${record.server?.label ?? 'the server'}. To remove it, remove its folder there.`);
+        return;
+      }
       if (record.tier === 'folder') {
         // Forgotten, never deleted: the folder and its files stay put.
         const folder = record.folder?.name ?? record.name;
@@ -1179,7 +1238,7 @@ export function Workspace({
   }, [settingsOpen, persistent]);
   // false: it hasn't promised; null: it can't say. Either way, may be cleared.
   // A folder can't be cleared by the browser: its status stays calm.
-  const attention = persistent && !folderName && (kept === false || kept === null);
+  const attention = persistent && !folderName && !serverPlace && (kept === false || kept === null);
 
   /* ---- shortcuts ---------------------------------------------------- */
 
@@ -1427,7 +1486,8 @@ export function Workspace({
           usage={usage}
           ephemeral={!persistent}
           attention={attention}
-          folderName={folderName}
+          folderName={folderName ?? serverPlace?.folder ?? null}
+          placeLabel={serverPlace ? `On ${serverPlace.label}` : null}
           blocked={folderBar ? (folderBar.access === 'prompt' ? 'Needs your OK' : folderBar.access === 'denied' ? 'Not allowed' : 'Can’t be found') : isMoving ? 'Moving to a folder…' : null}
           night={night}
           collapsed={collapsed && !phone}
@@ -1669,9 +1729,12 @@ export function Workspace({
             </div>
           ) : null}
 
+          {/* The project index, for the panel and the views. */}
+          <ProjectIndexProvider source={projectIndex}>
+          {/* The links' project (opening a file, at a line) for the stage and for the panel's Linked from. */}
+          <ProjectLinksContext.Provider value={projectLinks}>
           <div className="ws-body">
             <PageWidthContext.Provider value={pageWidth}>
-              <ProjectLinksContext.Provider value={projectLinks}>
               <Stage
                 viewFor={viewFor}
                 projectId={currentId ?? ''}
@@ -1685,12 +1748,13 @@ export function Workspace({
                 onOpenAs={openAs}
                 jump={jump}
               />
-              </ProjectLinksContext.Provider>
             </PageWidthContext.Provider>
-            {panelOpen && !phone ? <OutlinePanel headings={outline} isNote={activeKind === 'note'} /> : null}
+            {panelOpen && !phone ? <OutlinePanel headings={outline} isNote={activeKind === 'note'} path={sessionReady ? ws.active : null} /> : null}
           </div>
+          </ProjectLinksContext.Provider>
+          </ProjectIndexProvider>
 
-          <StatusLine ephemeral={!persistent} inFolder={folderName !== null} folderClosed={folderBar !== null} saving={activeMeta?.dirty === true} status={activeMeta?.status ?? null} message={message} />
+          <StatusLine ephemeral={!persistent} inFolder={folderName !== null} place={serverPlace?.label ?? null} folderClosed={folderBar !== null} saving={activeMeta?.dirty === true} status={activeMeta?.status ?? null} message={message} />
 
           <nav className="ws-phone-bar" aria-label="Phone">
             <Button aria-expanded={sheetOpen} onClick={() => setSheet(true)}>
@@ -1773,23 +1837,31 @@ export function Workspace({
         {newMenu ? <MenuEntries entries={fileMenuEntries(null)} /> : null}
       </WsContextMenu>
 
-      <QuickOpen
-        open={paletteOpen}
-        entries={files}
-        kinds={kinds}
-        projects={projects}
-        currentId={currentId}
-        location={locationOf}
-        onOpenFile={(path) => {
-          setPaletteOpen(false);
-          openFile(path);
-        }}
-        onSwitchProject={(id) => {
-          setPaletteOpen(false);
-          switchProject(id);
-        }}
-        onClose={() => setPaletteOpen(false)}
-      />
+      {/* Quick open searches the notes and canvases too: the same index as the panel's. */}
+      <ProjectIndexProvider source={projectIndex}>
+        <QuickOpen
+          open={paletteOpen}
+          initialQuery={paletteQuery}
+          entries={files}
+          kinds={kinds}
+          projects={projects}
+          currentId={currentId}
+          location={locationOf}
+          onOpenFile={(path) => {
+            setPaletteOpen(false);
+            openFile(path);
+          }}
+          onOpenAt={(path, place) => {
+            setPaletteOpen(false);
+            openLinked(path, undefined, place);
+          }}
+          onSwitchProject={(id) => {
+            setPaletteOpen(false);
+            switchProject(id);
+          }}
+          onClose={() => setPaletteOpen(false)}
+        />
+      </ProjectIndexProvider>
 
       <SettingsDrawer
         open={settingsTab !== null}
@@ -1811,9 +1883,10 @@ export function Workspace({
         fileCount={files.length}
         ephemeral={!persistent}
         folderName={folderName}
+        serverPlace={serverPlace}
         kept={kept}
         // A .zip is a browser project's safety net; a folder's files are already on this computer.
-        downloaded={folderName === null ? downloadedLabel(downloadedAt) : null}
+        downloaded={folderName === null && serverPlace === null ? downloadedLabel(downloadedAt) : null}
         canDownload={downloadProject !== undefined}
         canChangeProject={!listLocked}
         onRename={(name) => project && void updateProject(project.id, { name }).catch(fail('Couldn’t rename the project'))}

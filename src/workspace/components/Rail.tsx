@@ -18,6 +18,8 @@ type RailProps = {
   attention: boolean;
   /** A folder project's folder: the status names it, on this computer. */
   folderName?: string | null;
+  /** Where a project that isn't in this browser lives, said under its name ('On vps-starscape'). */
+  placeLabel?: string | null;
   /** Why a folder project's folder can't be opened now ('Needs your OK'):
    * the status says it, amber, and nothing offers to make files. */
   blocked?: string | null;
@@ -195,12 +197,12 @@ export function Rail(props: RailProps) {
         {props.onWhere ? (
           <Button className="page-sidebar-footer-text ws-rail-where" title="Where your files are kept" onClick={props.onWhere}>
             <span className="page-sidebar-footer-name">{props.folderName ?? props.location}</span>
-            <span className="page-sidebar-footer-meta">{props.blocked ?? (props.folderName ? 'On this computer' : props.attention ? 'May be cleared' : props.usage)}</span>
+            <span className="page-sidebar-footer-meta">{props.blocked ?? props.placeLabel ?? (props.folderName ? 'On this computer' : props.attention ? 'May be cleared' : props.usage)}</span>
           </Button>
         ) : (
           <div className="page-sidebar-footer-text">
             <span className="page-sidebar-footer-name">{props.folderName ?? props.location}</span>
-            <span className="page-sidebar-footer-meta">{props.blocked ?? (props.folderName ? 'On this computer' : props.attention ? 'May be cleared' : props.usage)}</span>
+            <span className="page-sidebar-footer-meta">{props.blocked ?? props.placeLabel ?? (props.folderName ? 'On this computer' : props.attention ? 'May be cleared' : props.usage)}</span>
           </div>
         )}
         <Button

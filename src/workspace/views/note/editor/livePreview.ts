@@ -105,7 +105,8 @@ class MarkerWidget extends WidgetType {
   toDOM() {
     const span = document.createElement('span');
     span.className = this.text === null ? 'ws-cm-marker ws-cm-bullet' : 'ws-cm-marker ws-cm-number';
-    span.setAttribute('aria-hidden', 'true');
+    // Not hidden from a screen reader: with the written '- ' replaced, this is
+    // the only thing that says the line is a list item ('bullet', or its number).
     span.textContent = this.text ?? '•';
     return span;
   }
@@ -127,7 +128,8 @@ class RuleWidget extends WidgetType {
   toDOM() {
     const span = document.createElement('span');
     span.className = 'ws-cm-rule';
-    span.setAttribute('aria-hidden', 'true');
+    // The page's rule is a separator to a screen reader; the written '---' is hidden.
+    span.setAttribute('role', 'separator');
     return span;
   }
 
@@ -169,8 +171,8 @@ const hidden = Decoration.replace({ kind: 'hide' });
 const rule = Decoration.replace({ widget: new RuleWidget() });
 const bullet = Decoration.replace({ widget: new MarkerWidget(null) });
 
-function lineClass(className: string) {
-  return Decoration.line({ class: className });
+function lineClass(className: string, attributes?: Record<string, string>) {
+  return Decoration.line(attributes ? { class: className, attributes } : { class: className });
 }
 
 function mark(className: string) {
@@ -216,6 +218,7 @@ class Collector {
   readonly atomic: Range<Decoration>[] = [];
   private readonly seen = new Set<string>();
   private readonly lines = new Map<number, Set<string>>();
+  private readonly lineAttributes = new Map<number, Record<string, string>>();
   readonly state: EditorState;
 
   constructor(state: EditorState) {
@@ -224,11 +227,12 @@ class Collector {
 
   /** Adds classes to a line; a line in more than one block (a quote's list
    * item, a list item's code) gets each block's classes. */
-  line(at: number, className: string) {
+  line(at: number, className: string, attributes?: Record<string, string>) {
     const from = this.state.doc.lineAt(at).from;
     let classes = this.lines.get(from);
     if (!classes) this.lines.set(from, (classes = new Set()));
     for (const name of className.split(' ')) if (name) classes.add(name);
+    if (attributes) this.lineAttributes.set(from, { ...this.lineAttributes.get(from), ...attributes });
   }
 
   /** Whether a line already has a class (it belongs to a block). */
@@ -238,7 +242,7 @@ class Collector {
 
   /** Every decoration, the lines' among them. */
   all(): Range<Decoration>[] {
-    const lines = [...this.lines].map(([from, classes]) => lineClass([...classes].join(' ')).range(from));
+    const lines = [...this.lines].map(([from, classes]) => lineClass([...classes].join(' '), this.lineAttributes.get(from)).range(from));
     return [...lines, ...this.decorations];
   }
 
@@ -336,7 +340,7 @@ export function webHref(url: string): string | undefined {
 
 function linkMark(out: Collector, from: number, to: number, url: string) {
   const href = webHref(url);
-  if (href) out.mark(from, to, 'ws-link', { 'data-href': href, title: `${href} (${isApplePlatform() ? '⌘' : 'Ctrl'}-click to open)` });
+  if (href) out.mark(from, to, 'ws-link', { 'data-href': href, role: 'link', title: `${href} (${isApplePlatform() ? '⌘' : 'Ctrl'}-click to open)` });
   else out.mark(from, to, 'ws-link-local', { title: url });
 }
 
@@ -411,7 +415,8 @@ function inline(out: Collector, sel: Selections, node: SyntaxNode): boolean {
       if (!wiki) return true;
       const target = linkTarget(out.state, wiki);
       const className = target.path ? 'ws-wikilink' : 'ws-wikilink ws-wikilink-missing';
-      const attributes = { title: target.title };
+      // A link to a screen reader when it goes somewhere (or makes a note); Ctrl/⌘-Enter at the cursor opens it.
+      const attributes: Record<string, string> = target.path || target.canMake ? { title: target.title, role: 'link' } : { title: target.title };
       const parts = shownParts(wiki.raw, wiki.embed).map(([from, to]) => [wiki.inner + from, wiki.inner + to] as const);
       if (sel.touches(node.from, node.to) || parts.length === 0) {
         out.mark(wiki.inner, node.to - 2, className, attributes);
@@ -471,7 +476,8 @@ function blocks(out: Collector, sel: Selections, node: SyntaxNode, range: Span):
   const level = HEADINGS[node.name];
 
   if (level) {
-    out.line(node.from, `ws-cm-heading ws-cm-h${level}`);
+    // With the #s hidden the line still reads as a heading, and at its level.
+    out.line(node.from, `ws-cm-heading ws-cm-h${level}`, { role: 'heading', 'aria-level': String(level) });
     if (!sel.onLine(lineNo(node.from))) {
       for (let child = node.firstChild; child; child = child.nextSibling) {
         if (child.name !== 'HeaderMark') continue;
@@ -698,5 +704,37 @@ const modifierHeld = ViewPlugin.fromClass(
   },
 );
 
+/**
+ * A task's state, said aloud. The box is drawn, so a screen reader that steps
+ * through the text never meets the `[ ]` it replaces, and a tick (a click or
+ * Ctrl/⌘-Enter) changes nothing it reads. So the live region (CodeMirror's
+ * own, `.cm-announced`) says it when a task is ticked or unticked, and when
+ * the cursor arrives on a task's line. Said after the update, never inside it.
+ */
+function say(view: EditorView, message: string): void {
+  setTimeout(() => {
+    if (view.dom.isConnected) view.dispatch({ effects: EditorView.announce.of(message) });
+  }, 0);
+}
+
+const taskAnnouncements = EditorView.updateListener.of((update) => {
+  const { state } = update;
+  if (update.transactions.some((tr) => tr.isUserEvent('input.toggle'))) {
+    let message = '';
+    update.changes.iterChangedRanges((_fromA, _toA, fromB) => {
+      const line = state.doc.lineAt(fromB);
+      const task = TASK_BOX.exec(line.text);
+      if (task) message = `${task[2] === ' ' ? 'Not done' : 'Done'}: ${line.text.slice(task[0].length).trim() || 'task'}`;
+    });
+    if (message) say(update.view, message);
+    return;
+  }
+  if (update.docChanged || !update.selectionSet || state.selection.ranges.length > 1 || !state.selection.main.empty) return;
+  const line = state.doc.lineAt(state.selection.main.head);
+  if (line.number === update.startState.doc.lineAt(update.startState.selection.main.head).number) return;
+  const task = TASK_BOX.exec(line.text);
+  if (task) say(update.view, task[2] === ' ' ? 'Task, not done' : 'Task, done');
+});
+
 /** Live preview, as an editor extension. */
-export const livePreview: Extension = [previewPlugin, linkClicks, modifierHeld];
+export const livePreview: Extension = [previewPlugin, linkClicks, modifierHeld, taskAnnouncements];

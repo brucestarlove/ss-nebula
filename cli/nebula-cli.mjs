@@ -2,6 +2,7 @@ import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { extname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { SERVER_TIMING, createFilesApi } from './nebula-files.mjs'
 
 const ROOT = resolve(fileURLToPath(import.meta.url), '..', '..')
 const DEFAULT_PORT = 4321
@@ -71,10 +72,19 @@ Options for run/serve:
   -p, --port <port>       Port to bind. Default: ${DEFAULT_PORT}
   --root <path>           Static app root. Default: packaged dist/app when available.
 
-Projects live in the browser that opens the app, in its origin private file system (OPFS),
-apart for each address: the projects at http://${DEFAULT_HOST}:${DEFAULT_PORT} aren't the ones at
-nebula.starscape.app. Download a project as a .zip to move it. There is no database,
-MCP server, or project daemon in this CLI path.
+Folders on this machine, as projects (the server tier):
+  --project <dir>         Serve this folder as a project. Repeat for more.
+  --projects <dir>        Serve every folder inside this one as a project, as they come and go.
+  --label <name>          What Nebula calls this machine. Default: its hostname.
+  --allow-host <name>     Also answer for this host name (a tailnet name behind a proxy).
+                          Loopback names always work; any other name is refused.
+
+Without --project or --projects, projects live in the browser that opens the app, in its
+origin private file system (OPFS), apart for each address: the projects at
+http://${DEFAULT_HOST}:${DEFAULT_PORT} aren't the ones at nebula.starscape.app. Download a project
+as a .zip to move it. With them, the folders' projects show beside the browser's: Nebula reads and
+writes their files on this machine, and shows changes other apps and agents make. The server
+has no accounts: keep it on loopback, or behind a private network you trust.
 `
 }
 
@@ -83,6 +93,15 @@ function parseRunOptions(args) {
     host: process.env.HOST || DEFAULT_HOST,
     port: Number(process.env.PORT || DEFAULT_PORT),
     root: findDefaultStaticRoot(),
+    projects: [],
+    projectsDirs: [],
+    allowHosts: [],
+    label: undefined,
+  }
+  const value = (index, name) => {
+    const next = args[index]
+    if (next === undefined || next.startsWith('--')) throw new Error(`Missing value for ${name}`)
+    return next
   }
 
   for (let index = 0; index < args.length; index += 1) {
@@ -93,6 +112,14 @@ function parseRunOptions(args) {
       options.port = Number(args[++index])
     } else if (arg === '--root') {
       options.root = args[++index]
+    } else if (arg === '--project') {
+      options.projects.push(resolve(value(++index, arg)))
+    } else if (arg === '--projects') {
+      options.projectsDirs.push(resolve(value(++index, arg)))
+    } else if (arg === '--allow-host') {
+      options.allowHosts.push(value(++index, arg))
+    } else if (arg === '--label') {
+      options.label = value(++index, arg)
     } else {
       throw new Error(`Unknown option for nebula run: ${arg}`)
     }
@@ -129,15 +156,44 @@ function resolveStaticPath(root, requestUrl) {
   return filePath
 }
 
-async function startNebulaStaticServer({ host = DEFAULT_HOST, port = DEFAULT_PORT, root = findDefaultStaticRoot(), silent = false } = {}) {
+async function startNebulaStaticServer({
+  host = DEFAULT_HOST,
+  port = DEFAULT_PORT,
+  root = findDefaultStaticRoot(),
+  silent = false,
+  projects = [],
+  projectsDirs = [],
+  allowHosts = [],
+  label,
+} = {}) {
   const staticRoot = normalizeRoot(root)
   const indexPath = join(staticRoot, 'index.html')
 
   if (!existsSync(indexPath)) {
     throw new Error(`Missing ${indexPath}. Run "pnpm run build:cli-app" or "pnpm run build" first.`)
   }
+  for (const dir of [...projects, ...projectsDirs]) {
+    if (!existsSync(dir) || !statSync(dir).isDirectory()) throw new Error(`Not a folder: ${dir}`)
+  }
+  const serving = projects.length > 0 || projectsDirs.length > 0
+  // Folders on an address other machines reach, with no name to answer for.
+  if (serving && !['127.0.0.1', 'localhost', '::1'].includes(host) && !allowHosts.length) {
+    throw new Error(`Serving folders on ${host} reaches them from other machines: name the host they'll use with --allow-host <name>, or bind 127.0.0.1.`)
+  }
 
-  const server = createServer((req, res) => {
+  const files = serving
+    ? createFilesApi({ roots: projects, projectsDirs, allowHosts, label, loopbackPeer: true, log: (line) => console.error(line) })
+    : null
+  if (files) await files.ready()
+
+  const server = createServer(async (req, res) => {
+    // No other site may frame the app: framed, its own requests would pass every check.
+    res.setHeader('content-security-policy', "frame-ancestors 'none'")
+    res.setHeader('x-frame-options', 'DENY')
+    if (files) {
+      res.setHeader('server-timing', SERVER_TIMING)
+      if (await files.handle(req, res)) return
+    }
     const filePath = resolveStaticPath(staticRoot, req.url)
 
     if (!isInsideRoot(staticRoot, filePath) || !existsSync(filePath) || !statSync(filePath).isFile()) {
@@ -163,13 +219,17 @@ async function startNebulaStaticServer({ host = DEFAULT_HOST, port = DEFAULT_POR
   const displayHost = host === '0.0.0.0' || host === '::' ? 'localhost' : host
   const url = `http://${displayHost}:${actualPort}/`
 
+  server.on('close', () => files?.close())
+
   if (!silent) {
     console.log(`Nebula local app: ${url}`)
     console.log(`Serving ${staticRoot}`)
-    console.log("Storage: the browser's origin private file system (OPFS), for this address")
+    if (files) {
+      for (const project of files.projects()) console.log(`Project: ${project.name} (${project.dir})`)
+    } else console.log("Storage: the browser's origin private file system (OPFS), for this address")
   }
 
-  return { server, url, root: staticRoot, port: actualPort }
+  return { server, url, root: staticRoot, port: actualPort, files }
 }
 
 async function runNebulaCli(argv = process.argv.slice(2), io = { stdout: process.stdout, stderr: process.stderr }) {

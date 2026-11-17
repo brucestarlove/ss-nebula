@@ -1,7 +1,7 @@
 /** The sessions lane's fixtures: what each finding's check needs, small. */
 import { toObsidianExcalidrawMarkdown } from '../../src/nebula/excalidraw/obsidianMarkdown';
 import type { ExcalidrawScene } from '../../src/nebula/excalidraw/scene';
-import winterHexagon from '../../sketches/workspace/assets/winter-hexagon.excalidraw?raw';
+import winterHexagon from '../../e2e/assets/images/winter-hexagon.excalidraw?raw';
 import { BROKEN_TEXT, CRLF_TEXT, PATHS } from './sessions-paths';
 
 export { PROJECT_ID } from './sessions-paths';

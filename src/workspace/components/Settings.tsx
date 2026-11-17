@@ -32,6 +32,8 @@ export type SettingsProps = {
   ephemeral: boolean;
   /** A folder project's folder, or null in the browser. */
   folderName?: string | null;
+  /** A server project's server and its folder there. */
+  serverPlace?: { label: string; folder: string } | null;
   /** Whether the browser has agreed to keep the files; null when it
    * doesn't say, undefined until it's asked. */
   kept?: boolean | null;
@@ -496,7 +498,19 @@ function ProjectPanel(props: SettingsProps) {
           <Swatches className="ws-swatches-row" value={project.color} onChange={props.onColour} label="Colour" disabled={props.canChangeProject === false} />
         </div>
       </div>
-      {props.folderName ? <FolderFiles {...props} folderName={props.folderName} /> : <BrowserFiles {...props} />}
+      {props.serverPlace ? (
+        <ServerFiles {...props} serverPlace={props.serverPlace} />
+      ) : props.folderName ? (
+        <FolderFiles {...props} folderName={props.folderName} />
+      ) : (
+        <BrowserFiles {...props} />
+      )}
+      {props.serverPlace ? (
+        <div className="drawer-section">
+          <h3 className="ws-set-h">Remove</h3>
+          <p className="ws-set-help">{`${project.name} lives on ${props.serverPlace.label}. To remove it, remove its folder ‘${props.serverPlace.folder}’ there.`}</p>
+        </div>
+      ) : (
       <div className="drawer-section">
         <h3 className="ws-set-h">Remove</h3>
         <p className="ws-set-help">
@@ -511,6 +525,7 @@ function ProjectPanel(props: SettingsProps) {
           </Button>
         </div>
       </div>
+      )}
     </section>
   );
 }
@@ -553,6 +568,30 @@ function FolderFiles(props: SettingsProps & { folderName: string }) {
       <p className="ws-set-help">
         These are ordinary files: other apps can open and change them, and Nebula shows their changes. Backing up the folder backs up the project, and a
         folder inside Dropbox, Google Drive, iCloud Drive, OneDrive or Proton Drive is backed up by that service’s own app.
+      </p>
+    </div>
+  );
+}
+
+/** A server project's files: real files in a folder on a server,
+ * which other people and agents with access to it can change too. */
+function ServerFiles(props: SettingsProps & { serverPlace: { label: string; folder: string } }) {
+  return (
+    <div className="drawer-section">
+      <h3 className="ws-set-h">Files</h3>
+      <div className="ws-where">
+        <Icon name="folder" />
+        <span>
+          <b>
+            In the folder ‘{props.serverPlace.folder}’, on {props.serverPlace.label}
+          </b>
+          <span>{props.usage}</span>
+        </span>
+      </div>
+      <FileActions {...props} />
+      <p className="ws-set-help">
+        These are ordinary files on {props.serverPlace.label}: agents and other apps there can change them, and Nebula shows their changes as they happen. They’re
+        kept there, not in this browser: back them up where they are.
       </p>
     </div>
   );

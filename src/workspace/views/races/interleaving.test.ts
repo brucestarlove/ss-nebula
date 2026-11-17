@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import hexagonText from '../../../../sketches/workspace/assets/winter-hexagon.excalidraw?raw';
+import hexagonText from '../../../../e2e/assets/images/winter-hexagon.excalidraw?raw';
 import { blobToText } from '../../../files/bytes';
 import { MemoryFileStore } from '../../../files/memoryStore';
 import { dirname, isInside } from '../../../files/paths';

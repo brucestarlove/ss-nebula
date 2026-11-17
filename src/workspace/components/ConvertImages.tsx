@@ -298,10 +298,10 @@ function ConvertBody({ store, paths, sizes, folder, tools = browserImageTools, w
         {!single ? <p>Images that move, and ones that wouldn’t get smaller, stay as they are.</p> : null}
         {choice.then === 'replace' && single && newName !== name ? (
           <p>
-            “{name}” goes, and “{newName}” takes its place. Links to the old name in your notes won’t follow it.
+            “{name}” goes, and “{newName}” takes its place. Links to the old name in your notes follow it.
           </p>
         ) : null}
-        {choice.then === 'replace' && !single ? <p>Each original goes once its new file is in. Links to the old names in your notes won’t follow them.</p> : null}
+        {choice.then === 'replace' && !single ? <p>Each original goes once its new file is in. Links to the old names in your notes follow the new ones.</p> : null}
         {choice.format === 'jpeg' ? <p>JPEG has no transparency, so clear parts turn white.</p> : null}
         <p>It happens on this device, and leaves out what the file carried besides the picture, like where a photo was taken.</p>
       </div>

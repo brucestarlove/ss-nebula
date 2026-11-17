@@ -29,7 +29,7 @@ describe('NoteView’s editor', () => {
     await click(byLabel(view.container, 'Edit'));
     await waitFor(() => expect(view.container.querySelector('[data-testid="note-editor"] .cm-editor')).not.toBeNull());
     expect(view.container.querySelector('[data-testid="code-editor"]')).toBeNull();
-    expect(view.container.querySelector('.cm-content')?.getAttribute('aria-label')).toBe('Observing plan, markdown source');
+    expect(view.container.querySelector('.cm-content')?.getAttribute('aria-label')).toBe('Observing plan, live preview');
   });
 
   it('a note over the limit opens as its plain source, with its bar', async () => {

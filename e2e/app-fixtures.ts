@@ -268,7 +268,7 @@ export async function seedLocalStorage(context: BrowserContext, items: Record<st
 type Element = Record<string, unknown> & { id: string };
 type Scene = { type: 'excalidraw'; version: number; source: string; elements: Element[]; appState: Record<string, unknown>; files: Record<string, unknown> };
 
-const hexagon = JSON.parse(readFileSync(join(import.meta.dirname, '..', 'sketches', 'workspace', 'assets', 'winter-hexagon.excalidraw'), 'utf8')) as Scene;
+const hexagon = JSON.parse(readFileSync(join(import.meta.dirname, 'assets', 'images', 'winter-hexagon.excalidraw'), 'utf8')) as Scene;
 
 // A 16×16 PNG (a night gradient with a star): an embedded image, as
 // Excalidraw keeps one in the scene.

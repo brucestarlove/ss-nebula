@@ -1,7 +1,7 @@
 // Canvas: two writes queued; the older finds a conflict or a delete from another tab.
 // What is kept (copy, Keep mine) must be the newest drawing, the one on screen.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import hexagonText from '../../../../sketches/workspace/assets/winter-hexagon.excalidraw?raw';
+import hexagonText from '../../../../e2e/assets/images/winter-hexagon.excalidraw?raw';
 import { MemoryFileStore } from '../../../../src/files/memoryStore';
 import type { FileStore } from '../../../../src/files/types';
 import { readObsidianExcalidrawMarkdown, toObsidianExcalidrawMarkdown } from '../../../../src/nebula/excalidraw/obsidianMarkdown';

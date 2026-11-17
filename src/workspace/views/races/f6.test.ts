@@ -1,7 +1,7 @@
 // Round 4, F6: a write carried by another tab's rename counts as this session's own,
 // but a real change made elsewhere after that rename must still be a conflict.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import hexagonText from '../../../../sketches/workspace/assets/winter-hexagon.excalidraw?raw';
+import hexagonText from '../../../../e2e/assets/images/winter-hexagon.excalidraw?raw';
 import { MemoryFileStore } from '../../../../src/files/memoryStore';
 import type { FileStore } from '../../../../src/files/types';
 import { readObsidianExcalidrawMarkdown, toObsidianExcalidrawMarkdown } from '../../../../src/nebula/excalidraw/obsidianMarkdown';

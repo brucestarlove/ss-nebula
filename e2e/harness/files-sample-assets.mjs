@@ -122,7 +122,7 @@ function legendSvg() {
 }
 
 function chartHtml() {
-  const font = readFileSync(resolve('sketches/workspace/fonts/mona-sans.woff2')).toString('base64');
+  const font = readFileSync(resolve('e2e/assets/fonts/mona-sans.woff2')).toString('base64');
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Star chart — October: Orion and the winter hexagon</title><style>
   @font-face { font-family: 'Mona Sans'; src: url(data:font/woff2;base64,${font}) format('woff2'); font-weight: 200 900; }
   @page { size: A4 landscape; margin: 0; }
@@ -173,7 +173,7 @@ function chartHtml() {
 const browser = await chromium.launch();
 try {
   // The night export is light ink on nothing: give it the chart's night sky.
-  const svg = readFileSync(resolve('sketches/workspace/assets/winter-hexagon-night.svg')).toString('base64');
+  const svg = readFileSync(resolve('e2e/assets/images/winter-hexagon-night.svg')).toString('base64');
   const sketch = await browser.newPage({ viewport: { width: 1106, height: 781 }, deviceScaleFactor: 1 });
   await sketch.setContent(
     `<!doctype html><html><body style="margin:0;background:#0e1430"><img alt="" width="1106" height="781" style="display:block" src="data:image/svg+xml;base64,${svg}"></body></html>`,

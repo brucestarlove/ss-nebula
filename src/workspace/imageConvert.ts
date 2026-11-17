@@ -325,6 +325,11 @@ export async function convertImages(store: FileStore, paths: readonly string[], 
   }
 }
 
+/** The files a conversion replaced under a new name: what links to the old names have to follow. */
+export function replacedMoves(outcomes: readonly ConvertOutcome[]): Array<{ from: string; to: string }> {
+  return outcomes.flatMap((outcome) => (outcome.status === 'converted' && outcome.replaced && outcome.to !== outcome.path ? [{ from: outcome.path, to: outcome.to }] : []));
+}
+
 /** The status line's words once a conversion is done. */
 export function describeConversions(outcomes: readonly ConvertOutcome[], options: { folder?: boolean } = {}): string {
   const converted = outcomes.filter((outcome) => outcome.status === 'converted');

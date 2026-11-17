@@ -30,7 +30,16 @@ export function EmbedView({ embed, links }: { embed: EmbedLine; links: EditorLin
   const file = embedFile(embed, links);
   const name = embedName(embed);
   const fallback = file ? (
-    <a role="link" tabIndex={0} className="ws-wikilink" title={file.path} onClick={() => links.open(file.path)}>
+    <a
+      role="link"
+      tabIndex={0}
+      className="ws-wikilink"
+      title={file.path}
+      onClick={() => links.open(file.path)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') links.open(file.path);
+      }}
+    >
       {name}
     </a>
   ) : (

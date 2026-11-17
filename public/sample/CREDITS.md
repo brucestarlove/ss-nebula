@@ -4,8 +4,8 @@ Nebula fetches these files when it makes the Night Sky sample project (`src/file
 
 | File | In the project as | Made from | Licence |
 |---|---|---|---|
-| `winter-hexagon.png` | Photos/Winter hexagon.png | A render of the sketch `sketches/workspace/assets/winter-hexagon-night.svg`, Nebula's own Excalidraw drawing, on a night-sky background. Rendered with Playwright's Chromium by `e2e/harness/files-sample-assets.mjs`. | AGPL-3.0, like the rest of this repository |
-| `star-chart.pdf` | Charts/Star chart — October.pdf | A star chart drawn in HTML and SVG and printed to PDF with Playwright's Chromium (`page.pdf()`) by `e2e/harness/files-sample-assets.mjs`. Star positions (ICRS, epoch J2000) and V magnitudes from SIMBAD (CDS, Strasbourg, <https://simbad.cds.unistra.fr>), queried 2026-10-22; positions and magnitudes are facts, credited here as courtesy. Text set in Mona Sans (SIL Open Font License 1.1, see `sketches/workspace/fonts/LICENSE-mona-sans.txt`), embedded as a subset, as that licence allows. | AGPL-3.0, like the rest of this repository |
+| `winter-hexagon.png` | Photos/Winter hexagon.png | A render of the sketch `e2e/assets/images/winter-hexagon-night.svg`, Nebula's own Excalidraw drawing, on a night-sky background. Rendered with Playwright's Chromium by `e2e/harness/files-sample-assets.mjs`. | AGPL-3.0, like the rest of this repository |
+| `star-chart.pdf` | Charts/Star chart — October.pdf | A star chart drawn in HTML and SVG and printed to PDF with Playwright's Chromium (`page.pdf()`) by `e2e/harness/files-sample-assets.mjs`. Star positions (ICRS, epoch J2000) and V magnitudes from SIMBAD (CDS, Strasbourg, <https://simbad.cds.unistra.fr>), queried 2026-10-22; positions and magnitudes are facts, credited here as courtesy. Text set in Mona Sans (SIL Open Font License 1.1, see `e2e/assets/fonts/LICENSE-mona-sans.txt`), embedded as a subset, as that licence allows. | AGPL-3.0, like the rest of this repository |
 
 The facts in the notes come from:
 

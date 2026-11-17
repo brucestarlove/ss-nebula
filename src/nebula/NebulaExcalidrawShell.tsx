@@ -1,6 +1,7 @@
 import { CaptureUpdateAction, Excalidraw, useHandleLibrary } from '@excalidraw/excalidraw';
+import { elementsWithTextLinks } from './excalidraw/textLinks';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import type { LibraryItems, UIAppState } from '@excalidraw/excalidraw/types';
+import type { ExcalidrawProps, LibraryItems, UIAppState } from '@excalidraw/excalidraw/types';
 import type { NebulaContext, NebulaContextInput } from './context';
 import { resolveNebulaContext } from './context';
 import {
@@ -81,6 +82,14 @@ export type NebulaExcalidrawShellProps = {
    * no theme or background state. Defaults to `true`: the full shell.
    */
   chrome?: boolean;
+  /** Called when an element's link is clicked (Excalidraw's `onLinkOpen`):
+   * calling `event.preventDefault()` keeps Excalidraw from opening it as a web
+   * address. Nebula's canvas view opens `[[links]]` in the project with it. */
+  onLinkOpen?: ExcalidrawProps['onLinkOpen'];
+  /** A `[[link]]` written in a text element becomes its link once the text is
+   * no longer being edited, as Obsidian Excalidraw does (excalidraw/textLinks.ts).
+   * Off by default: it writes to the drawing. */
+  linksFromText?: boolean;
 };
 
 function sanitizeAppState(appState: ExcalidrawScene['appState'] = {}): ExcalidrawScene['appState'] {
@@ -272,7 +281,7 @@ function loadErrorMessage(error: unknown): string {
 
 /** Everything but the chrome: the scene, persistence, libraries, gestures and
  * the Excalidraw element itself. */
-function useNebulaCanvas({ context: contextInput, store, onReady, chrome = true }: NebulaExcalidrawShellProps, resolved: ResolvedTheme) {
+function useNebulaCanvas({ context: contextInput, store, onReady, chrome = true, onLinkOpen, linksFromText = false }: NebulaExcalidrawShellProps, resolved: ResolvedTheme) {
   const baseContext = useMemo(() => resolveNebulaContext(contextInput), [contextInput]);
   const sceneStore = useMemo(() => store || createLocalStorageSceneStore(), [store]);
   const [activeCanvasId, setActiveCanvasId] = useState(baseContext.canvasId);
@@ -404,6 +413,19 @@ function useNebulaCanvas({ context: contextInput, store, onReady, chrome = true 
 
   const handleChange = useCallback(
     (elements: readonly unknown[], appState: unknown, files: unknown) => {
+      // [[links]] in text become links once the text is left (not while it is typed):
+      // the scene is updated, and its own change event saves it.
+      if (linksFromText && apiRef.current?.updateScene && !(appState as { editingTextElement?: unknown } | null)?.editingTextElement) {
+        const changed = elementsWithTextLinks(elements as readonly ExcalidrawScene['elements'][number][]);
+        if (changed.length > 0) {
+          const byId = new Map(changed.map((element) => [element.id, element]));
+          apiRef.current.updateScene({
+            elements: (elements as ExcalidrawScene['elements']).map((element) => byId.get(element.id) ?? element),
+            captureUpdate: CaptureUpdateAction.EVENTUALLY,
+          });
+          return;
+        }
+      }
       const excalidrawElements = toExcalidrawElements(elements);
       const nextAppState = sanitizeAppState(toExcalidrawRecord(appState)) || {};
       saveDocument(
@@ -417,7 +439,7 @@ function useNebulaCanvas({ context: contextInput, store, onReady, chrome = true 
         }),
       );
     },
-    [saveDocument],
+    [saveDocument, linksFromText],
   );
 
   const handleApi = useCallback((api: unknown) => {
@@ -795,6 +817,7 @@ function useNebulaCanvas({ context: contextInput, store, onReady, chrome = true 
         name={document.name}
         libraryReturnUrl={createLibraryReturnUrl()}
         UIOptions={{ canvasActions: { loadScene: false, saveToActiveFile: false } }}
+        onLinkOpen={onLinkOpen}
       />
     </div>
   ) : (

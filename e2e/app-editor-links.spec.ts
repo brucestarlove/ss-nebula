@@ -398,6 +398,8 @@ test('an edited note is about as long as the read one: blank lines are the pageâ
   const panel = await page.locator('.cm-line.ws-cm-code').evaluateAll((lines) => lines.map((element) => element.getBoundingClientRect().height));
   expect(panel).toHaveLength(3);
   expect(Math.abs(panel[0] - panel[2])).toBeLessThan(2);
+  // A table away from the cursor is drawn as a table (2.0.2): a click on a cell shows its source.
+  await page.locator('[data-testid="note-editor"] .ws-cm-table-block').getByText('M42').click();
   const tableHead = await page.locator('.cm-line.ws-cm-table-head .ws-cm-pipe').first().evaluate((element) => getComputedStyle(element).fontWeight);
   expect(tableHead).toBe('400');
 });

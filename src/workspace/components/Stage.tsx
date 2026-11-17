@@ -1,9 +1,12 @@
 import { Component, Suspense, useEffect, useMemo, useRef, type ComponentType, type ErrorInfo, type ReactNode } from 'react';
 import type { FileEntry, FileKind, FileStore, FileViewProps } from '../../files/types';
-import type { Heading } from '../outline';
+import { occurrences, type Heading } from '../outline';
+import { BacklinksPanel } from './BacklinksPanel';
+import { TagsPanel } from './TagsPanel';
 import { ViewActionsContext, type ViewActions } from '../views/shared/viewActions';
 import { Button } from './Button';
-import { findHeading, HEADING_JUMP_MS, type HeadingJump } from './headings';
+import { findHeading, findJump, HEADING_JUMP_MS, type HeadingJump } from './headings';
+import { hasEditor, jumpInEditor, useReadingHeading } from './outlineFollow';
 import { prefersReducedMotion } from './ui';
 
 class ViewBoundary extends Component<{ children: ReactNode; name: string }, { error: Error | null }> {
@@ -84,7 +87,7 @@ export function Stage({ viewFor, projectId, store, entry, kind, labelledBy, empt
     const stage = document.getElementById('ws-stage');
     if (!stage) return undefined;
     const attempt = () => {
-      const target = findHeading(stage, jump.heading);
+      const target = findJump(stage, jump);
       if (target) scrollToHeading(target);
       return target !== null;
     };
@@ -121,18 +124,39 @@ export function Stage({ viewFor, projectId, store, entry, kind, labelledBy, empt
   );
 }
 
-/** Scrolls the stage to the nth heading with this text, if the view drew one. */
+/** Scrolls the stage to the nth heading with this text, if the view drew one; in the editor, puts the cursor on its line. */
 function jumpTo(heading: Heading, nth: number) {
   const stage = document.getElementById('ws-stage');
-  const target = stage ? findHeading(stage, heading.text, nth, true) : null;
+  if (!stage) return;
+  // An editor draws no <h2>s: its headings are lines of its text.
+  if (hasEditor(stage)) {
+    void jumpInEditor(stage, heading, nth);
+    return;
+  }
+  const target = findHeading(stage, heading.text, nth, true);
   if (target) scrollToHeading(target);
 }
 
-type OutlineProps = { headings: Heading[] | null; isNote: boolean };
+type OutlineProps = { headings: Heading[] | null; isNote: boolean; /** The active tab's file. */ path?: string | null };
 
 /** The right panel: the active note's outline. Backlinks arrive with search. */
-export function OutlinePanel({ headings, isNote }: OutlineProps) {
-  const seen = new Map<string, number>();
+export function OutlinePanel({ headings, isNote, path = null }: OutlineProps) {
+  const nths = headings ? occurrences(headings) : [];
+  const current = useReadingHeading(isNote ? path : null, isNote ? headings : null);
+  const list = useRef<HTMLUListElement>(null);
+
+  // A long outline scrolls inside the panel, and the heading being read stays in it.
+  // Not while focus is in the outline: someone moving through it with the keys isn't moved from under them.
+  useEffect(() => {
+    const container = list.current;
+    const marked = container?.querySelector<HTMLElement>('[aria-current="location"]');
+    if (!container || !marked || container.contains(document.activeElement)) return;
+    const top = marked.offsetTop;
+    if (top < container.scrollTop || top + marked.offsetHeight > container.scrollTop + container.clientHeight) {
+      container.scrollTo({ top: top - container.clientHeight / 3, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+    }
+  }, [current]);
+
   return (
     <aside id="ws-panel" className="ws-panel" aria-label="Outline">
       <section>
@@ -142,19 +166,19 @@ export function OutlinePanel({ headings, isNote }: OutlineProps) {
         ) : headings === null ? null : headings.length === 0 ? (
           <p className="ws-panel-empty">This note has no headings yet.</p>
         ) : (
-          <ul className="ws-outline">
-            {headings.map((heading, index) => {
-              const nth = seen.get(heading.text) ?? 0;
-              seen.set(heading.text, nth + 1);
-              return (
-                <li key={`${index}:${heading.text}`} data-depth={heading.depth > 1 ? Math.min(heading.depth, 6) : undefined}>
-                  <Button onClick={() => jumpTo(heading, nth)}>{heading.text}</Button>
-                </li>
-              );
-            })}
+          <ul className="ws-outline" ref={list}>
+            {headings.map((heading, index) => (
+              <li key={`${index}:${heading.text}`} data-depth={heading.depth > 1 ? Math.min(heading.depth, 6) : undefined}>
+                <Button aria-current={current === index ? 'location' : undefined} onClick={() => jumpTo(heading, nths[index])}>
+                  {heading.text}
+                </Button>
+              </li>
+            ))}
           </ul>
         )}
       </section>
+      <BacklinksPanel path={path} />
+      <TagsPanel path={path} />
     </aside>
   );
 }
@@ -163,6 +187,8 @@ type StatusLineProps = {
   ephemeral: boolean;
   /** The open project lives in a folder on this computer. */
   inFolder?: boolean;
+  /** A server project's server ('vps-starscape'): saved there. */
+  place?: string | null;
   /** Its folder can't be opened now: nothing is being saved. */
   folderClosed?: boolean;
   saving: boolean;
@@ -172,8 +198,8 @@ type StatusLineProps = {
 
 /** Where the files are kept, whether they're saved, the view's own status
  * ('76 words'), and the signature. */
-export function StatusLine({ ephemeral, inFolder = false, folderClosed = false, saving, status, message }: StatusLineProps) {
-  const kept = folderClosed ? 'The folder isn’t open' : inFolder ? 'Saved on this computer' : ephemeral ? 'Kept in this tab only' : 'Saved in this browser';
+export function StatusLine({ ephemeral, inFolder = false, place = null, folderClosed = false, saving, status, message }: StatusLineProps) {
+  const kept = folderClosed ? 'The folder isn’t open' : place ? `Saved on ${place}` : inFolder ? 'Saved on this computer' : ephemeral ? 'Kept in this tab only' : 'Saved in this browser';
   return (
     <footer className="ws-status">
       <span className="ws-store-dot" data-ephemeral={ephemeral ? '' : undefined} data-attention={folderClosed ? '' : undefined} aria-hidden="true" />

@@ -79,7 +79,7 @@ describe('Help', () => {
     for (const step of ['Projects', 'Files', 'Tabs', 'Canvases', 'Images', 'Agent sessions', 'Links']) expect(text).toContain(step);
     // Converting images is found by right-clicking, so Help says it.
     expect(text).toContain('Right-click an image, or a folder of them, to turn it into WebP, JPEG or PNG, or make it smaller.');
-    expect(text).toContain('Search, or jump to a file');
+    expect(text).toContain('Search notes and canvases, or jump to a file');
     expect(text).toContain('Edit or read a note');
   });
 

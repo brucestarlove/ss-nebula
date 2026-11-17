@@ -23,9 +23,17 @@ export function plainHeading(raw: string): string {
     .trim();
 }
 
+/** A heading and where it's written: its 0-based line (an underlined heading's is its text's line). */
+export type HeadingAt = Heading & { line: number };
+
 export function extractOutline(markdown: string): Heading[] {
+  return extractOutlineLines(markdown).map(({ depth, text }) => ({ depth, text }));
+}
+
+/** The outline with each heading's line, for finding it in the editor's text. */
+export function extractOutlineLines(markdown: string): HeadingAt[] {
   const lines = markdown.replace(/\r\n?/g, '\n').split('\n');
-  const headings: Heading[] = [];
+  const headings: HeadingAt[] = [];
   let i = 0;
 
   // Front matter: a block between --- lines at the very top.
@@ -36,6 +44,7 @@ export function extractOutline(markdown: string): Heading[] {
 
   let fence: string | null = null;
   let previous: string | null = null; // the last paragraph line, for underlines
+  let previousLine = 0;
 
   for (; i < lines.length; i += 1) {
     const line = lines[i];
@@ -53,7 +62,7 @@ export function extractOutline(markdown: string): Heading[] {
     const atx = ATX.exec(line);
     if (atx) {
       const text = plainHeading(atx[2] ?? '');
-      if (text) headings.push({ depth: atx[1].length, text });
+      if (text) headings.push({ depth: atx[1].length, text, line: i });
       previous = null;
       continue;
     }
@@ -61,13 +70,39 @@ export function extractOutline(markdown: string): Heading[] {
     const underline = UNDERLINE.exec(line);
     if (underline && previous !== null) {
       const text = plainHeading(previous);
-      if (text) headings.push({ depth: underline[1][0] === '=' ? 1 : 2, text });
+      if (text) headings.push({ depth: underline[1][0] === '=' ? 1 : 2, text, line: previousLine });
       previous = null;
       continue;
     }
 
     previous = line.trim() === '' || BLOCK_START.test(line) ? null : line;
+    previousLine = i;
   }
 
   return headings;
+}
+
+/** For each heading, how many before it read the same: how the stage tells equal headings apart. */
+export function occurrences(headings: readonly Heading[]): number[] {
+  const seen = new Map<string, number>();
+  return headings.map((heading) => {
+    const nth = seen.get(heading.text) ?? 0;
+    seen.set(heading.text, nth + 1);
+    return nth;
+  });
+}
+
+/**
+ * The heading being read: the last one whose top has reached the reading
+ * line, given each heading's top (null for one that isn't drawn). Scrolled
+ * to the end, where a short last section never gets near the line, it's the
+ * last one in view (`bottom` is the bottom of the view).
+ */
+export function readingIndex(tops: ReadonlyArray<number | null>, line: number, atEnd = false, bottom = Infinity): number | null {
+  let found: number | null = null;
+  for (let index = 0; index < tops.length; index += 1) {
+    const top = tops[index];
+    if (top !== null && (top <= line || (atEnd && top < bottom))) found = index;
+  }
+  return found;
 }

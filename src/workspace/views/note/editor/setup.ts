@@ -4,11 +4,14 @@ import { Compartment, Prec, type Extension } from '@codemirror/state';
 import { EditorView, keymap } from '@codemirror/view';
 import { basicSetup } from 'codemirror';
 import { nebulaEditorTheme, nebulaNoteHighlighting } from '../../code/codeTheme';
+import { editorNames, escapeLeaves, keyboardFocus } from './accessibility';
 import { editingHelpers } from './commands';
 import { editorEmbeds } from './embeds';
 import { wikilinkCompletion } from './completion';
 import { livePreview, openWebLink, toggleTaskAt, webLinkAt } from './livePreview';
 import { followLink, wikilinkSyntax, wikiNodeAt } from './wikilinks';
+import { editorTables } from './tables';
+import { editorTags } from './tags';
 
 export type SetupOptions = {
   /** The editor's accessible name. */
@@ -18,6 +21,12 @@ export type SetupOptions = {
   source?: boolean;
   /** Where the mode lives, so NoteEditor can switch it without a new editor. */
   mode?: Compartment;
+  /** Where the name lives, so NoteEditor can change it with the mode. */
+  names?: Compartment;
+  /** The id of what describes the editor (its keys), for assistive technology. */
+  describedBy?: string;
+  /** Escape: move the focus out of the editor to the page's toolbar. False when there's nowhere to go. */
+  leave?: () => boolean;
 };
 
 /**
@@ -28,7 +37,7 @@ export type SetupOptions = {
  * editor, its undo history and its selection.
  */
 export function modeExtensions(source: boolean): Extension {
-  return source ? [] : [livePreview, editorEmbeds];
+  return source ? [] : [livePreview, editorEmbeds, editorTables, editorTags];
 }
 
 /**
@@ -36,7 +45,7 @@ export function modeExtensions(source: boolean): Extension {
  * the links compartment, the change listener). One place, so a test can build
  * the same editor state without a DOM.
  */
-export function noteEditorSetup({ label, readOnly, source = false, mode = new Compartment() }: SetupOptions): Extension {
+export function noteEditorSetup({ label, readOnly, source = false, mode = new Compartment(), names = new Compartment(), describedBy, leave }: SetupOptions): Extension {
   return [
     basicSetup,
     // GFM (tables, task lists, strikethrough, autolinks); code fences take
@@ -72,7 +81,9 @@ export function noteEditorSetup({ label, readOnly, source = false, mode = new Co
         },
       ]),
     ),
-    EditorView.contentAttributes.of({ 'aria-label': label, ...(readOnly ? { 'aria-readonly': 'true' } : {}) }),
+    names.of(editorNames(label, readOnly, describedBy)),
+    keyboardFocus,
+    escapeLeaves(leave ?? (() => false)),
     EditorView.editable.of(!readOnly),
   ];
 }

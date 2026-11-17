@@ -1,5 +1,5 @@
 /* Nebula workspace. Ported from the approved round-2 sketch
- * (sketches/workspace/sketch.css); the ws-* class names are kept.
+ * (e2e/assets/sketch.css); the ws-* class names are kept.
  *
  * It extends the real ss-ui layers the app installs (@starlove/ui 3.3.3:
  * tokens, base, backgrounds, the sidebar template ss-docs uses, and the
@@ -3116,4 +3116,371 @@
 .ws-np-where .segmented-option {
   flex: 1 1 auto;
   justify-content: center;
+}
+
+/* Linked from: the project index's search in quick open, the right
+ * panel's Linked from, and the line a search or a link opens at. */
+
+/* A hit in a note or a canvas: its name, and the line the words are on. */
+.ws-result[data-hit] {
+  align-items: flex-start;
+}
+
+.ws-result[data-hit] > .g {
+  margin-top: 0.15rem;
+}
+
+.ws-hit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.ws-hit-name,
+.ws-hit-line {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-hit-line {
+  font-size: 0.8rem;
+  color: var(--ws-muted);
+}
+
+.ws-result[data-hit] small {
+  margin-top: 0.1rem;
+}
+
+/* While the project is first read: said once, quietly, under the results. */
+.ws-palette-note {
+  margin: 0;
+  padding: 0 1.1rem 0.55rem;
+  font-size: 0.76rem;
+  color: var(--ws-muted);
+}
+
+/* The line a search hit or a Linked from line opened at, marked for a moment. */
+.ws-stage [data-ws-found] {
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--accent) 16%, transparent);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--accent) 16%, transparent);
+  animation: ws-found 1.8s ease-out forwards;
+}
+
+@keyframes ws-found {
+  0%,
+  45% {
+    background: color-mix(in oklab, var(--accent) 16%, transparent);
+    box-shadow: 0 0 0 4px color-mix(in oklab, var(--accent) 16%, transparent);
+  }
+
+  100% {
+    background: transparent;
+    box-shadow: 0 0 0 4px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ws-stage [data-ws-found] {
+    animation: none;
+  }
+}
+
+/* The right panel's Linked from: each file that links here, then its lines,
+ * as the Outline draws its headings. */
+.ws-linked h3 {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+}
+
+.ws-linked-count {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  opacity: 0.7;
+}
+
+.ws-linked-list,
+.ws-linked-lines {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ws-linked-list {
+  gap: 0.35rem;
+  font-size: 0.84rem;
+}
+
+.ws-linked-lines {
+  gap: 1px;
+}
+
+.ws-linked-file,
+.ws-linked-line,
+.ws-linked-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  padding: 0.28rem 0.5rem;
+  border-radius: 7px;
+  color: var(--ink);
+  text-align: start;
+}
+
+.ws-linked-file .g {
+  flex: 0 0 auto;
+  color: var(--ws-muted);
+}
+
+.ws-linked-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-linked-file small {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-inline-start: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.72rem;
+  color: var(--ws-muted);
+}
+
+/* A line: up to three lines of it, under its file, the link's words marked. */
+.ws-linked-line {
+  display: -webkit-box;
+  padding-inline-start: 1.25rem;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--ws-muted);
+  overflow-wrap: anywhere;
+}
+
+.ws-linked-line mark {
+  border-radius: 3px;
+  background: color-mix(in oklab, var(--accent) 14%, transparent);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.ws-linked-file:hover,
+.ws-linked-line:hover,
+.ws-linked-toggle:hover {
+  background: var(--subtle-bg);
+}
+
+.ws-linked-line:hover {
+  color: var(--ink);
+}
+
+.ws-linked button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Tags */
+
+/* A tag that opens search: the page's pill (.ws-tag), as a button. */
+.ws-tag-button {
+  display: inline-block;
+  border: 0;
+  font-family: inherit;
+  line-height: inherit;
+  cursor: pointer;
+  transition: background-color 140ms var(--ws-ease), box-shadow 140ms var(--ws-ease);
+}
+
+.ws-tag-button:hover {
+  box-shadow: inset 0 0 0 1px var(--accent-border);
+}
+
+.ws-tag-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Not linked yet: closed until asked for. */
+.ws-linked-more {
+  margin-top: 0.6rem;
+}
+
+.ws-linked-toggle {
+  font-size: 0.78rem;
+  color: var(--ws-muted);
+}
+
+.ws-linked-toggle .g {
+  width: 12px;
+  height: 12px;
+  transition: rotate 0.16s ease;
+}
+
+.ws-linked-toggle[aria-expanded="true"] .g {
+  rotate: 90deg;
+}
+
+.ws-linked-more > div {
+  margin-top: 0.35rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ws-linked-toggle .g {
+    transition: none;
+  }
+}
+
+.ws-tags {
+  display: flex;
+  flex-direction: column;
+}
+
+.ws-taglist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0 0.5rem;
+  list-style: none;
+}
+
+/* The project's tags, folded under the note's own. */
+.ws-alltags {
+  margin-top: 0.85rem;
+  font-size: 0.84rem;
+}
+
+.ws-alltags > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.28rem 0.5rem;
+  border-radius: 7px;
+  color: var(--ws-muted);
+  cursor: pointer;
+  list-style: none;
+}
+
+.ws-alltags > summary::-webkit-details-marker {
+  display: none;
+}
+
+.ws-alltags > summary:hover {
+  background: var(--subtle-bg);
+  color: var(--ink);
+}
+
+.ws-alltags > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.ws-alltags-chevron {
+  width: 12px;
+  height: 12px;
+  transition: transform 200ms var(--ws-ease);
+}
+
+.ws-alltags[open] > summary .ws-alltags-chevron {
+  transform: rotate(90deg);
+}
+
+.ws-alltags-total,
+.ws-tagrow-count {
+  margin-inline-start: auto;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ws-muted);
+}
+
+.ws-alltags > .ws-panel-empty {
+  margin-top: 0.35rem;
+}
+
+.ws-tagtree {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0.25rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Nested tags sit one step in, under their parent, on a quiet guide line. */
+.ws-tagtree .ws-tagtree {
+  margin: 2px 0 0 0.85rem;
+  padding-inline-start: 0.35rem;
+  border-inline-start: 1px solid var(--line);
+}
+
+.ws-tagrow {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.24rem 0.5rem;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.ws-tagrow-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-tagrow-name::before {
+  content: '#';
+  margin-inline-end: 1px;
+  color: var(--ws-tag-ink);
+}
+
+.ws-tagrow:hover {
+  background: var(--subtle-bg);
+}
+
+.ws-tagrow:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* The outline follows you: the heading being read is marked; a long outline scrolls inside the panel. */
+.ws-outline {
+  position: relative;
+  max-height: min(24rem, 50vh);
+  margin: -2px;
+  padding: 2px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.ws-outline button {
+  transition: background-color 140ms var(--ws-ease), color 140ms var(--ws-ease), box-shadow 140ms var(--ws-ease);
+}
+
+.ws-outline li button[aria-current="location"] {
+  background: var(--subtle-bg);
+  box-shadow: inset 2px 0 0 var(--accent);
+  color: var(--ink);
+  font-weight: 560;
 }
