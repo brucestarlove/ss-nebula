@@ -21,6 +21,7 @@
 // watched folder by folder on Linux (hidden names and node_modules cost nothing), natively recursive
 // where the system does that (macOS, Windows).
 import { randomBytes, createHash } from 'node:crypto'
+import { pipeline } from 'node:stream/promises'
 import { createReadStream, constants as FS, watch as fsWatch } from 'node:fs'
 import { link, lstat, mkdir, open, readdir, readFile, realpath, rename, rm, unlink, writeFile } from 'node:fs/promises'
 import { hostname } from 'node:os'
@@ -240,6 +241,7 @@ class Project {
     this.subscribers = new Set()
     this.queue = Promise.resolve()
     this.recentPaths = new Map()
+    this.dirs = new Set()
     /** One native recursive watcher (macOS, Windows), or one per served folder (relative path, '' for
      * the root; Linux). */
     this.watcher = null
@@ -274,12 +276,39 @@ class Project {
   }
 
   emit(change, by = null) {
+    this.noteFolders(change)
     this.seq += 1
     const event = { seq: this.seq, change, by }
     this.ring.push(event)
     if (this.ring.length > RING) this.ring.shift()
     for (const send of this.subscribers) send(event)
     return this.cursor
+  }
+
+  /**
+   * The folders known to be there, so a folder told of again is never announced as new. macOS's
+   * recursive watcher (FSEvents) names a folder whenever something in it changes; without this
+   * every rename inside `Briefs` said `mkdir Briefs` (Bruce's 2.0.2 publish run on his Mac).
+   */
+  noteFolders(change) {
+    const ancestors = (path) => {
+      const parts = path.split('/')
+      for (let i = 1; i < parts.length; i += 1) this.dirs.add(parts.slice(0, i).join('/'))
+    }
+    const drop = (path) => {
+      for (const dir of [...this.dirs]) if (isInside(dir, path)) this.dirs.delete(dir)
+    }
+    if (change.type === 'mkdir') {
+      ancestors(change.path)
+      this.dirs.add(change.path)
+    } else if (change.type === 'write') ancestors(change.path)
+    else if (change.type === 'remove') drop(change.path)
+    else if (change.type === 'rename') {
+      const moved = [...this.dirs].filter((dir) => isInside(dir, change.from))
+      drop(change.from)
+      for (const dir of moved) this.dirs.add(change.to + dir.slice(change.from.length))
+      ancestors(change.to)
+    }
   }
 
   /** What this server just did to a path: 'wrote' a file, 'made' a folder, 'moved'
@@ -712,6 +741,13 @@ export function createFilesApi({
   }
 
   function startWatch(project) {
+    // The folders already there, so the first event inside one doesn't announce it as new.
+    list(project).then(
+      (entries) => {
+        for (const entry of entries) if (entry.type === 'dir') project.dirs.add(entry.path)
+      },
+      () => {},
+    )
     if (watchMode === 'recursive') {
       try {
         project.watcher = fsWatch(project.dir, { recursive: true, persistent: false }, (_type, filename) => {
@@ -848,7 +884,10 @@ export function createFilesApi({
       if (touched && Number(st.mtimeMs) <= touched) return
       project.emit({ type: 'write', path })
     } else if (st?.isDirectory()) {
-      if (project.touchedAt(path, ['made', 'moved'])) return
+      if (project.dirs.has(path) || project.touchedAt(path, ['made', 'moved'])) {
+        project.dirs.add(path)
+        return
+      }
       project.emit({ type: 'mkdir', path })
     } else if (!st) {
       if (project.touchedAt(path, ['gone'])) return
@@ -997,9 +1036,10 @@ export function createFilesApi({
         await handle.close()
         return res.end()
       }
+      // pipeline destroys the stream, and so closes the file, when the reader goes away mid-file;
+      // stream.pipe left it open for the garbage collector, which newer Node treats as an error.
       const stream = createReadStream(null, { fd: handle, autoClose: true })
-      stream.pipe(res)
-      return new Promise((resolveDone) => stream.on('close', resolveDone))
+      return pipeline(stream, res).catch(() => {})
     }
     if (action === 'file' && req.method === 'PUT') {
       const result = await write(req, project, path, clientId)
