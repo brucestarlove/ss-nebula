@@ -1,6 +1,7 @@
 /** Small, pure formatters for the status line and the info card. English
  * copy, like the rest of Nebula's interface. */
 import { formatBytes as formatSize } from '../../../files/persist';
+import type { Actor } from '../../../files/types';
 
 /** '820 KB', '1.2 MB' (src/files/persist.ts's formatBytes); empty when the
  * size isn't known. */
@@ -42,21 +43,47 @@ const DAY = 24 * HOUR;
 const DAY_MONTH = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' });
 const DAY_MONTH_YEAR = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 
-/** The note's meta line: 'Edited 4 min ago', 'Edited yesterday', 'Edited 4 Jul'. */
-export function formatEdited(modified: number | undefined, now: number = Date.now()): string {
-  if (modified === undefined || !Number.isFinite(modified)) return '';
-  const age = Math.max(0, now - modified);
-  if (age < MINUTE) return 'Edited just now';
-  if (age < HOUR) return `Edited ${Math.floor(age / MINUTE)} min ago`;
+/** When, as the edited line says it: 'just now', '4 min ago', 'yesterday', '4 Jul'. */
+export function formatWhen(time: number | undefined, now: number = Date.now()): string {
+  if (time === undefined || !Number.isFinite(time)) return '';
+  const age = Math.max(0, now - time);
+  if (age < MINUTE) return 'just now';
+  if (age < HOUR) return `${Math.floor(age / MINUTE)} min ago`;
   if (age < DAY) {
     const hours = Math.floor(age / HOUR);
-    return `Edited ${hours} ${hours === 1 ? 'hour' : 'hours'} ago`;
+    return `${hours} ${hours === 1 ? 'hour' : 'hours'} ago`;
   }
   const days = Math.floor(age / DAY);
-  if (days === 1) return 'Edited yesterday';
-  if (days < 7) return `Edited ${days} days ago`;
-  const sameYear = new Date(modified).getFullYear() === new Date(now).getFullYear();
-  return `Edited ${(sameYear ? DAY_MONTH : DAY_MONTH_YEAR).format(modified)}`;
+  if (days === 1) return 'yesterday';
+  if (days < 7) return `${days} days ago`;
+  const sameYear = new Date(time).getFullYear() === new Date(now).getFullYear();
+  return (sameYear ? DAY_MONTH : DAY_MONTH_YEAR).format(time);
+}
+
+/** Whether `actor` is the person using this app: the server's own record of them (`ServerInfo.you`)
+ * names them the same way, by type and id. */
+export function isYou(actor: Actor | undefined, you: Actor | undefined): boolean {
+  return actor !== undefined && you !== undefined && actor.type === you.type && actor.id === you.id;
+}
+
+/** Who, as the edited line says it: 'you', or the actor's name. */
+export function formatActor(actor: Actor, you?: Actor): string {
+  return isYou(actor, you) ? 'you' : actor.name || actor.id;
+}
+
+/** The note's meta line and the status line: 'Edited 4 min ago', 'Edited yesterday', 'Edited 4 Jul';
+ * with an actor (a server's listing names who wrote the file), 'Edited by Lear, 4 min ago' or
+ * 'Edited by you, 4 min ago'. Without one, the time alone. */
+export function formatEdited(modified: number | undefined, now: number = Date.now(), by?: Actor, you?: Actor): string {
+  const when = formatWhen(modified, now);
+  if (!when) return '';
+  return by ? `Edited by ${formatActor(by, you)}, ${when}` : `Edited ${when}`;
+}
+
+/** '5 Dec 2026'. */
+export function formatDay(ms: number | undefined): string {
+  if (ms === undefined || !Number.isFinite(ms)) return '';
+  return DAY_MONTH_YEAR.format(ms);
 }
 
 const DATE_TIME = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short' });

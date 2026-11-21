@@ -1,5 +1,6 @@
 import { compressToBase64, decompressFromBase64 } from 'lz-string';
 
+import { editEmbeddedFiles, type EmbeddedFilesEdit } from './embeddedFiles';
 import { normalizeExcalidrawScene, type ExcalidrawScene } from './scene';
 
 const FRONTMATTER = `---\n\nexcalidraw-plugin: parsed\ntags: [excalidraw]\n\n---`;
@@ -257,19 +258,6 @@ export function readObsidianExcalidrawMarkdown(value: string): ExcalidrawScene {
   return sceneFromBlock(block);
 }
 
-export function getObsidianExcalidrawInteropFilename(
-  boardSlug: string | undefined,
-  boardId: string,
-  canvasId: string,
-): string {
-  const safeBoard = (boardSlug || boardId)
-    .replace(/[^a-zA-Z0-9_-]/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '') || 'ss-nebula';
-  const safeCanvas = canvasId.replace(/[^a-zA-Z0-9_-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'main';
-  return `${safeBoard}-${safeCanvas}.excalidraw.md`;
-}
-
 const FENCE_LINE_RE = /^( {0,3})(`{3,}|~{3,})/;
 const SECTION_LINE_RE = /^( {0,3}#{1,2})( +(?:Drawing|Excalidraw Data|Text Elements|Element Links|Embedded Files|Markdown Images)[ \t]*)$/i;
 const ZERO_WIDTH_SPACE = '\u200B';
@@ -325,7 +313,16 @@ function drawingSection(scene: ExcalidrawScene, compressed: boolean): string {
     : `## Drawing\n\`\`\`json\n${json}\n\`\`\``;
 }
 
-export function toObsidianExcalidrawMarkdown(scene: ExcalidrawScene, options: { compressed?: boolean } = {}): string {
+/** How a drawing is written: its encoding, and the `## Embedded Files`
+ * lines its images by reference need (embeddedFiles.ts). */
+export type ObsidianWriteOptions = { compressed?: boolean; embedded?: EmbeddedFilesEdit };
+
+export function toObsidianExcalidrawMarkdown(scene: ExcalidrawScene, options: ObsidianWriteOptions = {}): string {
+  const written = freshDrawing(scene, options);
+  return options.embedded ? editEmbeddedFiles(written, options.embedded) : written;
+}
+
+function freshDrawing(scene: ExcalidrawScene, options: { compressed?: boolean }): string {
   const normalized = toObsidianCompatibleScene(scene);
   return `${FRONTMATTER}\n${OBSIDIAN_EXCALIDRAW_WARNING}\n\n\n# Excalidraw Data\n\n## Text Elements\n${textElementsBody(normalized)}%%\n${drawingSection(normalized, options.compressed !== false)}\n%%`;
 }
@@ -383,8 +380,10 @@ function elementIds(scene: ExcalidrawScene): string[] {
  * What it writes takes the file's line end (re-review R7): a CRLF file stays
  * CRLF throughout, with no bare LF in the parts made again.
  */
-export function updateObsidianExcalidrawMarkdown(original: string, scene: ExcalidrawScene, options: { compressed?: boolean } = {}): string {
-  const updated = updateWithLineFeeds(original, scene, options);
+export function updateObsidianExcalidrawMarkdown(original: string, scene: ExcalidrawScene, options: ObsidianWriteOptions = {}): string {
+  const rebuilt = updateWithLineFeeds(original, scene, options);
+  // The Embedded Files section is kept as it was but for the lines asked for.
+  const updated = options.embedded ? editEmbeddedFiles(rebuilt, options.embedded) : rebuilt;
   // A CRLF file has no bare LF (lineBreakOf), so only what was made again changes.
   return lineBreakOf(original) === '\r\n' ? updated.replace(/\r?\n/g, '\r\n') : updated;
 }
@@ -402,7 +401,7 @@ function updateWithLineFeeds(original: string, scene: ExcalidrawScene, options: 
   const block = findDrawingBlock(original);
   if (!block) {
     const compressed = options.compressed !== false;
-    if (original.trim() === '') return toObsidianExcalidrawMarkdown(scene, { compressed });
+    if (original.trim() === '') return freshDrawing(scene, { compressed });
     const head = withPluginKey(original).replace(/\s+$/, '');
     return `${head}\n\n# Excalidraw Data\n\n## Text Elements\n${textElementsBody(normalized)}%%\n${drawingSection(normalized, compressed)}\n%%`;
   }

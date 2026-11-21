@@ -46,13 +46,6 @@ describe('Nebula library collections', () => {
     expect(state.activeId).toBe(PERSONAL_LIBRARY_ID);
   });
 
-  it('migrates a legacy flat library into Personal on first load', () => {
-    localStorage.setItem(`nebula:excalidraw-library:${BOARD}`, JSON.stringify(items('a', 'b')));
-    const state = loadLibraryCollections(BOARD);
-    expect(state.collections).toHaveLength(1);
-    expect(getActiveCollection(state).items.map((i) => i.id)).toEqual(['a', 'b']);
-  });
-
   it('persists and reloads named collections, keeping Personal first', () => {
     const created = createCollection(loadLibraryCollections(BOARD), 'Icons', items('x')).state;
     saveLibraryCollections(BOARD, created);

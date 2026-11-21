@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Build the deployable Nebula site: the landing page at / and the local-first
-// app at /app. vercel.json routes them (2.0's
-// /p/ and 1.x's /b/ links redirect into /app), and `pnpm run dev:site`
+// app at /app. routes.json routes them (2.0's
+// /p/ links redirect into /app/p/, 1.x's /b/ links into /app), and `pnpm run dev:site`
 // previews the result with the same routing. `pnpm build` stays the
 // standalone app build used for local validation, with the app at /.
 //
@@ -63,4 +63,4 @@ if (!existsSync(licences) || !/@excalidraw\/excalidraw/.test(readFileSync(licenc
 
 console.log(`✓ site → ${SITE_DIR}`)
 console.log('  /      the landing page (site/)')
-console.log('  /app   the Nebula app (2.0’s /p/ and 1.x’s /b/ links redirect into it; see vercel.json)')
+console.log('  /app   the Nebula app (2.0’s /p/ links and 1.x’s /b/ links redirect into it; see routes.json)')

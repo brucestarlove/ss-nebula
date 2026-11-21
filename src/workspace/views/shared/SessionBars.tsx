@@ -1,5 +1,5 @@
 import { unreachableMessage, type TextSession, type TextSessionState } from './textSession';
-import { errorMessage } from './download';
+import { SaveFailure } from './SaveFailure';
 
 /** The small bars above an editable file: changed elsewhere, a failed save,
  * a file deleted elsewhere, a file that can only be read. */
@@ -42,10 +42,7 @@ export function SessionBars({ session, state, onDownload }: { session: TextSessi
   if (state.saveError !== undefined) {
     return (
       <div className="ws-conflict" role="alert">
-        <span className="ws-conflict-text">Couldn&rsquo;t save. {errorMessage(state.saveError)}</span>
-        <button type="button" className="ws-view-btn" data-no-arc onClick={() => void session.flush()}>
-          Try again
-        </button>
+        <SaveFailure error={state.saveError} onTryAgain={() => void session.flush()} />
       </div>
     );
   }

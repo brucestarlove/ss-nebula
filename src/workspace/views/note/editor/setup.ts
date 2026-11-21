@@ -35,9 +35,12 @@ export type SetupOptions = {
  * own highlighting (marks muted, words in ink; CodeEditor's code colours
  * muted every list). One compartment holds it, so switching keeps the
  * editor, its undo history and its selection.
+ *
+ * Tags are the one thing both modes share: the marks that make a #tag a link
+ * to search (tags.ts), so it looks and acts the same in either.
  */
 export function modeExtensions(source: boolean): Extension {
-  return source ? [] : [livePreview, editorEmbeds, editorTables, editorTags];
+  return source ? [editorTags] : [livePreview, editorEmbeds, editorTables, editorTags];
 }
 
 /**

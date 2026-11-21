@@ -5,12 +5,12 @@ import { cloudflareHeaders, cloudflareRedirects } from '../scripts/cloudflare-as
 import { resolveSiteHeaders, resolveSiteRequest } from '../serve-site.mjs'
 
 // nebula.starscape.app runs on Cloudflare Workers static assets (2026-10-25).
-// vercel.json stays the one source of routes and headers: serve-site.mjs reads
+// routes.json stays the one source of routes and headers: serve-site.mjs reads
 // it (the local preview, the tailnet copy), and scripts/cloudflare-assets.mjs
 // turns it into Cloudflare's _headers and _redirects. These tests hold the two
 // to the same answers.
 const root = resolve(import.meta.dirname, '..')
-const config = JSON.parse(readFileSync(join(root, 'vercel.json'), 'utf8'))
+const config = JSON.parse(readFileSync(join(root, 'routes.json'), 'utf8'))
 const built = new Set(['/index.html', '/app.html', '/favicon.ico', '/ss-nebula-32x32.png', '/ss-nebula-og.png', '/site.webmanifest', '/assets/index-abc123.js', '/fonts/Excalifont/Excalifont-Regular.woff2'])
 const exists = (pathname) => built.has(pathname)
 
@@ -70,7 +70,7 @@ function assetAt(pathname) {
   return { type: 'not-found' }
 }
 
-describe('Cloudflare _redirects from vercel.json', () => {
+describe('Cloudflare _redirects from routes.json', () => {
   const text = cloudflareRedirects(config, exists)
   const redirects = parseRedirects(text)
 
@@ -126,17 +126,17 @@ describe('Cloudflare _redirects from vercel.json', () => {
     }
   })
 
-  it('refuses a vercel.json rule it can’t translate, rather than dropping it', () => {
+  it('refuses a routes.json rule it can’t translate, rather than dropping it', () => {
     expect(() => cloudflareRedirects({ redirects: [{ source: '/a/:x/b', destination: '/', permanent: true }] }, exists)).toThrow(/can’t translate/)
     expect(() => cloudflareRedirects({ rewrites: [{ source: '/(.*)\\.md', destination: '/index.html' }] }, exists)).toThrow(/can’t translate/)
   })
 })
 
-describe('Cloudflare _headers from vercel.json', () => {
+describe('Cloudflare _headers from routes.json', () => {
   const text = cloudflareHeaders(config)
   const rules = parseHeaders(text)
 
-  it('sends every header vercel.json sends, for the same paths', () => {
+  it('sends every header routes.json sends, for the same paths', () => {
     const forPath = (pathname) => {
       const out = {}
       for (const rule of rules) {

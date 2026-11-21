@@ -4,18 +4,19 @@ import { Decoration, type DecorationSet, EditorView, keymap, ViewPlugin, type Vi
 import { searchForTag } from '../../../searchEvent';
 import { isApplePlatform } from '../../shared/hooks';
 import { INLINE_TAG } from '../markdown';
-import { frontmatterLines } from './livePreview';
+import { frontmatterLines, modifierHeld } from './livePreview';
 
 /**
- * `#tags` in the live preview: each one is marked as a tag (its
- * name in `data-tag`, a tooltip saying what a click does), and a Ctrl/⌘-click
- * on it, or Ctrl/⌘-Enter with the cursor in it, opens search for it, as the
- * same keys open a link (livePreview.ts).
+ * `#tags` in the editor, live preview and the Markdown source alike: each one
+ * is marked as a tag (its name in `data-tag`, a tooltip saying what a click
+ * does), and a Ctrl/⌘-click on it, or Ctrl/⌘-Enter with the cursor in it,
+ * opens search for it, as the same keys open a link (livePreview.ts). A plain
+ * click places the cursor.
  *
- * What it does not do is draw the pill: livePreview.ts already marks tags
- * with the page's `.ws-tag .ws-tag-inline` (its `tags()`), and a second mark
- * with those classes would pad the pill twice. If that drawing moves here,
- * add the two classes to TAG_CLASS and drop livePreview's.
+ * How a tag looks is the stylesheet's: a link, whatever the mode. Live preview
+ * also marks tags with the page's `.ws-tag .ws-tag-inline` (livePreview.ts's
+ * `tags()`), which carries the underline there; the source has only this
+ * mark, and editor.css gives it the same look under `.ws-cm-source`.
  *
  * A tag is its own source, so nothing is hidden or replaced and the cursor
  * has no rule to follow: the marks are the same on the cursor's line and off
@@ -134,4 +135,5 @@ const tagKey = Prec.highest(
   ]),
 );
 
-export const editorTags: Extension = [tagMarks, tagClicks, tagKey];
+// modifierHeld is the live preview's own plugin; one instance serves both, as CodeMirror keeps an extension that appears twice once.
+export const editorTags: Extension = [tagMarks, tagClicks, tagKey, modifierHeld];

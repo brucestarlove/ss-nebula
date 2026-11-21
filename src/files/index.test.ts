@@ -2,14 +2,11 @@ import { describe, expect, it } from 'vitest';
 import * as files from './index';
 
 describe('src/files public surface', () => {
-  it('carries the first run the app does: registry, migration, then the sample or the last project', async () => {
+  it('carries the first run the app does: registry, then the sample or the last project', async () => {
     // jsdom has no OPFS, so this is the memory tier: nothing will be kept.
     const { registry, persistent, reason } = await files.openBrowserRegistry();
     expect(persistent).toBe(false);
     expect(reason).toBeTruthy();
-
-    const migration = await files.migrateLegacyCanvases({ storage: window.localStorage, registry, persistent });
-    expect(migration.status).toBe('not-persistent');
 
     if ((await registry.current()) === null) {
       const fetchNothing = (async () => new Response(null, { status: 404 })) as typeof fetch;
@@ -63,8 +60,8 @@ describe('src/files public surface', () => {
     }
   });
 
-  it('exports what the app needs for old links and later 1.x saves', () => {
-    for (const name of ['findMigratedCanvas', 'migratedCanvases', 'newerLegacyCanvases', 'MIGRATION_RECORD', 'MIGRATION_LOCK', 'withLock', 'PathLocks']) {
+  it('exports the locks', () => {
+    for (const name of ['withLock', 'PathLocks']) {
       expect(files, name).toHaveProperty(name);
     }
   });

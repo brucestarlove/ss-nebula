@@ -266,6 +266,9 @@ type ProjectContextMenuProps = {
   /** False when the project list can't be changed (a registry from a newer
    * Nebula): rename, colour and remove show, turned off. */
   canChange?: boolean;
+  /** Entries the workspace adds for the project open now, after Download
+   * (Move canvas images to files…, 2.0.4). */
+  extra?: MenuEntry[];
 };
 
 /** Right-click on the project (its name, its planet in the dock, its row in
@@ -282,11 +285,13 @@ export function ProjectContextMenu({
   onRemove,
   onClose,
   canChange = true,
+  extra = [],
 }: ProjectContextMenuProps) {
   const entries: MenuEntry[] = [
     { label: 'Rename…', icon: 'pencil', onSelect: onRename, shortcut: 'F2', keys: 'F2', disabled: !canChange },
     { label: 'Project settings…', icon: 'gear', onSelect: onSettings },
     ...(canDownload ? [{ label: 'Download as .zip', icon: 'download' as const, onSelect: onDownload }] : []),
+    ...extra,
     'separator',
     { label: 'Remove project…', icon: 'trash', onSelect: onRemove, danger: true, disabled: !canChange },
   ];

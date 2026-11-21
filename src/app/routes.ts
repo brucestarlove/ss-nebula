@@ -1,52 +1,64 @@
 /**
  * Nebula's addresses:
  *
- * - The app lives at `/app` on nebula.starscape.app and the tailnet copy,
- *   where `/` is the landing page, and at
- *   the root under `pnpm dev` and `nebula run`. Every address below is read
- *   inside that prefix.
+ * - The app lives under a mount: `/app` on nebula.starscape.app and the
+ *   tailnet copy, where `/` is the landing page; the root under `pnpm dev`
+ *   and `nebula run`; and wherever a host mounts it (`/nebula` in the
+ *   Suite). A Nebula server says where in the page it serves (a `<base
+ *   href>`, cli/app.mjs); the site's page has none, and `/app` is read from
+ *   the address. Every address below is read inside the mount.
  * - `/p/<project>/<path>` opens a file, or shows a folder in the file tree;
  *   `/p/<project>` opens a project. Each segment is URL-encoded, so any file
  *   name survives the trip. These are the links Orbit's cards carry.
- * - Nebula 1.x links, `/b/<board>/c/<canvas>`, `#/b/<board>/c/<canvas>` and
- *   `?board=&canvas=`, open the file that canvas moved to (see boot.ts,
- *   LEGACY_ROUTES_KEY), else a canvas of that name, else the project.
+ * - Nebula 1.x's `/b/…` links are no longer read: routes.json sends them to
+ *   the app's front door.
+ * - A file's link may carry `?context=orbit:card/<board>/<n>`: the Orbit card it was opened from.
+ *   The app names it on that file's writes, from this tab only (src/files/serverStore.ts).
  *
- * vercel.json serves the app for `/app`, `/app/p/*` and `/app/b/*`, and sends
- * 2.0's `/p/*` and 1.x's `/b/*` there (tests/nebulaSite.test.mjs).
+ * routes.json serves the app for `/app` and `/app/p/*`, and sends 2.0's
+ * `/p/*` there (tests/nebulaSite.test.mjs).
  */
-import { kindFromName } from '../files/kinds';
-import { stem } from '../files/paths';
-import type { BrowserRegistry } from '../files/registry';
-import { DEFAULT_NEBULA_BOARD_ID, nebulaContextFromRoute, nebulaContextFromSearchParams, type NebulaContextInput } from '../nebula/context';
-import type { LegacyRoutes } from './boot';
 
+import { isContextLink } from '../files/contextLink';
+
+/** An address; only its pathname (and a file link's `context`) is read. */
 export type RouteLocation = { pathname: string; search: string; hash: string };
 
-export type FileTarget = { type: 'file'; projectId: string; path: string | null };
-export type LegacyTarget = { type: 'legacy'; board: string | null; canvas: string | null };
-export type RouteTarget = FileTarget | LegacyTarget | null;
+/** `context`: the link an Orbit card gave this file (`?context=orbit:card/<board>/<n>`), when it passes
+ * the server's rule. Only a file's link carries one. */
+export type FileTarget = { type: 'file'; projectId: string; path: string | null; context?: string };
 
-/** Where to start: a project, and maybe a file in it. */
-export type OpenTarget = { projectId: string; path: string | null };
+/** Where to start: a project, and maybe a file in it (and the card it was opened from). */
+export type OpenTarget = { projectId: string; path: string | null; context?: string };
 
 const FILE_PREFIX = '/p/';
-const LEGACY_PATH = /^\/b(?:\/|$)/;
-const LEGACY_HASH = /^#\/(?:b|board|c|canvas)(?:\/|$)/;
 
 /** Where the app is mounted when the site has a landing page at `/`. */
 export const APP_MOUNT = '/app';
 
-/** The app's prefix for an address: `/app` inside the mount, '' when the
- * app is served at the root (`pnpm dev`, `nebula run`). */
+/** The app's prefix for an address on the site: `/app` inside the mount,
+ * '' when the app is served at the root (`pnpm dev`). */
 export function appBase(pathname: string): string {
   return pathname === APP_MOUNT || pathname.startsWith(`${APP_MOUNT}/`) ? APP_MOUNT : '';
 }
 
-/** An address as the app reads it: `/app/p/x` → `/p/x`, `/app` → `/`. */
-function insideApp(pathname: string): string {
-  const base = appBase(pathname);
-  return base ? pathname.slice(base.length) || '/' : pathname;
+/** Where the app is mounted, read from the page at run time: the path of
+ * the `<base href>` a Nebula server put in it ('' for `/`, `/nebula` for
+ * `/nebula/`), else appBase of the address. */
+export function appMount(doc: Pick<Document, 'querySelector' | 'baseURI'> = document, pathname: string = window.location.pathname): string {
+  if (!doc.querySelector('base[href]')) return appBase(pathname);
+  try {
+    return new URL(doc.baseURI).pathname.replace(/\/+$/, '');
+  } catch {
+    return appBase(pathname);
+  }
+}
+
+/** An address as the app reads it, inside the mount `base`: `/app/p/x` →
+ * `/p/x`, `/app` → `/`. An address outside the mount reads as it is. */
+function insideApp(pathname: string, base: string): string {
+  if (!base) return pathname;
+  return pathname === base || pathname.startsWith(`${base}/`) ? pathname.slice(base.length) || '/' : pathname;
 }
 
 function decode(segment: string): string | null {
@@ -54,15 +66,6 @@ function decode(segment: string): string | null {
     return decodeURIComponent(segment);
   } catch {
     return null;
-  }
-}
-
-function attempt(read: () => NebulaContextInput): NebulaContextInput {
-  try {
-    return read();
-  } catch {
-    // A malformed escape in an old link: read it as no link.
-    return {};
   }
 }
 
@@ -75,29 +78,24 @@ function parseFileRoute(pathname: string): FileTarget | null {
   return { type: 'file', projectId, path };
 }
 
-/** What an address asks Nebula to open; null for the plain front door. */
-export function parseRoute(location: RouteLocation): RouteTarget {
-  const { search, hash } = location;
-  const pathname = insideApp(location.pathname);
-  if (pathname.startsWith(FILE_PREFIX)) return parseFileRoute(pathname);
-
-  const query = search ? attempt(() => nebulaContextFromSearchParams(search)) : {};
-  const legacyPath = LEGACY_PATH.test(pathname);
-  const legacyHash = LEGACY_HASH.test(hash);
-  const queryBoard = query.boardId ?? query.boardSlug;
-  if (!legacyPath && !legacyHash && !queryBoard && !query.canvasId) return null;
-
-  // Query first, then the old path or hash, as Nebula 1.x read them.
-  const route = legacyPath || legacyHash ? attempt(() => nebulaContextFromRoute({ pathname, hash: legacyHash ? hash : '' })) : {};
-  return {
-    type: 'legacy',
-    board: queryBoard ?? route.boardId ?? null,
-    canvas: query.canvasId ?? route.canvasId ?? null,
-  };
+/** What an address asks Nebula to open: the project and file of a `/p/…`
+ * link; null for the plain front door, and for anything else, Nebula 1.x's
+ * `/b/…` links included (the site sends those to the front door). */
+export function parseRoute(location: RouteLocation, base: string = appBase(location.pathname)): FileTarget | null {
+  const pathname = insideApp(location.pathname, base);
+  if (!pathname.startsWith(FILE_PREFIX)) return null;
+  const target = parseFileRoute(pathname);
+  if (target?.path) {
+    // Anything the server would refuse as a context is dropped here, so a file never opens with a
+    // value its writes can't send.
+    const context = new URLSearchParams(location.search).get('context');
+    if (isContextLink(context)) target.context = context;
+  }
+  return target;
 }
 
 /** The address of a file or folder (or of a project, with `path` null),
- * under the app's prefix `base` ('' or `/app`, from appBase). */
+ * under the app's mount `base` ('', `/app` or a host's, from appMount). */
 export function fileUrl(projectId: string, path: string | null, base = ''): string {
   const project = `${base}${FILE_PREFIX}${encodeURIComponent(projectId)}`;
   return path ? `${project}/${path.split('/').map(encodeURIComponent).join('/')}` : project;
@@ -108,40 +106,9 @@ export function appHome(base: string): string {
   return base || '/';
 }
 
-/** The project and file an old board link means now, or null when no
- * project here came from that board. */
-export async function resolveLegacyRoute(
-  target: LegacyTarget,
-  context: { registry: BrowserRegistry; routes: LegacyRoutes },
-): Promise<OpenTarget | null> {
-  const { registry, routes } = context;
-  const board = target.board ?? DEFAULT_NEBULA_BOARD_ID;
-  const projects = await registry.list();
-  // Where the migration put each canvas, kept in the browser tier itself, so it holds even when localStorage was full. Loaded
-  // here, for an old link only: the migration stays out of the first load.
-  const { migratedCanvases } = await import('../files/migration');
-  const recorded = (await migratedCanvases(registry)).filter((canvas) => canvas.boardId === board);
-  const mapped = routes[board];
-  const project =
-    projects.find((record) => recorded.some((canvas) => canvas.projectId === record.id)) ??
-    (mapped && projects.find((record) => record.id === mapped.project)) ??
-    projects.find((record) => record.id === board) ??
-    projects.find((record) => record.name.toLowerCase() === board.toLowerCase());
-  if (!project) return null;
-  if (!target.canvas) return { projectId: project.id, path: null };
-
-  const files = (await (await registry.files(project.id)).list()).filter((entry) => entry.type === 'file');
-  const moved = [
-    recorded.find((canvas) => canvas.projectId === project.id && canvas.canvasId === target.canvas)?.path,
-    mapped?.project === project.id ? mapped.canvases[target.canvas] : undefined,
-  ].find((path) => path !== undefined && files.some((entry) => entry.path === path));
-  if (moved) return { projectId: project.id, path: moved };
-
-  // A canvas named in the link: its file has that name.
-  const wanted = target.canvas.toLowerCase();
-  const named = files.find((entry) => {
-    const kind = kindFromName(entry.name);
-    return (kind === 'canvas' || kind === 'note') && stem(entry.path).toLowerCase() === wanted;
-  });
-  return { projectId: project.id, path: named?.path ?? null };
+/** One of the built app's own files (`sample/…`), as an absolute URL: the
+ * build's base is './' for a server's copy (relative to the page's `<base
+ * href>`) and '/' for the site's. */
+export function appAsset(path: string, base: string = import.meta.env.BASE_URL, doc: Pick<Document, 'baseURI'> = document): string {
+  return new URL(`${base}${path}`, doc.baseURI).href;
 }

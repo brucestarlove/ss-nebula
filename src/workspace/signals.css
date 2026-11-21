@@ -1,0 +1,17 @@
+/* 2.0.4 SIGNALS: the quiet mark for a file opened from an Orbit card, and space used in Settings.
+ * The signed-out banner is an ordinary .ws-ephemeral note (workspace.css). */
+
+.ws-context-mark {
+  flex: 0 0 auto;
+  margin: 0 0.75rem 0.35rem;
+  padding: 0;
+  color: var(--ws-muted, var(--muted));
+  font-size: 0.72rem;
+  line-height: 1.3;
+  letter-spacing: 0.01em;
+}
+
+.ws-set-space a {
+  color: inherit;
+  text-underline-offset: 0.15em;
+}

@@ -25,7 +25,7 @@ function element<K extends keyof HTMLElementTagNameMap>(tag: K, className?: stri
   return node;
 }
 
-/** Words, with `#tags` drawn as the page's pills. */
+/** Words, with `#tags` drawn as the page draws them, as links. */
 function words(parent: Node, value: string): void {
   let last = 0;
   for (const match of value.matchAll(INLINE_TAG)) {
@@ -33,6 +33,9 @@ function words(parent: Node, value: string): void {
     if (from > last) parent.appendChild(document.createTextNode(value.slice(last, from)));
     const tag = element('span', 'ws-tag ws-tag-inline');
     tag.textContent = value.slice(from, from + 1 + match[2].length);
+    // A link like the others in the cell: Ctrl/⌘-click opens search (tables.ts).
+    tag.dataset.tag = match[2].toLowerCase();
+    tag.title = `Search for #${match[2].toLowerCase()} (${key()}-click)`;
     parent.appendChild(tag);
     last = from + 1 + match[2].length;
   }

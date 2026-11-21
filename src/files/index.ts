@@ -5,15 +5,13 @@
  * First run, in order:
  *
  *   const { registry, persistent, reason } = await openBrowserRegistry();
- *   const migration = await migrateLegacyCanvases({ storage: localStorage, registry, persistent });
  *   let id = await registry.current();
  *   if (!id) id = (await seedSampleProject(registry)).project.id;  // brand-new visitors only
  *   const store = await registry.open(id);
  *
  * `persistent: false` means nothing will be kept: say so, and offer Download
- * (projectToZip). The sample and the migration are worth loading lazily
- * (`await import('./sample')`): they carry text, and the migration pulls in
- * the Excalidraw modules when there are old canvases.
+ * (projectToZip). The sample is worth loading lazily
+ * (`await import('./sample')`): it carries text.
  */
 export type {
   EntryType,
@@ -74,22 +72,6 @@ export {
 } from './registry';
 export { OPFS_TREE, createOpfsRegistry, openBrowserRegistry, probeOpfs, type BrowserRegistryHandle, type OpfsProbe } from './opfsRegistry';
 export { DEFAULT_WORKSPACE_STATE, emptyWorkspaceState, readWorkspaceState, writeWorkspaceState } from './workspaceState';
-export {
-  MIGRATION_LOCK,
-  MIGRATION_MARKER,
-  MIGRATION_RECORD,
-  findMigratedCanvas,
-  migrateLegacyCanvases,
-  migratedCanvases,
-  newerLegacyCanvases,
-  type LegacyCanvasUpdate,
-  type FailedCanvas,
-  type MigratedCanvas,
-  type MigratedFile,
-  type MigratedProject,
-  type MigrationInput,
-  type MigrationReport,
-} from './migration';
 export { SAMPLE_PROJECT, seedSampleProject, type SampleOptions, type SampleResult } from './sample';
 export { projectToZip, zipFileName, type ZipOptions } from './zip';
 export { formatBytes, onPersistenceAnswer, requestPersistentStorage, storageStatus, type StorageStatus } from './persist';

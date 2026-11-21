@@ -4,6 +4,9 @@ import { createMemoryFileStore, type MemoryFileStore } from '../../../../e2e/har
 import { blobToBytes } from '../../../files/bytes';
 import { slowWrites } from '../testing/slowWrites';
 import { scopedStore } from '../../../files/scopedStore';
+import type { AccountStatus } from '../../../files/account';
+import { SignedOutError, SpaceFullError } from '../../../files/serverStore';
+import { subscribeKeptCopies, type KeptCopy } from './fileSessions';
 import { createTextSession, type TextSession } from './textSession';
 
 const PATH = 'Guides/Observing plan.md';
@@ -341,5 +344,179 @@ describe('text file session', () => {
     expect(local.getState()).toMatchObject({ text: 'mine', dirty: true });
     expect(String(local.getState().saveError)).toContain('Disk full');
     await local.dispose();
+  });
+});
+
+describe('a text session whose save meets the account (signed out, space full)', () => {
+  /** A store with an account, as a server project's has: its writes can be refused as one. */
+  function accountStore() {
+    const store = createMemoryFileStore({ [PATH]: 'first' });
+    const listeners = new Set<(status: AccountStatus) => void>();
+    const stored = store.write.bind(store);
+    let refusing: Error | null = null;
+    store.write = async (path, data, options) => {
+      if (refusing) throw refusing;
+      await stored(path, data, options);
+    };
+    Object.assign(store, {
+      onAccount(listener: (status: AccountStatus) => void) {
+        listeners.add(listener);
+        return () => void listeners.delete(listener);
+      },
+      signedOut: () => (refusing instanceof SignedOutError ? {} : null),
+      retryAccount: async () => {},
+    });
+    return {
+      store,
+      /** The store refuses writes as this, or accepts them again (null). */
+      refuse(error: Error | null) {
+        refusing = error;
+      },
+      /** Another tab's save, which the account doesn't refuse. */
+      elsewhere: (path: string, text: string) => stored(path, text),
+      say(status: AccountStatus) {
+        for (const listener of [...listeners]) listener(status);
+      },
+      listeners,
+    };
+  }
+
+  const kept: KeptCopy[] = [];
+  let stop: () => void;
+  beforeEach(() => {
+    vi.useFakeTimers();
+    kept.length = 0;
+    stop = subscribeKeptCopies((copy) => kept.push(copy));
+  });
+  afterEach(() => {
+    for (const copy of kept) if (copy.copy === null) copy.release();
+    stop();
+    vi.useRealTimers();
+  });
+
+  it.each([
+    ['signed out', () => new SignedOutError()],
+    ['space full', () => new SpaceFullError({ used: 1000, limit: 1000 })],
+  ])('keeps the edit when the save is refused: %s', async (_name, make) => {
+    const { store, refuse } = accountStore();
+    const session = createTextSession(store, PATH);
+    await session.ready;
+    refuse(make());
+    session.edit('mine');
+    await session.flush();
+    expect(session.getState()).toMatchObject({ text: 'mine', dirty: true, conflict: false, removed: false });
+    expect(session.getState().saveError).toBeInstanceOf(make().constructor);
+    expect(store.peek(PATH)).toBe('first');
+    expect(store.writes).toHaveLength(0);
+    await session.dispose();
+  });
+
+  it('closing the view still offers the edit as a download, as a failed save', async () => {
+    const { store, refuse } = accountStore();
+    const session = createTextSession(store, PATH);
+    await session.ready;
+    refuse(new SignedOutError());
+    session.edit('mine');
+    await session.dispose();
+    expect(kept).toHaveLength(1);
+    const copy = kept[0];
+    if (copy.copy !== null) throw new Error('expected a download, got a copy');
+    expect(copy.failedSave).toBe(true);
+    expect(copy.path).toBe(PATH);
+    expect(copy.download).toEqual({ filename: 'Observing plan.md', text: 'mine' });
+    expect(copy.error).toBeInstanceOf(SignedOutError);
+    expect(store.peek(PATH)).toBe('first');
+  });
+
+  it('a space-full close offers the download with the space error', async () => {
+    const { store, refuse } = accountStore();
+    const session = createTextSession(store, PATH);
+    await session.ready;
+    refuse(new SpaceFullError({ used: 5, limit: 5 }));
+    session.edit('mine');
+    await session.dispose();
+    const copy = kept[0];
+    if (copy.copy !== null) throw new Error('expected a download, got a copy');
+    expect(copy.error).toBeInstanceOf(SpaceFullError);
+    expect(copy.download.text).toBe('mine');
+  });
+
+  it('once the store says signed-in, a kept edit is written by the normal path', async () => {
+    const { store, refuse, say } = accountStore();
+    const session = createTextSession(store, PATH);
+    await session.ready;
+    refuse(new SignedOutError());
+    session.edit('mine');
+    await session.flush();
+    expect(session.getState().saveError).toBeDefined();
+    refuse(null);
+    say('signed-in');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.peek(PATH)).toBe('mine');
+    expect(store.writes).toEqual([{ path: PATH, data: 'mine' }]);
+    expect(session.getState()).toMatchObject({ text: 'mine', dirty: false, saveError: undefined });
+    await session.dispose();
+  });
+
+  it('signed-out heard after a refused save writes nothing', async () => {
+    const { store, refuse, say } = accountStore();
+    const session = createTextSession(store, PATH);
+    await session.ready;
+    refuse(new SignedOutError());
+    session.edit('mine');
+    await session.flush();
+    refuse(null);
+    say('signed-out');
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(store.writes).toHaveLength(0);
+    await session.dispose();
+  });
+
+  it('a file changed meanwhile is asked about, never written over', async () => {
+    const { store, refuse, say, elsewhere } = accountStore();
+    const session = createTextSession(store, PATH);
+    await session.ready;
+    refuse(new SignedOutError());
+    session.edit('mine');
+    await session.flush();
+    await elsewhere(PATH, 'theirs');
+    await vi.advanceTimersByTimeAsync(0);
+    refuse(null);
+    say('signed-in');
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(store.peek(PATH)).toBe('theirs');
+    expect(session.getState()).toMatchObject({ text: 'mine', conflict: true });
+    await session.reload();
+    await session.dispose();
+  });
+
+  it('with no refused save, signed-in writes nothing ahead of the usual delay, and with no edit nothing at all', async () => {
+    const { store, say } = accountStore();
+    const session = createTextSession(store, PATH);
+    await session.ready;
+    say('signed-in');
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(store.writes).toHaveLength(0);
+    session.edit('typing');
+    say('signed-in');
+    await vi.advanceTimersByTimeAsync(100);
+    expect(store.writes).toHaveLength(0); // still inside the 500 ms: this edit's save has not failed
+    await vi.advanceTimersByTimeAsync(500);
+    expect(store.writes).toHaveLength(1);
+    await session.dispose();
+  });
+
+  it('a session that was closed takes no part when the store says signed-in', async () => {
+    const { store, refuse, say, listeners } = accountStore();
+    const session = createTextSession(store, PATH);
+    await session.ready;
+    refuse(new SignedOutError());
+    session.edit('mine');
+    await session.dispose();
+    expect(listeners.size).toBe(0);
+    refuse(null);
+    say('signed-in');
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(store.writes).toHaveLength(0);
   });
 });

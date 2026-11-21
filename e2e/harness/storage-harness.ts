@@ -1,16 +1,12 @@
 // Served by the Vite dev server for e2e/storage-*.spec.ts: the storage lane's
 // browser checks, driven from Playwright through
 // window.storageHarness. Everything lives under nebula/ in OPFS, as in the app.
-import { migrateLegacyCanvases, type MigrationReport } from '../../src/files/migration';
 import { OPFS_TREE, openBrowserRegistry } from '../../src/files/opfsRegistry';
 import { OpfsFileStore } from '../../src/files/opfsStore';
 import type { BrowserRegistry } from '../../src/files/registry';
 import { fileStoreTwinCases, type ConformanceResult } from '../../src/files/storeConformance';
-import type { FileStore } from '../../src/files/types';
-import { beforeWrites } from './storeWrappers';
 
 let registry: BrowserRegistry | null = null;
-let writes = 0;
 
 function opened(): BrowserRegistry {
   if (!registry) throw new Error('Call open() first');
@@ -41,19 +37,6 @@ async function tree(): Promise<string[]> {
 
 async function settle(work: Array<Promise<unknown>>): Promise<string[]> {
   return (await Promise.allSettled(work)).map((result) => (result.status === 'fulfilled' ? 'ok' : describe(result.reason)));
-}
-
-/** The registry, with each project's writes counted and, as asked, slowed
- * down or left hanging from the nth one on (as when the tab closes). */
-function watched(inner: BrowserRegistry, options: { slowMs?: number; hangFrom?: number }): BrowserRegistry {
-  const wrap = (store: FileStore): FileStore =>
-    beforeWrites(store, async () => {
-      writes += 1;
-      if (options.hangFrom !== undefined && writes >= options.hangFrom) return false;
-      if (options.slowMs) await new Promise((resolve) => setTimeout(resolve, options.slowMs));
-      return true;
-    });
-  return { ...inner, files: async (id) => wrap(await inner.files(id)), open: async (id) => wrap(await inner.open(id)) };
 }
 
 type MovableHandle = FileSystemFileHandle & { move?: unknown };
@@ -229,11 +212,6 @@ const harness = {
     for (const [key, value] of Object.entries(entries)) localStorage.setItem(key, value);
   },
   localStorage: () => Object.fromEntries(Object.keys(localStorage).map((key) => [key, localStorage.getItem(key)])),
-  /** Migrates with the real Web Locks and OPFS; writes can be slowed down, or hang from the nth on. */
-  async migrate(options: { slowMs?: number; hangFrom?: number } = {}): Promise<MigrationReport> {
-    return migrateLegacyCanvases({ storage: localStorage, registry: watched(opened(), options), persistent: true });
-  },
-  writes: () => writes,
   async projects(): Promise<Array<{ id: string; name: string }>> {
     return (await opened().list()).map(({ id, name }) => ({ id, name }));
   },

@@ -8,6 +8,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSy
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { API, createFilesApi, isHiddenName, pathProblem } from '../cli/nebula-files.mjs'
+import { createMemoryBackend } from '../cli/backends/memory.mjs'
+import { createDatabaseBackend } from '../cli/backends/database.mjs'
 import { HttpFileStore, fetchServerInfo } from '../src/files/serverStore'
 import { MemoryFileStore } from '../src/files/memoryStore'
 import { createBrowserRegistry } from '../src/files/registry'
@@ -25,29 +27,61 @@ let port = 0
 let api: { handle: (req: unknown, res: unknown) => Promise<boolean>; close: () => void }
 let server: ReturnType<typeof createServer>
 let made = 0
+// The same API over the memory backend: the conformance cases run on both.
+let memoryBackend: ReturnType<typeof createMemoryBackend>
+let memoryApi: { handle: (req: unknown, res: unknown) => Promise<boolean>; close: () => void }
+let memoryServer: ReturnType<typeof createServer>
+let memoryBase = ''
+let memoryMade = 0
+// And over the database backend, on a scratch folder: SQLite for the tree and log, a folder byte store.
+let databaseBackend: ReturnType<typeof createDatabaseBackend>
+let databaseApi: { handle: (req: unknown, res: unknown) => Promise<boolean>; close: () => void }
+let databaseServer: ReturnType<typeof createServer>
+let databaseBase = ''
+let databaseMade = 0
 
-beforeAll(async () => {
-  dir = mkdtempSync(join(process.env.TMPDIR || tmpdir(), 'nebula-server-tier-'))
-  projectsDir = join(dir, 'projects')
-  mkdirSync(projectsDir)
-  api = createFilesApi({ projectsDirs: [projectsDir], label: 'test-server' })
-  server = createServer((req, res) => {
-    void api.handle(req, res).then((handled) => {
+function serve(files: { handle: (req: unknown, res: unknown) => Promise<boolean> }) {
+  return createServer((req, res) => {
+    void files.handle(req, res).then((handled) => {
       if (!handled) {
         res.writeHead(404)
         res.end()
       }
     })
   })
+}
+
+beforeAll(async () => {
+  dir = mkdtempSync(join(process.env.TMPDIR || tmpdir(), 'nebula-server-tier-'))
+  projectsDir = join(dir, 'projects')
+  mkdirSync(projectsDir)
+  api = createFilesApi({ projectsDirs: [projectsDir], label: 'test-server' })
+  server = serve(api)
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   port = (server.address() as { port: number }).port
   base = `http://127.0.0.1:${port}`
+  memoryBackend = createMemoryBackend()
+  memoryApi = createFilesApi({ backend: memoryBackend, label: 'test-server' })
+  memoryServer = serve(memoryApi)
+  await new Promise<void>((resolve) => memoryServer.listen(0, '127.0.0.1', resolve))
+  memoryBase = `http://127.0.0.1:${(memoryServer.address() as { port: number }).port}`
+  databaseBackend = createDatabaseBackend({ folder: join(dir, 'database') })
+  databaseApi = createFilesApi({ backend: databaseBackend, label: 'test-server' })
+  databaseServer = serve(databaseApi)
+  await new Promise<void>((resolve) => databaseServer.listen(0, '127.0.0.1', resolve))
+  databaseBase = `http://127.0.0.1:${(databaseServer.address() as { port: number }).port}`
 })
 
 afterAll(async () => {
   api.close()
   server.closeAllConnections()
   await new Promise((resolve) => server.close(resolve))
+  memoryApi.close()
+  memoryServer.closeAllConnections()
+  await new Promise((resolve) => memoryServer.close(resolve))
+  databaseApi.close()
+  databaseServer.closeAllConnections()
+  await new Promise((resolve) => databaseServer.close(resolve))
   rmSync(dir, { recursive: true, force: true })
 })
 
@@ -65,11 +99,22 @@ async function openStore(id: string) {
   return HttpFileStore.open({ base, projectId: id, label: 'test-server', graceMs: 50 })
 }
 
-registerFileStoreConformance({ describe, it }, 'HttpFileStore', async () => openStore((await newProject()).id), { skip: [NESTED_DOT_CASE] })
-registerFileStoreTwinConformance({ describe, it }, 'HttpFileStore and another tab', async () => {
-  const { id } = await newProject()
-  return [await openStore(id), await openStore(id)]
-})
+/** Each backend the API serves, and a new project on it. The cases about the disk and about other
+ * writers below are the folder backend's alone. */
+const backends: { label: string; base: () => string; project: () => Promise<string> }[] = [
+  { label: 'HttpFileStore', base: () => base, project: async () => (await newProject()).id },
+  { label: 'HttpFileStore on the memory backend', base: () => memoryBase, project: async () => (await memoryBackend.createProject({ name: `m${(memoryMade += 1)}` })).id },
+  { label: 'HttpFileStore on the database backend', base: () => databaseBase, project: async () => (await databaseBackend.createProject({ name: `d${(databaseMade += 1)}` })).id },
+]
+
+for (const backend of backends) {
+  const open = (id: string) => HttpFileStore.open({ base: backend.base(), projectId: id, label: 'test-server', graceMs: 50 })
+  registerFileStoreConformance({ describe, it }, backend.label, async () => open(await backend.project()), { skip: [NESTED_DOT_CASE] })
+  registerFileStoreTwinConformance({ describe, it }, `${backend.label} and another tab`, async () => {
+    const id = await backend.project()
+    return [await open(id), await open(id)]
+  })
+}
 
 function raw(method: string, path: string, headers: Record<string, string> = {}, body?: string): Promise<{ status: number; headers: Record<string, string | string[] | undefined>; text: string }> {
   return new Promise((resolve, reject) => {
@@ -323,7 +368,7 @@ describe('nebula run with folders', () => {
     const run = await startNebulaStaticServer({ host: '127.0.0.1', port: 0, root: staticRoot, silent: true, projects: [vault], label: 'pro' })
     try {
       const page = await fetch(run.url)
-      expect(page.headers.get('server-timing')).toContain('nebula-files')
+      expect(page.headers.get('server-timing')).toBe('nebula-files;desc="/nebula-api/v1"')
       const info = await fetchServerInfo({ base: run.url.replace(/\/$/, '') })
       expect(info?.place.label).toBe('pro')
       expect(info?.projects.map((p) => p.name)).toEqual(['Vault'])

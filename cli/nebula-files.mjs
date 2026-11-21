@@ -1,338 +1,168 @@
-// Nebula's server tier: projects that are real folders on a computer or a
-// server, served to the Nebula app on the same origin. Node built-ins only.
+// Nebula's server tier: projects served to the Nebula app on the same origin, through one HTTP API
+// over a backend (cli/backend.mjs): real folders by default (cli/backends/folder.mjs). Node built-ins only.
 //
-//   GET    /nebula-api/v1/place                              where this is, and its projects
-//   GET    /nebula-api/v1/projects/<id>/state                the project's change cursor
-//   GET    /nebula-api/v1/projects/<id>/list                 every file and folder
-//   GET    /nebula-api/v1/projects/<id>/stat?path=           one entry, or 404
-//   GET    /nebula-api/v1/projects/<id>/file?path=           a file's bytes, with its ETag
-//   PUT    /nebula-api/v1/projects/<id>/file?path=           replace whole (If-Match, If-None-Match: *)
-//   POST   /nebula-api/v1/projects/<id>/mkdir?path=
-//   POST   /nebula-api/v1/projects/<id>/rename?from=&to=     refuses an existing target
-//   DELETE /nebula-api/v1/projects/<id>/file?path=           a file, or a folder and all in it
-//   GET    /nebula-api/v1/projects/<id>/events?since=        Server-Sent Events, resumable
+//   GET    <api>/place                              where this is (its homes, scope, capabilities), and its projects
+//   POST   <api>/projects                           a new project, { name, color? }, where the backend makes them
+//   GET    <api>/projects/<id>/state                the project's change cursor
+//   GET    <api>/projects/<id>/list                 every file and folder
+//   GET    <api>/projects/<id>/stat?path=           one entry, or 404
+//   GET    <api>/projects/<id>/file?path=           a file's bytes, with its ETag
+//   PUT    <api>/projects/<id>/file?path=           replace whole (If-Match, If-None-Match: *)
+//   POST   <api>/projects/<id>/mkdir?path=
+//   POST   <api>/projects/<id>/rename?from=&to=     refuses an existing target
+//   DELETE <api>/projects/<id>/file?path=           a file, or a folder and all in it
+//   GET    <api>/projects/<id>/events?since=        Server-Sent Events, resumable
+//   GET    <api>/projects/<id>/versions?path=&limit=&before=   a file's kept versions, newest first
+//   GET    <api>/projects/<id>/version?path=&version=   one version's bytes
+//   POST   <api>/projects/<id>/restore?path=&version=   that version back as the newest (If-Match, If-None-Match: *)
+//   GET    <api>/projects/<id>/deleted?limit=       the files deleted and still restorable, newest first
+//   DELETE <api>/projects/<id>                      remove the project, restorable for 14 days
+//   GET    <api>/removed-projects                   the projects removed and not yet purged
+//   POST   <api>/removed-projects/<id>/restore      one of them back
+//   GET    <api>/changes?project=&path=&limit=&before=   who changed what, when, newest first
+//
+// History and removed projects answer 405 `not-supported` where the backend can't keep them
+// (`capabilities.versions`, `capabilities.removeProject`: the database backend can, folders can't).
+//
+// `<api>` is `/nebula-api/v1` unless the host mounts it elsewhere (`apiBase`); the Server-Timing mark
+// names it, so the app can find it. The API is a web-standard `fetch(request)`, so Hono, Node, Bun
+// or Workers can mount it; `handle(req, res)` is the same over Node's http.
+//
+// Every change records who made it, when and in what context: the actor (`resolve`; on a standalone
+// server a person, or an agent that says so with `Nebula-Actor: agent` and `Nebula-Agent-Name`), and
+// a link the writer names in `Nebula-Context` (`orbit:card/<board>/<n>`), kept as given and never
+// fetched.
+//
+// A host may set an allowance (`allowance`): a write that would take the workspace past it answers
+// 507 `space-full`, and the place says how much is used. A host whose session has ended answers
+// with `signedOut()` from its `resolve`. Both are the host's: Nebula stores no account or limit.
 //
 // It answers only the Host names it serves (loopback, plus --allow-host), refuses cross-site
 // requests (Sec-Fetch-Site, Origin) and sends no CORS headers, so a web page elsewhere can't drive
-// it through the browser. Paths follow Nebula's rules (src/files/paths.ts); a dot-name, node_modules
-// or a symlink anywhere on a path is refused, so `.git`, `.env` and links out of the root stay out
-// of reach (the project's own `.nebula/` is the one dot-folder it serves). Writes land whole: a
-// temporary file in `.nebula/`, then link (create only) or rename. Changes made by anyone else are
-// watched folder by folder on Linux (hidden names and node_modules cost nothing), natively recursive
-// where the system does that (macOS, Windows).
-import { randomBytes, createHash } from 'node:crypto'
-import { pipeline } from 'node:stream/promises'
-import { createReadStream, constants as FS, watch as fsWatch } from 'node:fs'
-import { link, lstat, mkdir, open, readdir, readFile, realpath, rename, rm, unlink, writeFile } from 'node:fs/promises'
+// it through the browser. What a path may be, and what the disk is checked for, is the backend's.
 import { hostname } from 'node:os'
-import { basename, join, sep } from 'node:path'
+import { BackendError, changeOf, isHiddenName, pathProblem } from './backend.mjs'
+import { createFolderBackend, isWindowsAlias, probeLink } from './backends/folder.mjs'
+
+export { isHiddenName, isWindowsAlias, pathProblem, probeLink }
 
 export const API = '/nebula-api/v1'
-export const SERVER_TIMING = 'nebula-files;desc="1"'
 
-const MAX_ENTRIES = 20_000
-const META_MAX = 1024 * 1024
-const RING = 2_000
-const RECENT_MS = 2_000
-// Watching others' changes: one watcher per served folder costs about 1.2 KB (measured on
-// Node 24, Linux), so these keep the whole watch near 10 MB however big a project is.
-const MAX_WATCHED = 3_000
-const MAX_WATCHED_TOTAL = 8_000
-const ID_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789'
-const ID_PATTERN = /^[A-Za-z0-9._-]{1,64}$/
-const COLOUR = /^#[0-9a-f]{6}$/i
+/** The mark a Nebula server puts on its responses, naming where its API is: the app finds the
+ * server by the mark's name (src/app/serverTier.ts) without a request. */
+export function serverTimingFor(apiBase = API) {
+  return `nebula-files;desc="${apiBase}"`
+}
+
+export const SERVER_TIMING = serverTimingFor(API)
+
 const CLIENT = /^[A-Za-z0-9_-]{8,64}$/
-const PLANETS = ['#7c8cff', '#a78bfa', '#e879f9', '#f472b6', '#fb7a5a', '#fbbf24', '#4ade80', '#2dd4bf', '#38d1eb', '#60a5fa', '#a8b0c4']
+/** A context is a link's characters (RFC 3986), at most 256 of them: `orbit:card/<board>/<n>`. */
+const CONTEXT = /^[A-Za-z0-9._~:/?#[\]@!$&'()*+,;=%-]{1,256}$/
+const RECENT_LIMIT = 500
+const VERSIONS_LIMIT = 200
+/** How many deleted files a list holds unless it asks for fewer, and the most it may ask for. */
+const DELETED_LIMIT = 200
+const DELETED_LIMIT_MAX = 500
+/** A page's `next`, or a version, as the server gave it: a link's plain characters. */
+const TOKEN = /^[A-Za-z0-9._:-]{1,128}$/
+/** A new project's request: its name and colour, never more than this. */
+const NEW_PROJECT_MAX = 16 * 1024
+const NAME_MAX = 120
+const COLOUR = /^#[0-9a-f]{6}$/i
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]', '::1'])
-const OS_FILES = new Set(['thumbs.db', 'desktop.ini'])
-const CONTROL = /[\u0000-\u001f\u007f-\u009f]/
+const ACTOR_TYPES = new Set(['human', 'agent'])
+/** Where a project can live in the app this server serves: the browser's own storage, a folder the
+ * person picks there, and this server. */
+export const HOMES = Object.freeze(['browser', 'folder', 'server'])
+/** A host's scope: an opaque id of its choosing (an account), a link's characters. */
+const SCOPE = /^[A-Za-z0-9._~:-]{1,128}$/
 const encoder = new TextEncoder()
-
-class ApiError extends Error {
-  constructor(status, code, message, extra = {}) {
-    super(message)
-    this.status = status
-    this.code = code
-    this.extra = extra
-  }
-}
-
-/** Nebula's path rules (src/files/paths.ts pathProblem), kept in step by tests/nebulaFiles.test.mjs. */
-export function pathProblem(path) {
-  if (typeof path !== 'string') return 'not a string'
-  if (path === '') return 'empty'
-  if (path.startsWith('/')) return 'absolute'
-  if (path.includes('\\')) return 'backslash'
-  if (CONTROL.test(path)) return 'control character'
-  for (const segment of path.split('/')) {
-    if (segment === '') return 'empty segment'
-    if (segment === '.' || segment === '..') return `'${segment}' segment`
-    if (encoder.encode(segment).length > 255) return 'segment longer than 255 bytes'
-  }
-  return null
-}
-
-/** Names the server never lists, watches or serves: the folder tier's skipped names
- * (src/files/folderTier.ts isSkippedInFolder). */
-export function isHiddenName(name) {
-  // Compared without regard to case: on a case-insensitive disk (macOS, Windows) NODE_MODULES is node_modules.
-  const lower = name.toLowerCase()
-  return name.startsWith('.') || lower.endsWith('.crswap') || lower === 'node_modules' || OS_FILES.has(lower)
-}
-
-/** Whether a name is a way to say another name on Windows' disks: a ':' (an alternate
- * data stream: `.git:x`), an 8.3 short name (`GIT~1` is `.git`, `NODE_M~1` is `node_modules`), or one
- * ending in a dot or a space (which Windows drops: `.git.` is `.git`). */
-export function isWindowsAlias(name) {
-  return name.includes(':') || /^[^.~]{1,8}~\d+(\.[^.]{0,3})?$/.test(name) || /[. ]$/.test(name)
-}
-
-const ON_WINDOWS = process.platform === 'win32'
-
-function refuseAlias(segment) {
-  if (!isWindowsAlias(segment)) return
-  throw new ApiError(400, 'invalid-path', `${JSON.stringify(segment)} isn't a name Nebula writes: a name can't hold ':' or end in a dot or space, and ones shaped like Windows' short names (GIT~1) are left alone`)
-}
-
-/** Off Windows, ':' and a trailing dot or space are ordinary names that every tier writes (the
- * store's conformance: `Plans: phase 1?.md`, `notes.`), so a new name is refused only when it could
- * be a hidden name on a Windows or case-insensitive disk mounted here: what is left of it before a
- * ':' or without its trailing dots and spaces is hidden, or it has a short name's shape. */
-function refuseHiddenAlias(segment) {
-  const base = segment.split(':')[0].replace(/[. ]+$/, '')
-  if (isHiddenName(base) || /^[^.~]{1,8}~\d+(\.[^.]{0,3})?$/.test(segment)) refuseAlias(segment)
-}
-
-/** The names a write is about to make (from `missing`, the first segment that isn't there yet; none if it all is). */
-function refuseAliases(segments, missing) {
-  if (missing !== undefined) segments.slice(missing).forEach(ON_WINDOWS ? refuseAlias : refuseHiddenAlias)
-}
-
-/** The path's segments, or ApiError. A hidden name is refused anywhere, except the root's
- * `.nebula/` and the plain names inside it. */
-function segmentsOf(path) {
-  const problem = pathProblem(path)
-  if (problem) throw new ApiError(400, 'invalid-path', `Invalid path ${JSON.stringify(path)}: ${problem}`)
-  const segments = path.split('/')
-  segments.forEach((segment, index) => {
-    // On a Windows server nothing is reached by an alias; elsewhere only new names are checked (refuseAliases).
-    if (ON_WINDOWS) refuseAlias(segment)
-    const own = index === 0 && segment === '.nebula'
-    const insideOwn = index > 0 && segments[0] === '.nebula' && !segment.startsWith('.')
-    if (isHiddenName(segment) && !own && !insideOwn) {
-      throw new ApiError(403, 'hidden', `${JSON.stringify(path)} isn't served: a hidden name (${segment})`)
-    }
-  })
-  return segments
-}
 
 function isLoopbackAddress(address = '') {
   return address === '::1' || /^(::ffff:)?127\./.test(address)
 }
 
-function isInside(path, folder) {
-  return path === folder || path.startsWith(`${folder}/`)
+/** A version, quoted as an ETag; and back. */
+const etagOf = (version) => `"${version}"`
+const versionIn = (etag) => (/^".*"$/.test(etag) ? etag.slice(1, -1) : etag)
+
+/** Projects as a client sees them: never the host's path. */
+const publicInfo = ({ dir: _dir, ...info }) => info
+
+/** A record as anyone may read it: the asking page's id stays with the feed's echo. */
+const publicRecord = ({ client: _client, ...record }) => record
+
+/** A name on one line, at most 80 characters, as Orbit's local mode reads its agent headers. */
+/** A host's words for a person: control characters out, spaces folded, at most `limit` long. */
+function cleanText(value, limit) {
+  return String(value ?? '').replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').trim().replace(/\s+/g, ' ').slice(0, limit)
 }
 
-function etagOf(st) {
-  return `"${st.ino.toString(36)}-${st.mtimeNs.toString(36)}-${st.size.toString(36)}"`
+function cleanName(value, fallback) {
+  return cleanText(value, 80) || fallback
 }
 
-function entryOf(path, st) {
-  const name = path.slice(path.lastIndexOf('/') + 1)
-  return st.isDirectory()
-    ? { path, name, type: 'dir' }
-    : { path, name, type: 'file', size: Number(st.size), modified: Number(st.mtimeMs) }
+/** An actor's id from its name, as Orbit makes one: lower case, words joined by '-'. */
+function idFromName(name) {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80) || 'agent'
 }
 
-/** What link(2) says on a disk that has no hard links (exFAT and FAT, some network and FUSE mounts). */
-const NO_LINK = new Set(['EPERM', 'ENOSYS', 'ENOTSUP', 'EOPNOTSUPP', 'EINVAL'])
+/** The person at a standalone server, as its changes and new projects name them: `createdBy`, or
+ * the server's label. A backend made outside createFilesApi (nebula run --database) takes its `id`
+ * as `createdBy`, so its projects name the same person the API's records do. */
+export function serverPerson({ label = hostname(), createdBy } = {}) {
+  const name = cleanName(createdBy ?? label, 'nebula-server')
+  return { type: 'human', id: idFromName(name), name }
+}
+
+function json(status, body, headers = {}) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', ...headers },
+  })
+}
+
+/** A link a host gives the app to send a person to (sign in, get more space): an https or http
+ * address, or a path on the host. Anything else (`javascript:`, `//elsewhere`) is the host's mistake. */
+const HOST_LINK = /^(https?:\/\/[^\s]+|\/(?!\/)[^\s]*)$/
+
+function hostLink(value, what) {
+  if (typeof value !== 'string' || value.length > 2048 || !HOST_LINK.test(value)) {
+    throw new Error(`${what} is an http(s) address or a path on the host, such as /sign-in: ${JSON.stringify(value)}`)
+  }
+  return value
+}
 
 /**
- * Puts the file at `from` where nothing is yet, as `to`, and leaves `from` gone. It never replaces
- * what is there: a hard link refuses an existing name (EEXIST). Where the disk has no link(2)
- * (`noLink`, or when the link says so), the name is taken first by an exclusive create (EEXIST
- * again), then the file is renamed over that empty file of our own. Only that empty file can be
- * overwritten, and only by someone who wrote into it in the moment between the two.
+ * The answer for a request whose session has ended: a host's `resolve` returns it. A 401 with
+ * `{ error: 'signed-out', message, signIn? }`, which the app reads as "you're signed out" (it keeps
+ * the person's unsaved edits and offers `signIn`), never as a failure of the server.
+ * @param {{ signIn?: string, message?: string }} [options]  `signIn`: where the person signs in again
+ * @returns {Response}
  */
-async function placeNew(from, to, noLink = false) {
-  if (!noLink) {
-    let linked = false
-    try {
-      await link(from, to)
-      linked = true
-    } catch (error) {
-      if (!NO_LINK.has(error.code)) throw error
-    }
-    if (linked) return unlink(from)
-  }
-  const handle = await open(to, FS.O_WRONLY | FS.O_CREAT | FS.O_EXCL | FS.O_NOFOLLOW, 0o666)
-  const made = await handle.stat()
-  await handle.close()
-  try {
-    await rename(from, to)
-  } catch (error) {
-    // Remove only the empty file made above: same file, still empty. Anything else at `to` is
-    // someone's, and stays (Nebula never deletes a file it can't prove it made).
-    const now = await lstat(to).catch(() => null)
-    if (now && now.isFile() && now.ino === made.ino && now.dev === made.dev && now.size === 0) await unlink(to).catch(() => {})
-    throw error
-  }
+export function signedOut({ signIn, message = 'You’re signed out. Sign in again to keep working.' } = {}) {
+  const words = cleanText(message, 300) || 'You’re signed out. Sign in again to keep working.'
+  return json(401, { error: 'signed-out', message: words, ...(signIn === undefined ? {} : { signIn: hostLink(signIn, 'signIn') }) })
 }
 
-/** Whether the disk under a project's `.nebula/` can make a hard link, tried once with two files
- * made and removed there (and nowhere else). 'unknown' when nothing can be made there at all (a
- * read-only disk, a `.nebula` that isn't a real folder): that is not the disk's lack of links. */
-export async function probeLink(dir) {
-  const base = join(dir, '.nebula')
-  const name = `.probe-${randomBytes(6).toString('hex')}`
-  const from = join(base, name)
-  const to = join(base, `${name}-link`)
-  try {
-    const st = await lstat(base)
-    if (!st.isDirectory() || st.isSymbolicLink()) return 'unknown'
-    await writeFile(from, '', { flag: 'wx' })
-  } catch {
-    return 'unknown'
+/** Bytes in words: 1.5 MB, 800 KB. */
+function sizeWords(bytes) {
+  const units = ['bytes', 'KB', 'MB', 'GB', 'TB']
+  let value = bytes
+  let unit = 0
+  while (value >= 1000 && unit < units.length - 1) {
+    value /= 1000
+    unit += 1
   }
-  try {
-    await link(from, to)
-    return 'links'
-  } catch (error) {
-    return NO_LINK.has(error.code) ? 'none' : 'unknown'
-  } finally {
-    await unlink(to).catch(() => {})
-    await unlink(from).catch(() => {})
-  }
-}
-
-/** A file system's refusal, in words for whoever is using Nebula, or null for any other error. */
-function fsProblem(error) {
-  switch (error?.code) {
-    case 'EROFS':
-      return new ApiError(403, 'read-only', 'This folder is on a read-only disk, so nothing can be saved in it')
-    case 'EACCES':
-    case 'EPERM':
-      return new ApiError(403, 'permission', "The server isn't allowed to write there")
-    case 'ENOSPC':
-    case 'EDQUOT':
-      return new ApiError(507, 'disk-full', "The disk is full, so that couldn't be saved")
-    default:
-      return null
-  }
-}
-
-function newProjectId() {
-  const id = []
-  while (id.length < 10) {
-    for (const byte of randomBytes(16)) if (byte < 252 && id.length < 10) id.push(ID_ALPHABET[byte % 36])
-  }
-  return id.join('')
-}
-
-/** One project the server serves: a folder, its id and name, its change feed. */
-class Project {
-  constructor(dir, meta, epoch) {
-    this.dir = dir
-    this.meta = meta
-    this.epoch = epoch
-    this.seq = 0
-    this.ring = []
-    this.subscribers = new Set()
-    this.queue = Promise.resolve()
-    this.recentPaths = new Map()
-    this.dirs = new Set()
-    /** One native recursive watcher (macOS, Windows), or one per served folder (relative path, '' for
-     * the root; Linux). */
-    this.watcher = null
-    this.folders = new Map()
-    this.limited = false
-    /** Whether the disk has no hard links, found when the project was first served (probeLink). */
-    this.noLink = false
-    this.pending = new Map()
-    this.closed = false
-  }
-
-  /** Stops watching and ends every feed, so its clients reconnect and resync. */
-  close() {
-    this.closed = true
-    this.watcher?.close()
-    for (const watcher of this.folders.values()) watcher.close()
-    this.folders.clear()
-    for (const timer of this.pending.values()) clearTimeout(timer)
-    for (const send of this.subscribers) send.end?.()
-    this.subscribers.clear()
-  }
-
-  get cursor() {
-    return `${this.epoch}:${this.seq}`
-  }
-
-  /** Mutations run one at a time, so a precondition and the write it guards are one step. */
-  exclusive(action) {
-    const result = this.queue.then(action, action)
-    this.queue = result.catch(() => {})
-    return result
-  }
-
-  emit(change, by = null) {
-    this.noteFolders(change)
-    this.seq += 1
-    const event = { seq: this.seq, change, by }
-    this.ring.push(event)
-    if (this.ring.length > RING) this.ring.shift()
-    for (const send of this.subscribers) send(event)
-    return this.cursor
-  }
-
-  /**
-   * The folders known to be there, so a folder told of again is never announced as new. macOS's
-   * recursive watcher (FSEvents) names a folder whenever something in it changes; without this
-   * every rename inside `Briefs` said `mkdir Briefs` (Bruce's 2.0.2 publish run on his Mac).
-   */
-  noteFolders(change) {
-    const ancestors = (path) => {
-      const parts = path.split('/')
-      for (let i = 1; i < parts.length; i += 1) this.dirs.add(parts.slice(0, i).join('/'))
-    }
-    const drop = (path) => {
-      for (const dir of [...this.dirs]) if (isInside(dir, path)) this.dirs.delete(dir)
-    }
-    if (change.type === 'mkdir') {
-      ancestors(change.path)
-      this.dirs.add(change.path)
-    } else if (change.type === 'write') ancestors(change.path)
-    else if (change.type === 'remove') drop(change.path)
-    else if (change.type === 'rename') {
-      const moved = [...this.dirs].filter((dir) => isInside(dir, change.from))
-      drop(change.from)
-      for (const dir of moved) this.dirs.add(change.to + dir.slice(change.from.length))
-      ancestors(change.to)
-    }
-  }
-
-  /** What this server just did to a path: 'wrote' a file, 'made' a folder, 'moved'
-   * something there, or made it 'gone' (removed or renamed away). */
-  touched(path, kind) {
-    this.recentPaths.set(path, { at: Date.now(), kind })
-  }
-
-  /** The latest time this server did one of `kinds` to the path or a folder holding it, within
-   * the last moments; 0 when it didn't. */
-  touchedAt(path, kinds) {
-    const now = Date.now()
-    let latest = 0
-    for (const [touched, { at, kind }] of this.recentPaths) {
-      if (now - at > RECENT_MS) this.recentPaths.delete(touched)
-      else if (kinds.includes(kind) && isInside(path, touched) && at > latest) latest = at
-    }
-    return latest
-  }
+  const shown = unit === 0 ? String(value) : value >= 100 ? value.toFixed(0) : value.toFixed(1).replace(/\.0$/, '')
+  return `${shown} ${units[unit]}`
 }
 
 /**
  * The file API. `roots` are folders served as one project each; `projectsDirs` are folders whose
- * every (non-hidden) subfolder is a project, looked at again as projects come and go.
+ * every (non-hidden) subfolder is a project, looked at again as projects come and go. A host passes
+ * its own `backend` and `resolve` instead (the Suite: its database backend, and the signed-in account).
  */
 export function createFilesApi({
   roots = [],
@@ -340,615 +170,260 @@ export function createFilesApi({
   label = hostname(),
   allowHosts = [],
   maxBytes = 256 * 1024 * 1024,
-  createdBy = 'nebula-server',
+  /** Who the person using this server is (a project's createdBy, and the actor of their changes);
+   * the server's label when not given. */
+  createdBy,
   /** Answer a loopback Host name only from a loopback address (nebula run, Secu S6). Off for a
-   * container, whose requests all come through its bridge. */
+   * container, whose requests all come through its bridge. Through `fetch`, the host passes the
+   * address (`{ remoteAddress }`); without it a loopback name is refused. */
   loopbackPeer = false,
   /** How changes by others are watched: 'folders' (one watcher per served folder, the default on
    * Linux and elsewhere) or 'recursive' (one native watcher, the default on macOS and Windows). */
-  watchMode = process.platform === 'darwin' || process.platform === 'win32' ? 'recursive' : 'folders',
+  watchMode,
   /** The most folders watched in one project, and in all (each costs about 1.2 KB). */
-  maxWatched = MAX_WATCHED,
-  maxWatchedTotal = MAX_WATCHED_TOTAL,
+  maxWatched,
+  maxWatchedTotal,
   log = () => {},
+  /** Where the projects are kept (cli/backend.mjs); folders from `roots` and `projectsDirs` by default. */
+  backend,
+  /** Where the API answers: no trailing slash. */
+  apiBase = API,
+  /** Who is asking, checked before every route (after the Host and site guards): `{ actor }`, or a
+   * Response that refuses the request. The default is for a standalone server on a trusted machine. */
+  resolve,
+  /** The homes the app offers a person here (HOMES): every one by default; `['server']` in the
+   * Suite, where the browser's storage belongs to the address, not the account. */
+  homes = HOMES,
+  /** Whose this is, as an opaque id the host chooses (an account): the app keys what it notes on
+   * the device about this server's projects by it, so one account's recent projects don't show for
+   * another on the same computer. A string, or `(request, actor) => string | undefined` where one
+   * handler serves several accounts. */
+  scope,
+  /** How much the workspace may hold, in bytes: a number, or `(request, actor) => ({ bytes, upgrade? }
+   * | number | undefined)` where it differs by account. `upgrade` is where the person can get more
+   * space. The whole backend is one workspace (`backend.usage()`: current files only, never the
+   * earlier versions kept for history). A write that would take it past the limit answers 507
+   * `space-full`; one that doesn't grow it, a remove, a rename and a new folder always pass, so
+   * someone who is over can still trim. Without the option nothing is limited and the place says
+   * nothing of space. */
+  allowance,
 } = {}) {
-  const epoch = randomBytes(6).toString('hex')
+  if (!/^(\/[A-Za-z0-9._~-]+)+$/.test(apiBase)) throw new Error(`apiBase is a path such as ${API}, with no trailing slash: ${JSON.stringify(apiBase)}`)
+  if (!Array.isArray(homes) || !homes.includes('server') || homes.some((home) => !HOMES.includes(home))) {
+    throw new Error(`homes lists 'server' and any of ${HOMES.join(', ')}: ${JSON.stringify(homes)}`)
+  }
+  if (scope !== undefined && typeof scope !== 'function' && !SCOPE.test(scope)) throw new Error(`scope is an opaque id of at most 128 link characters: ${JSON.stringify(scope)}`)
+  if (allowance !== undefined && typeof allowance !== 'function' && !(Number.isFinite(allowance) && allowance >= 0)) throw new Error(`allowance is a number of bytes or a function: ${JSON.stringify(allowance)}`)
+  const offered = HOMES.filter((home) => homes.includes(home))
   const allowed = new Set(allowHosts.map((host) => host.toLowerCase()))
-  /** id → Project; dir → id. */
-  const projects = new Map()
-  const byDir = new Map()
-  let scanned = 0
-  let scanning = null
+  /** The person at this server: on a trusted machine, whoever asks without saying they are an agent. */
+  const owner = serverPerson({ label, createdBy })
+  backend ??= createFolderBackend({ roots, projectsDirs, createdBy: owner.id, watchMode, maxWatched, maxWatchedTotal, log })
+  resolve ??= (request) => ({ actor: actorOf((name) => request.headers.get(name)) })
+  const serverTiming = serverTimingFor(apiBase)
+  /** The projects as last listed, for `projects()`. */
+  let known = []
 
-  /** The project's own `.nebula` is a real folder (or not there yet), never a link. */
-  async function ownMetaDir(dir) {
-    try {
-      const st = await lstat(join(dir, '.nebula'))
-      return st.isDirectory() && !st.isSymbolicLink()
-    } catch (error) {
-      return error.code === 'ENOENT' ? null : false
-    }
+  const isApiPath = (pathname) => pathname === apiBase || pathname.startsWith(`${apiBase}/`)
+
+  async function listProjects(actor = owner) {
+    known = await backend.listProjects({ actor })
+    return known
   }
 
-  async function readMeta(dir) {
-    try {
-      if ((await ownMetaDir(dir)) !== true) return null
-      const st = await lstat(join(dir, '.nebula', 'project.json'))
-      if (!st.isFile() || st.size > META_MAX) return null
-      const meta = JSON.parse(await readFile(join(dir, '.nebula', 'project.json'), 'utf8'))
-      if (typeof meta?.id !== 'string' || !ID_PATTERN.test(meta.id) || meta.id === '.' || meta.id === '..') return null
-      return meta
-    } catch {
-      return null
-    }
+  /** Who is asking on a standalone server: an agent when it says so (`Nebula-Actor: agent`, or a
+   * `Nebula-Agent-Name`), else the person at this server. A host with accounts reads its
+   * credentials instead, and these headers then mean nothing. */
+  function actorOf(header) {
+    const type = String(header('nebula-actor') ?? '').trim().toLowerCase()
+    const agentName = header('nebula-agent-name') ?? ''
+    if (type !== 'agent' && !agentName.trim()) return owner
+    const name = cleanName(agentName, 'agent')
+    return { type: 'agent', id: idFromName(name), name }
   }
 
-  /** A folder's project: its `.nebula/project.json`, made the first time (like the folder tier).
-   * A folder Nebula can't write keeps an id made from where it is, so it stays the same. */
-  async function adopt(dir, index) {
-    let meta = await readMeta(dir)
-    const metaDir = await ownMetaDir(dir)
-    if (!meta && metaDir === false) {
-      // A .nebula that isn't a real folder: nothing is written through it; the id comes from where it is.
-      meta = { id: createHash('sha256').update(dir).digest('hex').slice(0, 10), name: basename(dir), color: PLANETS[index % PLANETS.length], created: new Date(0).toISOString(), createdBy }
-    }
-    if (!meta) {
-      meta = {
-        id: newProjectId(),
-        name: basename(dir),
-        color: PLANETS[index % PLANETS.length],
-        created: new Date().toISOString(),
-        createdBy,
-      }
-      try {
-        await mkdir(join(dir, '.nebula'), { recursive: true })
-        const temp = join(dir, '.nebula', `.project-${randomBytes(6).toString('hex')}`)
-        await writeFile(temp, `${JSON.stringify(meta, null, 2)}\n`, { flag: 'wx' })
-        try {
-          await placeNew(temp, join(dir, '.nebula', 'project.json'))
-        } finally {
-          await unlink(temp).catch(() => {})
-        }
-      } catch {
-        const again = await readMeta(dir)
-        if (again) meta = again
-        else meta.id = createHash('sha256').update(dir).digest('hex').slice(0, 10)
-      }
-    }
-    return {
-      id: meta.id,
-      name: typeof meta.name === 'string' && meta.name.trim() ? meta.name : basename(dir),
-      color: typeof meta.color === 'string' && COLOUR.test(meta.color) ? meta.color.toLowerCase() : PLANETS[index % PLANETS.length],
-      created: typeof meta.created === 'string' ? meta.created : new Date(0).toISOString(),
-      createdBy: typeof meta.createdBy === 'string' ? meta.createdBy : createdBy,
-    }
+  /** The actor a host's resolve gave, as every record holds it; null when it isn't one. */
+  function actorIn(actor) {
+    if (!actor || !ACTOR_TYPES.has(actor.type) || typeof actor.id !== 'string' || !actor.id || typeof actor.name !== 'string') return null
+    return { type: actor.type, id: actor.id.slice(0, 128), name: cleanName(actor.name, actor.id).slice(0, 80) }
   }
 
-  async function candidates() {
-    const dirs = []
-    for (const root of roots) dirs.push(await realpath(root))
-    for (const parent of projectsDirs) {
-      const real = await realpath(parent)
-      let names = []
-      try {
-        names = (await readdir(real, { withFileTypes: true })).filter((d) => d.isDirectory() && !isHiddenName(d.name)).map((d) => d.name)
-      } catch (error) {
-        log(`nebula-files: can't read ${real}: ${error.message}`)
-      }
-      for (const name of names.sort()) dirs.push(join(real, name))
-    }
-    return dirs
+  /** The context a writer names, or none; anything that isn't a short link is refused, never stored. */
+  function contextOf(value) {
+    if (value === null || value === '') return undefined
+    if (!CONTEXT.test(value)) throw new BackendError('invalid-context', 'Nebula-Context is a link of at most 256 characters, such as orbit:card/<board>/<n>')
+    return value
   }
 
-  async function scan() {
-    const dirs = await candidates()
-    const seen = new Set()
-    let index = 0
-    for (const dir of dirs) {
-      const meta = await adopt(dir, index++)
-      const known = projects.get(meta.id)
-      if (known && known.dir !== dir) {
-        if (seen.has(meta.id) || (await lstat(known.dir).then(() => true, () => false))) {
-          log(`nebula-files: ${dir} has the id of ${known.dir} (${meta.id}); only the first is served`)
-          continue
-        }
-        // Its folder was renamed or moved on the server: the same project, from a fresh start.
-        known.close()
-        projects.delete(meta.id)
-        byDir.delete(known.dir)
-      }
-      seen.add(meta.id)
-      const kept = projects.get(meta.id)
-      if (kept) kept.meta = meta
-      else {
-        const project = new Project(dir, meta, `${epoch}.${randomBytes(3).toString('hex')}`)
-        // Once, before anything is written through it: can this disk make a hard link?
-        const links = await probeLink(dir)
-        project.noLink = links === 'none'
-        if (project.noLink) log(`nebula-files: ${meta.name}: this disk has no hard links (exFAT, FAT and some network mounts don't), so a new file or a move is made by taking its name first and then renaming over that, instead of by link. Nothing is ever written over a file that is there. If that fails, ask the server's owner to serve a folder on another disk.`)
-        else if (links === 'unknown') log(`nebula-files: ${meta.name}: nothing can be made in ${join(dir, '.nebula')} (a read-only disk or folder?), so saving there will be refused until it can`)
-        projects.set(meta.id, project)
-        byDir.set(dir, meta.id)
-        startWatch(project)
-      }
-    }
-    for (const [id, project] of projects) {
-      if (!seen.has(id)) {
-        project.close()
-        projects.delete(id)
-        byDir.delete(project.dir)
-      }
-    }
-    scanned = Date.now()
-  }
-
-  function rescan(force = false) {
-    if (!force && Date.now() - scanned < 1_000) return scanning ?? Promise.resolve()
-    if (!scanning) scanning = scan().finally(() => { scanning = null })
-    return scanning
-  }
-
-  async function projectOf(id) {
-    if (!projects.has(id)) await rescan()
-    const project = projects.get(id)
-    if (!project) throw new ApiError(404, 'no-project', `No project ${JSON.stringify(id)} here`)
-    return project
-  }
-
-  // --- the file system, walked one segment at a time ------------------------------------------
-
-  /** Where `segments` leads: its lstat (or null when nothing is there), refusing a symlink on the
-   * way, and whether a file stood where a folder was needed (`blocked`). */
-  async function walk(project, segments) {
-    let abs = project.dir
-    for (let index = 0; index < segments.length; index += 1) {
-      abs = join(abs, segments[index])
-      let st
-      try {
-        st = await lstat(abs, { bigint: true })
-      } catch (error) {
-        if (error.code === 'ENOENT') return { abs: join(project.dir, ...segments), st: null, missing: index }
-        if (error.code === 'ENOTDIR') return { abs: join(project.dir, ...segments), st: null, blocked: true }
-        throw error
-      }
-      if (st.isSymbolicLink()) throw new ApiError(403, 'symlink', `${JSON.stringify(segments.slice(0, index + 1).join('/'))} is a symbolic link, which isn't served`)
-      if (index < segments.length - 1 && !st.isDirectory()) return { abs: join(project.dir, ...segments), st: null, blocked: true }
-      if (index === segments.length - 1) return { abs, st }
-    }
-    return { abs, st: null }
-  }
-
-  /** Makes the folders on the way to `segments` (not the last), as `mkdir -p` would, refusing a
-   * file or a link where a folder should be. Returns the paths it made. */
-  async function makeParents(project, segments) {
-    const made = []
-    let abs = project.dir
-    for (let index = 0; index < segments.length - 1; index += 1) {
-      abs = join(abs, segments[index])
-      const path = segments.slice(0, index + 1).join('/')
-      try {
-        const st = await lstat(abs)
-        if (st.isSymbolicLink()) throw new ApiError(403, 'symlink', `${JSON.stringify(path)} is a symbolic link, which isn't served`)
-        if (!st.isDirectory()) throw new ApiError(409, 'type', `${JSON.stringify(path)} is a file, not a folder`, { expected: 'folder' })
-      } catch (error) {
-        if (error instanceof ApiError) throw error
-        if (error.code !== 'ENOENT') throw error
-        try {
-          await mkdir(abs)
-          made.push(path)
-        } catch (made_) {
-          if (made_.code !== 'EEXIST') throw made_
-        }
-      }
-    }
-    return made
-  }
-
-  async function list(project) {
-    const entries = []
-    async function visit(abs, prefix) {
-      let items
-      try {
-        items = await readdir(abs, { withFileTypes: true })
-      } catch (error) {
-        if (error.code === 'ENOENT' && prefix) return
-        throw error
-      }
-      for (const item of items) {
-        if (isHiddenName(item.name) || item.isSymbolicLink()) continue
-        const path = prefix ? `${prefix}/${item.name}` : item.name
-        if (pathProblem(path)) continue
-        const child = join(abs, item.name)
-        let st
-        try {
-          st = await lstat(child, { bigint: true })
-        } catch {
-          continue
-        }
-        if (st.isDirectory()) {
-          entries.push(entryOf(path, st))
-          if (entries.length > MAX_ENTRIES) throw new ApiError(413, 'too-big', `${project.meta.name} holds more than ${MAX_ENTRIES} files and folders`)
-          await visit(child, path)
-        } else if (st.isFile()) {
-          entries.push(entryOf(path, st))
-          if (entries.length > MAX_ENTRIES) throw new ApiError(413, 'too-big', `${project.meta.name} holds more than ${MAX_ENTRIES} files and folders`)
-        }
-      }
-    }
-    await visit(project.dir, '')
-    return entries
-  }
-
-  async function receive(req, project) {
-    const own = await ownMetaDir(project.dir)
-    if (own === false) throw new ApiError(403, 'symlink', `${project.meta.name}'s .nebula isn't a real folder, so nothing is written`)
-    if (own === null) await mkdir(join(project.dir, '.nebula'))
-    const temp = join(project.dir, '.nebula', `.upload-${randomBytes(8).toString('hex')}`)
-    const handle = await open(temp, FS.O_WRONLY | FS.O_CREAT | FS.O_EXCL | FS.O_NOFOLLOW, 0o666)
+  /** The body, refused once it passes maxBytes, or `room` (what the allowance leaves: `full` makes the refusal). */
+  async function* limited(body, room = Infinity, full) {
     let size = 0
-    try {
-      for await (const chunk of req) {
-        size += chunk.length
-        if (size > maxBytes) throw new ApiError(413, 'too-large', `The file is over ${maxBytes} bytes`)
-        await handle.write(chunk)
-      }
-      await handle.sync()
-    } catch (error) {
-      await handle.close().catch(() => {})
-      await unlink(temp).catch(() => {})
-      throw error
-    }
-    await handle.close()
-    return temp
-  }
-
-  async function write(req, project, path, clientId) {
-    const segments = segmentsOf(path)
-    const ifMatch = req.headers['if-match']
-    const ifNoneMatch = req.headers['if-none-match']
-    const createParents = req.headers['nebula-parents'] !== 'existing'
-    const temp = await receive(req, project)
-    try {
-      if (path === '.nebula/project.json') await checkMeta(temp, project)
-      return await project.exclusive(async () => {
-        let at = await walk(project, segments)
-        if (at.blocked) throw new ApiError(409, 'type', `${JSON.stringify(path)} goes through a file`, { expected: 'folder' })
-        if (!at.st) refuseAliases(segments, at.missing)
-        if (!at.st && at.missing !== undefined && at.missing < segments.length - 1) {
-          if (!createParents) throw new ApiError(404, 'not-found', `The folder for ${JSON.stringify(path)} is gone`)
-          for (const made of await makeParents(project, segments)) project.touched(made, 'made')
-          at = await walk(project, segments)
-        }
-        if (ifNoneMatch === '*') {
-          if (at.st) throw new ApiError(412, 'precondition', `Something already exists at ${JSON.stringify(path)}`, { exists: true })
-        } else if (ifMatch) {
-          if (!at.st || !at.st.isFile()) throw new ApiError(412, 'precondition', `${JSON.stringify(path)} is gone, or isn't a file`, { absent: true })
-          if (etagOf(at.st) !== ifMatch) throw new ApiError(412, 'precondition', `${JSON.stringify(path)} changed`, { absent: false })
-        }
-        if (at.st && !at.st.isFile()) throw new ApiError(409, 'type', `${JSON.stringify(path)} is a folder`, { expected: 'file' })
-        if (ifNoneMatch === '*') {
-          try {
-            await placeNew(temp, at.abs, project.noLink)
-          } catch (error) {
-            if (error.code === 'EEXIST') throw new ApiError(412, 'precondition', `Something already exists at ${JSON.stringify(path)}`, { exists: true })
-            throw error
-          }
-        } else {
-          await rename(temp, at.abs)
-        }
-        const st = await lstat(at.abs, { bigint: true })
-        const etag = etagOf(st)
-        project.touched(path, 'wrote')
-        const cursor = project.emit({ type: 'write', path }, clientId)
-        return { status: 200, body: { entry: entryOf(path, st), etag, cursor }, headers: { etag } }
-      })
-    } finally {
-      await unlink(temp).catch(() => {})
+    for await (const chunk of body ?? []) {
+      size += chunk.byteLength
+      if (size > maxBytes) throw new BackendError('too-large', `The file is over ${maxBytes} bytes`)
+      if (size > room) throw full()
+      yield chunk
     }
   }
 
-  /** A project.json written through the API stays this project's: JSON, under the cap, its id
-   * unchanged. */
-  async function checkMeta(temp, project) {
-    const st = await lstat(temp)
-    if (st.size > META_MAX) throw new ApiError(413, 'too-large', `project.json is over ${META_MAX} bytes`)
-    let meta
-    try {
-      meta = JSON.parse(await readFile(temp, 'utf8'))
-    } catch {
-      throw new ApiError(400, 'project-meta', 'project.json must be JSON')
-    }
-    if (meta?.id !== project.meta.id) throw new ApiError(400, 'project-meta', "project.json keeps the project's id")
+  /** The allowance for this request, `{ limit?, upgrade? }`; `{}` when it has none, null when the
+   * host sets no allowance at all (nothing is said of space then). */
+  async function allowanceFor(request, actor) {
+    if (allowance === undefined) return null
+    const given = typeof allowance === 'function' ? await allowance(request, actor) : allowance
+    if (given === undefined || given === null) return {}
+    const bytes = typeof given === 'number' ? given : given?.bytes
+    if (!Number.isFinite(bytes) || bytes < 0) throw new Error(`allowance gave ${JSON.stringify(given)}, not a number of bytes or { bytes, upgrade? }`)
+    const upgrade = typeof given === 'object' && given.upgrade !== undefined ? hostLink(given.upgrade, 'allowance’s upgrade') : undefined
+    return { limit: Math.floor(bytes), ...(upgrade === undefined ? {} : { upgrade }) }
   }
 
-  async function makeDir(project, path, clientId) {
-    const segments = segmentsOf(path)
-    return project.exclusive(async () => {
-      const at = await walk(project, segments)
-      if (at.blocked) throw new ApiError(409, 'type', `${JSON.stringify(path)} goes through a file`, { expected: 'folder' })
-      if (!at.st) refuseAliases(segments, at.missing)
-      if (at.st) {
-        if (!at.st.isDirectory()) throw new ApiError(409, 'type', `${JSON.stringify(path)} is a file`, { expected: 'folder' })
-        return { status: 200, body: { changed: false, cursor: project.cursor } }
-      }
-      for (const made of await makeParents(project, segments)) project.touched(made, 'made')
-      try {
-        await mkdir(at.abs)
-      } catch (error) {
-        if (error.code !== 'EEXIST') throw error
-      }
-      project.touched(path, 'made')
-      const cursor = project.emit({ type: 'mkdir', path }, clientId)
-      return { status: 200, body: { changed: true, cursor } }
+  /** The workspace's space now: what it holds, and the allowance where there is one; null with no
+   * allowance option, or (`limitedOnly`, for a write that has no use for the count otherwise) with
+   * no limit for this request. */
+  async function spaceFor(request, actor, limitedOnly = false) {
+    const set = await allowanceFor(request, actor)
+    if (set === null || (limitedOnly && set.limit === undefined)) return null
+    return { used: (await backend.usage()).bytes, ...set }
+  }
+
+  /**
+   * How large a file of this request may be, in bytes, before it takes the workspace past its
+   * allowance: Infinity when there is none. `adding` is the size of the file about to be kept (when
+   * it's known) and `replacing` the size of the file it replaces, so what counts is the difference:
+   * a file no larger than the one it replaces always fits, even when the workspace is over.
+   * Refuses with `space-full` (507) when `adding` doesn't fit. A restore passes the old version's
+   * size as `adding` and the current file's as `replacing`.
+   * @param {Request} request
+   * @param {import('./backend.mjs').Actor} actor
+   * @param {number} [adding]
+   * @param {number} [replacing]
+   * @returns {Promise<number>}
+   */
+  async function roomFor(request, actor, adding, replacing = 0) {
+    const space = await spaceFor(request, actor, true)
+    if (!space) return Infinity
+    const room = roomLeft(space, replacing)
+    if (adding !== undefined && adding > room) throw spaceFull(space)
+    return room
+  }
+
+  /** The largest the new file may be: what the limit leaves, and never less than the file it replaces. */
+  const roomLeft = (space, replacing) => Math.max(space.limit - space.used + replacing, replacing)
+
+  /** The 507 for a workspace this full: `used` and `limit` as numbers the app can show. */
+  const spaceFull = ({ used, limit, upgrade }) =>
+    new BackendError('space-full', `This space is full (${sizeWords(used)} of ${sizeWords(limit)} used), so that couldn’t be saved`, {
+      used,
+      limit,
+      ...(upgrade === undefined ? {} : { upgrade }),
     })
+
+  /** What a PUT may write: the body to give the backend, held to maxBytes and to the allowance. A
+   * declared length that wouldn't fit is refused before a byte is read; one of unknown length is
+   * read only up to the room left. */
+  async function accepted(request, actor, id, path) {
+    const space = await spaceFor(request, actor, true)
+    if (!space) return limited(request.body)
+    // The bytes of the file this one replaces: they're freed as the new ones land.
+    const current = await backend.stat(id, path)
+    const replacing = current?.entry.type === 'file' ? (current.entry.size ?? 0) : 0
+    const room = roomLeft(space, replacing)
+    const declared = declaredLength(request.headers.get('content-length'))
+    if (declared !== Infinity && declared > room) throw spaceFull(space)
+    return limited(request.body, room, () => spaceFull(space))
   }
 
-  async function move(project, from, to, clientId) {
-    const fromSegments = segmentsOf(from)
-    const toSegments = segmentsOf(to)
-    if (fromSegments[0] === '.nebula' || toSegments[0] === '.nebula') throw new ApiError(403, 'hidden', `.nebula is the project's own: nothing moves in or out of it`)
-    return project.exclusive(async () => {
-      const source = await walk(project, fromSegments)
-      if (!source.st) throw new ApiError(404, 'not-found', `Nothing exists at ${JSON.stringify(from)}`)
-      const target = await walk(project, toSegments)
-      if (target.st || from === to) throw new ApiError(409, 'exists', `Something already exists at ${JSON.stringify(to)}`)
-      if (target.blocked) throw new ApiError(409, 'type', `${JSON.stringify(to)} goes through a file`, { expected: 'folder' })
-      refuseAliases(toSegments, target.missing)
-      if (isInside(to, from)) throw new ApiError(400, 'into-itself', `A folder can't move into itself`)
-      for (const made of await makeParents(project, toSegments)) project.touched(made, 'made')
-      if (source.st.isFile()) {
-        // link + unlink: a file that appeared at `to` meanwhile is never replaced.
-        try {
-          await placeNew(source.abs, target.abs, project.noLink)
-        } catch (error) {
-          if (error.code === 'EEXIST') throw new ApiError(409, 'exists', `Something already exists at ${JSON.stringify(to)}`)
-          throw error
-        }
-      } else {
-        await rename(source.abs, target.abs)
-      }
-      project.touched(from, 'gone')
-      project.touched(to, 'moved')
-      const cursor = project.emit({ type: 'rename', from, to }, clientId)
-      return { status: 200, body: { cursor } }
-    })
-  }
-
-  async function remove(project, path, clientId) {
-    const segments = segmentsOf(path)
-    if (segments[0] === '.nebula' && segments.length === 1) throw new ApiError(403, 'hidden', `.nebula is the project's own`)
-    return project.exclusive(async () => {
-      const at = await walk(project, segments)
-      if (!at.st) throw new ApiError(404, 'not-found', `Nothing exists at ${JSON.stringify(path)}`)
-      await rm(at.abs, { recursive: true, force: false })
-      project.touched(path, 'gone')
-      const cursor = project.emit({ type: 'remove', path }, clientId)
-      return { status: 200, body: { cursor } }
-    })
-  }
-
-  // --- changes made by anyone else: an agent, an editor, nebula-store ------------------------
-
-  /** A change somewhere under the project, told by a watcher: looked at once it has been quiet for a
-   * moment. Hidden names, node_modules and the like are dropped here, so they cost nothing. */
-  function changed(project, path) {
-    if (path.split('/').some(isHiddenName) || pathProblem(path)) return
-    clearTimeout(project.pending.get(path))
-    project.pending.set(path, setTimeout(() => {
-      project.pending.delete(path)
-      void observe(project, path)
-    }, 40))
-  }
-
-  function startWatch(project) {
-    // The folders already there, so the first event inside one doesn't announce it as new.
-    list(project).then(
-      (entries) => {
-        for (const entry of entries) if (entry.type === 'dir') project.dirs.add(entry.path)
-      },
-      () => {},
-    )
-    if (watchMode === 'recursive') {
-      try {
-        project.watcher = fsWatch(project.dir, { recursive: true, persistent: false }, (_type, filename) => {
-          if (filename) changed(project, String(filename).split(sep).join('/'))
-        })
-        project.watcher.on('error', (error) => {
-          log(`nebula-files: watching ${project.dir} stopped (${error.message}); starting again in 5 s`)
-          project.watcher?.close()
-          project.watcher = null
-          setTimeout(() => {
-            if (!project.closed) startWatch(project)
-          }, 5_000).unref()
-        })
-      } catch (error) {
-        log(`nebula-files: can't watch ${project.dir}: ${error.message}`)
-      }
-      return
-    }
-    watchTree(project, '', false).catch((error) => log(`nebula-files: can't watch ${project.dir}: ${error.message}`))
-  }
-
-  const watchedInAll = () => [...projects.values()].reduce((sum, each) => sum + each.folders.size, 0)
-
-  const folderPath = (project, rel) => (rel ? join(project.dir, ...rel.split('/')) : project.dir)
-
-  /** Said once per project: what past the limit isn't watched, and what that means. */
-  function limitReached(project, why) {
-    if (project.limited) return
-    project.limited = true
-    log(`nebula-files: ${project.meta.name} has more folders than can be watched (${why}). Changes made outside Nebula in the folders past the limit aren't told live; Nebula's own changes always are, and the project lists them all.`)
-  }
-
-  /** Watches one folder (not what is in it), unless it already is. False when it couldn't be. */
-  function watchFolder(project, rel) {
-    if (project.folders.has(rel)) return true
-    if (project.folders.size >= maxWatched || watchedInAll() >= maxWatchedTotal) {
-      limitReached(project, project.folders.size >= maxWatched ? `${maxWatched} for one project` : `${maxWatchedTotal} for this server`)
-      return false
-    }
-    const abs = folderPath(project, rel)
-    const self = basename(abs)
-    let watcher
-    try {
-      watcher = fsWatch(abs, { persistent: false }, (_type, filename) => {
-        if (!filename) return
-        const name = String(filename)
-        const child = rel ? `${rel}/${name}` : name
-        if (name !== self) return changed(project, child)
-        // The system names a folder's own removal or move by its own name: a file called that inside
-        // it is a file; otherwise it is this folder, whose watcher now follows what is gone or moved
-        // (so it stops), and which its parent's watcher reports as well.
-        lstat(join(abs, name)).then(
-          () => changed(project, child),
-          () => {
-            if (!rel) return
-            if (project.folders.get(rel) === watcher) {
-              watcher.close()
-              project.folders.delete(rel)
-            }
-            changed(project, rel)
-          },
-        )
-      })
-    } catch (error) {
-      if (error.code === 'ENOSPC' || error.code === 'EMFILE') limitReached(project, `the system's limit on watched folders is reached; on Linux, raise fs.inotify.max_user_watches`)
-      else if (error.code !== 'ENOENT' && error.code !== 'ENOTDIR') log(`nebula-files: can't watch ${abs}: ${error.message}`)
-      return false
-    }
-    watcher.on('error', (error) => {
-      log(`nebula-files: watching ${abs} stopped (${error.message}); starting again in 5 s`)
-      unwatch(project, rel, false)
-      setTimeout(() => {
-        if (!project.closed) watchTree(project, rel, true).catch(() => {})
-      }, 5_000).unref()
-    })
-    project.folders.set(rel, watcher)
-    return true
-  }
-
-  /** Watches the folder and the folders in it, shallowest first, so a project past the limit is
-   * watched where it matters most. `announce` tells what was already in a folder that wasn't watched
-   * (one that appeared, or whose watcher started again): nothing was there to hear it. */
-  async function watchTree(project, start, announce) {
-    const queue = [start]
-    while (queue.length > 0 && !project.closed) {
-      const rel = queue.shift()
-      if (project.folders.has(rel)) continue
-      if (!watchFolder(project, rel)) {
-        if (project.limited) break
-        continue
-      }
-      let items
-      try {
-        items = await readdir(folderPath(project, rel), { withFileTypes: true })
-      } catch {
-        continue
-      }
-      for (const item of items) {
-        if (isHiddenName(item.name) || item.isSymbolicLink()) continue
-        const path = rel ? `${rel}/${item.name}` : item.name
-        if (pathProblem(path)) continue
-        if (item.isDirectory()) queue.push(path)
-        if (announce && (item.isDirectory() || item.isFile())) changed(project, path)
-      }
-    }
-  }
-
-  /** Stops watching a folder and the folders in it (they're gone, or moved). */
-  function unwatch(project, path, below = true) {
-    for (const [rel, watcher] of project.folders) {
-      if (rel === path || (below && rel.startsWith(`${path}/`))) {
-        watcher.close()
-        project.folders.delete(rel)
-      }
-    }
-  }
-
-  async function observe(project, path) {
-    let st = null
-    try {
-      st = (await walk(project, path.split('/'))).st
-    } catch {
-      return
-    }
-    // A folder that appeared (or moved in) is watched, with the folders in it; one that went isn't.
-    if (watchMode === 'folders' && !project.closed) {
-      if (st?.isDirectory()) watchTree(project, path, true).catch(() => {})
-      else if (!st) unwatch(project, path)
-    }
-    // What this server did itself was said already, by whoever asked, and only that is kept quiet: a file it wrote or moved (written before it did), a folder it made or moved, a
-    // path it removed or renamed away. Anyone else's change to the same path is told.
-    if (st?.isFile()) {
-      const touched = project.touchedAt(path, ['wrote', 'moved'])
-      if (touched && Number(st.mtimeMs) <= touched) return
-      project.emit({ type: 'write', path })
-    } else if (st?.isDirectory()) {
-      if (project.dirs.has(path) || project.touchedAt(path, ['made', 'moved'])) {
-        project.dirs.add(path)
-        return
-      }
-      project.emit({ type: 'mkdir', path })
-    } else if (!st) {
-      if (project.touchedAt(path, ['gone'])) return
-      project.emit({ type: 'remove', path })
-    }
-  }
-
-  function events(req, res, project) {
-    const since = new URL(req.url, 'http://x').searchParams.get('since') ?? req.headers['last-event-id'] ?? ''
-    res.writeHead(200, {
-      'content-type': 'text/event-stream; charset=utf-8',
-      'cache-control': 'no-store',
-      'x-accel-buffering': 'no',
-      'x-content-type-options': 'nosniff',
-      'content-security-policy': "default-src 'none'; sandbox",
-    })
-    const send = (event) => res.write(`id: ${project.epoch}:${event.seq}\nevent: change\ndata: ${JSON.stringify({ change: event.change, by: event.by })}\n\n`)
-    send.end = () => res.end()
-    res.write('retry: 2000\n\n')
-    const [sinceEpoch, sinceSeq] = String(since).split(':')
-    const seq = Number(sinceSeq)
-    const oldest = project.ring[0]?.seq ?? project.seq + 1
-    // `ready` comes before what was missed, so a client says it's back before it says what changed.
-    const ready = () => res.write(`event: ready\ndata: ${JSON.stringify({ cursor: project.cursor })}\n\n`)
-    if (sinceEpoch !== project.epoch || !Number.isInteger(seq) || seq > project.seq || seq < oldest - 1) {
-      res.write(`id: ${project.cursor}\nevent: resync\ndata: {}\n\n`)
-      ready()
-    } else {
-      ready()
-      for (const event of project.ring) if (event.seq > seq) send(event)
-    }
-    project.subscribers.add(send)
-    const ping = setInterval(() => res.write(': ping\n\n'), 20_000)
-    const stop = () => {
+  /** The project's feed as Server-Sent Events, from `since`: listening first, then reading what was
+   * missed, so a change landing between the two is held and told once, after the backlog. */
+  function events(request, id, since) {
+    let stop = () => {}
+    let closed = false
+    let ping = null
+    const finish = () => {
+      if (closed) return
+      closed = true
       clearInterval(ping)
-      project.subscribers.delete(send)
+      stop()
     }
-    req.on('close', stop)
-    res.on('error', stop)
+    const stream = new ReadableStream({
+      start(controller) {
+        const write = (text) => {
+          if (!closed) controller.enqueue(encoder.encode(text))
+        }
+        // The record whole, beside the two fields clients read: `change`, and `by` (the page that made it).
+        const send = (record) => write(`id: ${record.cursor}\nevent: change\ndata: ${JSON.stringify({ ...publicRecord(record), change: changeOf(record), by: record.client ?? null })}\n\n`)
+        let held = []
+        let last = 0
+        const live = (record) => {
+          if (held) held.push(record)
+          else if (record.seq > last) send(record)
+        }
+        // The project's feed stopped for good here: end the stream, so the client reconnects and resyncs.
+        const end = () => {
+          if (closed) return
+          finish()
+          controller.close()
+        }
+        write('retry: 2000\n\n')
+        ping = setInterval(() => write(': ping\n\n'), 20_000)
+        request.signal?.addEventListener('abort', finish, { once: true })
+        backend.subscribe(id, { change: live, end }).then(async (unsubscribe) => {
+          stop = unsubscribe
+          if (closed) return unsubscribe()
+          const since_ = await backend.changesSince(id, since)
+          last = Number(since_.cursor.slice(since_.cursor.lastIndexOf(':') + 1))
+          // `ready` comes before what was missed, so a client says it's back before it says what changed.
+          const ready = () => write(`event: ready\ndata: ${JSON.stringify({ cursor: since_.cursor })}\n\n`)
+          if (since_.resync) {
+            write(`id: ${since_.cursor}\nevent: resync\ndata: {}\n\n`)
+            ready()
+          } else {
+            ready()
+            for (const record of since_.changes) send(record)
+          }
+          for (const record of held) if (record.seq > last) send(record)
+          held = null
+        }).catch((error) => {
+          log(`nebula-files: the feed of ${id}: ${error.stack ?? error}`)
+          end()
+        })
+      },
+      cancel: finish,
+    })
+    return new Response(stream, {
+      status: 200,
+      headers: {
+        'content-type': 'text/event-stream; charset=utf-8',
+        'cache-control': 'no-store',
+        'x-accel-buffering': 'no',
+        'x-content-type-options': 'nosniff',
+        'content-security-policy': "default-src 'none'; sandbox",
+      },
+    })
   }
 
   // --- requests ------------------------------------------------------------------------------
 
-  /** Whether a request may reach the API: a Host this serves, and never another site. */
-  function refusal(req) {
-    const host = String(req.headers.host ?? '').toLowerCase()
-    const hosts = req.rawHeaders.filter((_, index) => index % 2 === 0 && req.rawHeaders[index].toLowerCase() === 'host').length
+  /** Whether a request may reach the API: a Host this serves, and never another site. `hostCount`
+   * and `remoteAddress` are what the server saw (Node's http passes both; another host what it can). */
+  function refusal(request, url, { hostCount, remoteAddress } = {}) {
+    const host = String(request.headers.get('host') ?? url.host).toLowerCase()
     let name = ''
     try {
-      name = hosts === 1 && !/[/?#@\\]/.test(host) ? new URL(`http://${host}`).hostname : ''
+      // Two Host headers arrive as one value, 'a, b', which isn't a host name.
+      name = (hostCount ?? 1) === 1 && !/[/?#@\\]/.test(host) ? new URL(`http://${host}`).hostname : ''
     } catch {
       // not a host name
     }
     if (!LOOPBACK.has(name) && !allowed.has(name)) return [421, 'host', `This server doesn't answer for ${JSON.stringify(host)}`]
     // nebula run on a laptop: a loopback name counts only from this machine.
-    if (loopbackPeer && LOOPBACK.has(name) && !isLoopbackAddress(req.socket.remoteAddress)) return [421, 'host', 'A loopback name from another machine']
-    const site = req.headers['sec-fetch-site']
-    const safe = req.method === 'GET' || req.method === 'HEAD'
+    if (loopbackPeer && LOOPBACK.has(name) && !isLoopbackAddress(remoteAddress)) return [421, 'host', 'A loopback name from another machine']
+    const site = request.headers.get('sec-fetch-site')
+    const safe = request.method === 'GET' || request.method === 'HEAD'
     if (site && site !== 'same-origin' && !(site === 'none' && safe)) return [403, 'cross-site', 'Another site asked']
-    const origin = req.headers.origin
-    if (origin !== undefined) {
+    const origin = request.headers.get('origin')
+    if (origin !== null) {
       let originHost = null
       try {
         originHost = new URL(origin).host.toLowerCase()
@@ -960,137 +435,391 @@ export function createFilesApi({
     return null
   }
 
-  function reply(res, status, body, headers = {}) {
-    const text = JSON.stringify(body)
-    res.writeHead(status, {
-      'content-type': 'application/json; charset=utf-8',
-      'cache-control': 'no-store',
-      'x-content-type-options': 'nosniff',
-      ...headers,
-    })
-    res.end(text)
-  }
-
-  function place(req) {
-    const proto = req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http'
+  async function place(request, url, actor) {
+    const scopeNow = typeof scope === 'function' ? await scope(request, actor) : scope
+    if (scopeNow !== undefined && !SCOPE.test(scopeNow)) throw new Error(`scope gave ${JSON.stringify(scopeNow)}, not an opaque id of at most 128 link characters`)
+    const space = await spaceFor(request, actor)
+    const forwarded = request.headers.get('x-forwarded-proto')
+    const proto = forwarded === 'https' || (!forwarded && url.protocol === 'https:') ? 'https' : 'http'
     return {
       version: 1,
-      place: { tier: 'server', label, url: `${proto}://${req.headers.host}` },
-      projects: [...projects.values()].map((project) => ({ ...project.meta, folder: basename(project.dir) })),
+      place: { tier: 'server', label, url: `${proto}://${request.headers.get('host') ?? url.host}` },
+      // What the app may offer beside this server, whose it is, and what the backend can do.
+      homes: offered,
+      ...(scopeNow === undefined ? {} : { scope: scopeNow }),
+      // Who is asking, as their changes will name them: the app says "you" for these.
+      you: actor,
+      capabilities: {
+        createProject: backend.capabilities?.createProject === true,
+        versions: backend.capabilities?.versions === true,
+        removeProject: backend.capabilities?.removeProject === true,
+        deletedFiles: backend.capabilities?.deletedFiles === true,
+      },
+      // How much is used, and the allowance where the host sets one (the person's Settings say so).
+      ...(space === null ? {} : { space }),
+      projects: (await listProjects(actor)).map(publicInfo),
     }
   }
 
-  async function route(req, res, url) {
-    const rest = url.pathname.slice(API.length)
-    if (rest === '/place' && req.method === 'GET') {
-      await rescan(true)
-      return reply(res, 200, place(req))
+  /** The changes the Suite's last-modified list and notifications read: one project's, or all. */
+  async function changes(url, actor) {
+    const project = url.searchParams.get('project') || undefined
+    const path = url.searchParams.get('path') || undefined
+    const before = url.searchParams.get('before') || undefined
+    const limitParam = url.searchParams.get('limit')
+    const limit = limitParam === null ? 50 : Number(limitParam)
+    if (!Number.isInteger(limit) || limit < 1 || limit > RECENT_LIMIT) throw new BackendError('invalid-query', `limit is a whole number from 1 to ${RECENT_LIMIT}`)
+    if (before !== undefined && !TOKEN.test(before)) throw new BackendError('invalid-query', 'before is a page’s next, as the last answer gave it')
+    if (path !== undefined && pathProblem(path)) throw new BackendError('invalid-path', `Invalid path ${JSON.stringify(path)}: ${pathProblem(path)}`)
+    if (project !== undefined) await backend.project(project, { actor })
+    const page = await backend.recent({ project, path, limit, before })
+    return { changes: page.changes.map(publicRecord), next: page.next }
+  }
+
+  /** New project, where the backend makes projects (capabilities.createProject): `{ name, color? }`,
+   * answered 201 with the project. A backend that can't (folders today) answers 405 `not-supported`. */
+  async function newProject(request, actor) {
+    if (backend.capabilities?.createProject !== true || typeof backend.createProject !== 'function') {
+      return json(405, { error: 'not-supported', message: 'This server doesn’t make new projects' }, { allow: 'GET' })
     }
-    const match = /^\/projects\/([^/]+)\/(state|list|stat|file|mkdir|rename|events)$/.exec(rest)
-    if (!match) throw new ApiError(404, 'no-route', 'Not part of the file API')
-    let projectId
+    if (!/^application\/json(;|$)/i.test(request.headers.get('content-type') ?? '')) throw new BackendError('project-meta', 'A new project is asked for as JSON: { "name": "…", "color": "#rrggbb" }')
+    let size = 0
+    const chunks = []
+    for await (const chunk of request.body ?? []) {
+      size += chunk.byteLength
+      if (size > NEW_PROJECT_MAX) throw new BackendError('too-large', `A new project's request is at most ${NEW_PROJECT_MAX} bytes`)
+      chunks.push(chunk)
+    }
+    let asked
     try {
-      projectId = decodeURIComponent(match[1])
+      asked = JSON.parse(Buffer.concat(chunks).toString('utf8'))
     } catch {
-      throw new ApiError(404, 'no-project', 'No such project here')
+      throw new BackendError('project-meta', 'A new project is asked for as JSON: { "name": "…", "color": "#rrggbb" }')
     }
-    const project = await projectOf(projectId)
-    const action = match[2]
-    const path = url.searchParams.get('path') ?? ''
-    const clientHeader = req.headers['nebula-client']
-    const clientId = typeof clientHeader === 'string' && CLIENT.test(clientHeader) ? clientHeader : null
-    const cursor = { 'nebula-cursor': project.cursor }
-
-    if (action === 'state' && req.method === 'GET') return reply(res, 200, { cursor: project.cursor, project: project.meta })
-    if (action === 'list' && req.method === 'GET') return reply(res, 200, { entries: await list(project), cursor: project.cursor })
-    if (action === 'events' && req.method === 'GET') return events(req, res, project)
-    if (action === 'stat' && req.method === 'GET') {
-      const at = await walk(project, segmentsOf(path))
-      if (!at.st || !(at.st.isFile() || at.st.isDirectory())) throw new ApiError(404, 'not-found', `Nothing exists at ${JSON.stringify(path)}`)
-      return reply(res, 200, { entry: entryOf(path, at.st), etag: at.st.isFile() ? etagOf(at.st) : null }, cursor)
-    }
-    if (action === 'file' && (req.method === 'GET' || req.method === 'HEAD')) {
-      const at = await walk(project, segmentsOf(path))
-      if (!at.st) throw new ApiError(404, 'not-found', `Nothing exists at ${JSON.stringify(path)}`)
-      if (!at.st.isFile()) throw new ApiError(409, 'type', `${JSON.stringify(path)} is a folder`, { expected: 'file' })
-      const handle = await open(at.abs, FS.O_RDONLY | FS.O_NOFOLLOW | FS.O_NONBLOCK)
-      let st
-      try {
-        st = await handle.stat({ bigint: true })
-        // The file opened must be the one the walk checked: a folder swapped for a link meanwhile
-        // leads somewhere else (Secu round 1, the TOCTOU gap).
-        if (!st.isFile() || st.dev !== at.st.dev || st.ino !== at.st.ino) throw new ApiError(409, 'changed', `${JSON.stringify(path)} changed while it was being read`)
-      } catch (error) {
-        await handle.close()
-        throw error
-      }
-      res.writeHead(200, {
-        'content-type': 'application/octet-stream',
-        'content-length': String(st.size),
-        etag: etagOf(st),
-        'cache-control': 'no-store',
-        'x-content-type-options': 'nosniff',
-        'content-security-policy': "default-src 'none'; sandbox",
-      })
-      if (req.method === 'HEAD') {
-        await handle.close()
-        return res.end()
-      }
-      // pipeline destroys the stream, and so closes the file, when the reader goes away mid-file;
-      // stream.pipe left it open for the garbage collector, which newer Node treats as an error.
-      const stream = createReadStream(null, { fd: handle, autoClose: true })
-      return pipeline(stream, res).catch(() => {})
-    }
-    if (action === 'file' && req.method === 'PUT') {
-      const result = await write(req, project, path, clientId)
-      return reply(res, result.status, result.body, result.headers)
-    }
-    if (action === 'file' && req.method === 'DELETE') {
-      const result = await remove(project, path, clientId)
-      return reply(res, result.status, result.body)
-    }
-    if (action === 'mkdir' && req.method === 'POST') {
-      const result = await makeDir(project, path, clientId)
-      return reply(res, result.status, result.body)
-    }
-    if (action === 'rename' && req.method === 'POST') {
-      const result = await move(project, url.searchParams.get('from') ?? '', url.searchParams.get('to') ?? '', clientId)
-      return reply(res, result.status, result.body)
-    }
-    throw new ApiError(405, 'method', `${req.method} isn't allowed here`)
+    const name = typeof asked?.name === 'string' ? asked.name.trim() : ''
+    if (!name || name.length > NAME_MAX || /[\u0000-\u001f\u007f-\u009f]/.test(name)) throw new BackendError('project-meta', `A project’s name is one line of 1 to ${NAME_MAX} characters`)
+    if (asked.color !== undefined && (typeof asked.color !== 'string' || !COLOUR.test(asked.color))) throw new BackendError('project-meta', 'A project’s colour is written #rrggbb')
+    const made = await backend.createProject({ name, ...(asked.color ? { color: asked.color.toLowerCase() } : {}) }, { actor })
+    await listProjects(actor)
+    return json(201, { project: publicInfo(made) })
   }
 
-  /** Answers a request under API and returns true; returns false for anything else. */
+  /** 405 `not-supported`, for what this backend can't do (a capability it lacks). */
+  const notSupported = (message) => json(405, { error: 'not-supported', message })
+  const can = (capability, method) => backend.capabilities?.[capability] === true && typeof backend[method] === 'function'
+
+  /** A project's id from the path, or `no-project`. */
+  function projectIdIn(text) {
+    try {
+      return decodeURIComponent(text)
+    } catch {
+      throw new BackendError('no-project', 'No such project here')
+    }
+  }
+
+  /** A file's bytes as `GET …/file` answers them, `extra` headers beside. */
+  async function fileResponse(method, file, extra = {}) {
+    const fileHeaders = {
+      'content-type': 'application/octet-stream',
+      'content-length': String(file.size),
+      etag: etagOf(file.version),
+      'cache-control': 'no-store',
+      'x-content-type-options': 'nosniff',
+      'content-security-policy': "default-src 'none'; sandbox",
+      ...extra,
+    }
+    if (method === 'HEAD') {
+      await file.body.cancel()
+      return new Response(null, { status: 200, headers: fileHeaders })
+    }
+    return new Response(file.body, { status: 200, headers: fileHeaders })
+  }
+
+  /** The removed projects' routes: `DELETE <api>/projects/<id>`, `GET <api>/removed-projects`,
+   * `POST <api>/removed-projects/<id>/restore`. Null for any other request. */
+  async function removedRoutes(request, rest, actor, author) {
+    const { method } = request
+    const whole = /^\/projects\/([^/]+)$/.exec(rest)
+    const back = /^\/removed-projects\/([^/]+)\/restore$/.exec(rest)
+    const listing = rest === '/removed-projects'
+    if (!(whole && method === 'DELETE') && !(back && method === 'POST') && !(listing && method === 'GET')) return null
+    if (!can('removeProject', 'removeProject')) return notSupported('This server doesn’t keep removed projects: a project here can’t be removed through Nebula')
+    if (listing) return json(200, { projects: await backend.removedProjects() })
+    if (whole) {
+      const removed = await backend.removeProject(projectIdIn(whole[1]), author)
+      await listProjects(actor)
+      return json(200, { removed })
+    }
+    const project = await backend.restoreProject(projectIdIn(back[1]), author)
+    await listProjects(actor)
+    return json(200, { project: publicInfo(project) })
+  }
+
+  async function route(request, url, actor) {
+    const { method, headers } = request
+    const rest = url.pathname.slice(apiBase.length)
+    const clientHeader = headers.get('nebula-client')
+    const author = {
+      actor,
+      context: contextOf(headers.get('nebula-context')),
+      client: clientHeader && CLIENT.test(clientHeader) ? clientHeader : undefined,
+    }
+    if (rest === '/place' && method === 'GET') return json(200, await place(request, url, actor))
+    if (rest === '/changes' && method === 'GET') return json(200, await changes(url, actor))
+    if (rest === '/projects' && method === 'POST') return newProject(request, actor)
+    const removedAnswer = await removedRoutes(request, rest, actor, author)
+    if (removedAnswer) return removedAnswer
+    const match = /^\/projects\/([^/]+)\/(state|list|stat|file|mkdir|rename|events|versions|version|restore|deleted)$/.exec(rest)
+    if (!match) throw new BackendError('no-route', 'Not part of the file API')
+    const action = match[2]
+    const history = action === 'versions' || action === 'version' || action === 'restore'
+    if (history && !can('versions', 'versions')) return notSupported('This server doesn’t keep earlier versions of files')
+    if (action === 'deleted' && !can('deletedFiles', 'deletedFiles')) return notSupported('This server doesn’t list deleted files')
+    const id = projectIdIn(match[1])
+    const project = await backend.project(id, { actor })
+    const path = url.searchParams.get('path') ?? ''
+
+    if (action === 'state' && method === 'GET') return json(200, { cursor: await backend.cursor(id), project: publicInfo(project) })
+    if (action === 'list' && method === 'GET') {
+      const entries = await backend.list(id)
+      return json(200, { entries, cursor: await backend.cursor(id) })
+    }
+    if (action === 'events' && method === 'GET') return events(request, id, url.searchParams.get('since') ?? headers.get('last-event-id') ?? '')
+    if (action === 'stat' && method === 'GET') {
+      const found = await backend.stat(id, path)
+      if (!found) throw new BackendError('not-found', `Nothing exists at ${JSON.stringify(path)}`)
+      return json(200, { entry: found.entry, etag: found.version === null ? null : etagOf(found.version) }, { 'nebula-cursor': await backend.cursor(id) })
+    }
+    if (action === 'file' && (method === 'GET' || method === 'HEAD')) return fileResponse(method, await backend.read(id, path))
+    if (action === 'deleted' && method === 'GET') {
+      const limitParam = url.searchParams.get('limit')
+      const limit = limitParam === null ? DELETED_LIMIT : Number(limitParam)
+      if (!Number.isInteger(limit) || limit < 1 || limit > DELETED_LIMIT_MAX) throw new BackendError('invalid-query', `limit is a whole number from 1 to ${DELETED_LIMIT_MAX}`)
+      return json(200, await backend.deletedFiles(id, { limit }))
+    }
+    if (action === 'versions' && method === 'GET') {
+      const limitParam = url.searchParams.get('limit')
+      const limit = limitParam === null ? 50 : Number(limitParam)
+      if (!Number.isInteger(limit) || limit < 1 || limit > VERSIONS_LIMIT) throw new BackendError('invalid-query', `limit is a whole number from 1 to ${VERSIONS_LIMIT}`)
+      const before = url.searchParams.get('before') || undefined
+      if (before !== undefined && !TOKEN.test(before)) throw new BackendError('invalid-query', 'before is a page’s next, as the last answer gave it')
+      return json(200, await backend.versions(id, path, { limit, before }))
+    }
+    // A version, as `versions` gave it; checked here as `before` is, so nothing else reaches the backend.
+    const version = () => {
+      const asked = url.searchParams.get('version') ?? ''
+      if (!TOKEN.test(asked)) throw new BackendError('invalid-query', 'version is one of the file’s versions, as versions gave it')
+      return asked
+    }
+    if (action === 'version' && (method === 'GET' || method === 'HEAD')) {
+      const file = await backend.readVersion(id, path, version())
+      return fileResponse(method, file, { 'nebula-version': file.version })
+    }
+    if (action === 'restore' && method === 'POST') {
+      const asked = version()
+      const ifMatch = headers.get('if-match')
+      const ifAbsent = headers.get('if-none-match') === '*'
+      // A restore always says what it replaces, so it never lands over a change its maker didn't see.
+      if (!ifMatch && !ifAbsent) throw new BackendError('precondition', 'A restore names the version it replaces: If-Match: "<etag>", or If-None-Match: * when the file is gone')
+      // A path that is taken is 412, whichever file took it: the version asked for may belong to the
+      // file that was there before, which the backend would then call no version of this path.
+      if (ifAbsent && (await backend.stat(id, path))) throw new BackendError('precondition', `Something already exists at ${JSON.stringify(path)}`, { exists: true })
+      // A restore brings bytes back into the tree, so it meets the account's allowance as a write
+      // does: the version's size in place of the current file's (none when the file is gone).
+      const kept = await backend.readVersion(id, path, asked)
+      await kept.body.cancel()
+      await roomFor(request, actor, kept.size, (await backend.stat(id, path))?.entry.size ?? 0)
+      const result = await backend.restore(id, path, asked, {
+        ...author,
+        ifAbsent,
+        ifMatch: ifMatch && !ifAbsent ? versionIn(ifMatch) : undefined,
+        parents: headers.get('nebula-parents') !== 'existing',
+      })
+      const etag = etagOf(result.version)
+      return json(200, { entry: result.entry, etag, cursor: result.cursor }, { etag })
+    }
+    if (action === 'file' && method === 'PUT') {
+      const ifMatch = headers.get('if-match')
+      const result = await backend.write(id, path, await accepted(request, actor, id, path), {
+        ...author,
+        ifAbsent: headers.get('if-none-match') === '*',
+        ifMatch: ifMatch ? versionIn(ifMatch) : undefined,
+        parents: headers.get('nebula-parents') !== 'existing',
+      })
+      const etag = etagOf(result.version)
+      return json(200, { entry: result.entry, etag, cursor: result.cursor }, { etag })
+    }
+    if (action === 'file' && method === 'DELETE') return json(200, await backend.remove(id, path, author))
+    if (action === 'mkdir' && method === 'POST') return json(200, await backend.mkdir(id, path, author))
+    if (action === 'rename' && method === 'POST') return json(200, await backend.rename(id, url.searchParams.get('from') ?? '', url.searchParams.get('to') ?? '', author))
+    throw new BackendError('method', `${method} isn't allowed here`)
+  }
+
+  /**
+   * Answers a request under the API with a Response, or null for any other path. `info` is what the
+   * server saw of the connection: `remoteAddress` (for `loopbackPeer`) and `hostCount`.
+   * @param {Request} request
+   * @param {{ remoteAddress?: string, hostCount?: number }} [info]
+   * @returns {Promise<Response | null>}
+   */
+  async function fetchApi(request, info = {}) {
+    const url = new URL(request.url)
+    if (!isApiPath(url.pathname)) return null
+    const refused = refusal(request, url, info)
+    if (refused) return json(refused[0], { error: refused[1], message: refused[2] })
+    // An upload that says it's over the cap is refused before a byte of it is read.
+    const declared = request.headers.get('content-length')
+    if (declared !== null && declaredLength(declared) > maxBytes) return json(413, { error: 'too-large', message: `The file is over ${maxBytes} bytes` })
+    try {
+      const resolved = await resolve(request)
+      if (resolved instanceof Response) return resolved
+      const actor = actorIn(resolved?.actor)
+      if (!actor) throw new Error('resolve gave no actor ({ type: "human" | "agent", id, name })')
+      return await route(request, url, actor)
+    } catch (error) {
+      if (error instanceof BackendError) return json(error.status, { error: error.code, message: error.message, ...error.extra })
+      log(`nebula-files: ${request.method} ${url.pathname}: ${error.stack ?? error}`)
+      return json(500, { error: 'internal', message: 'The server could not do that' })
+    }
+  }
+
+  /** Answers a request under the API and returns true; returns false for anything else. Node's
+   * http, over `fetch`: bodies stream both ways. */
   async function handle(req, res) {
-    const url = new URL(req.url ?? '/', 'http://nebula.local')
-    if (url.pathname !== API && !url.pathname.startsWith(`${API}/`)) return false
-    const refused = refusal(req)
-    if (refused) {
-      req.resume()
-      reply(res, refused[0], { error: refused[1], message: refused[2] })
+    const target = new URL(req.url ?? '/', 'http://nebula.local')
+    if (!isApiPath(target.pathname)) return false
+    let hostCount = 0
+    const headers = new Headers()
+    let request
+    const body = req.method === 'GET' || req.method === 'HEAD' ? null : webBody(req)
+    if (!body) req.resume()
+    const gone = new AbortController()
+    res.on('close', () => gone.abort())
+    try {
+      for (let index = 0; index < req.rawHeaders.length; index += 2) {
+        if (req.rawHeaders[index].toLowerCase() === 'host') hostCount += 1
+        headers.append(req.rawHeaders[index], req.rawHeaders[index + 1])
+      }
+      request = new Request(target, { method: req.method, headers, body: body?.stream, duplex: 'half', signal: gone.signal })
+    } catch {
+      if (declaredLength(req.headers['content-length']) <= maxBytes) body?.drain()
+      else if (body) res.setHeader('connection', 'close')
+      res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' }).end('bad request')
       return true
     }
-    try {
-      await route(req, res, url)
-    } catch (error) {
-      req.resume()
-      if (res.headersSent) {
-        res.destroy()
-        return true
-      }
-      const known = error instanceof ApiError ? error : fsProblem(error)
-      if (known) reply(res, known.status, { error: known.code, message: known.message, ...known.extra })
-      else {
-        log(`nebula-files: ${req.method} ${url.pathname}: ${error.stack ?? error}`)
-        reply(res, 500, { error: 'internal', message: 'The server could not do that' })
-      }
+    const response = await fetchApi(request, { remoteAddress: req.socket.remoteAddress, hostCount })
+    if (body && !body.ended()) {
+      // What the route didn't read of a body no bigger than the cap is read and dropped, so the
+      // connection can carry the next request. One over the cap, or of unknown size, is never
+      // read on: the answer goes, and the connection closes behind it.
+      if (declaredLength(req.headers['content-length']) <= maxBytes) body.drain()
+      else res.setHeader('connection', 'close')
     }
+    res.writeHead(response.status, Object.fromEntries(response.headers))
+    if (!response.body || req.method === 'HEAD') {
+      await response.body?.cancel()
+      res.end()
+    } else await pipeBody(response.body, res)
     return true
   }
 
-  function close() {
-    for (const project of projects.values()) project.close()
+  return {
+    fetch: fetchApi,
+    handle,
+    close: () => backend.close(),
+    ready: () => listProjects().then(() => {}),
+    projects: () => known.map(({ folder: _folder, ...info }) => info),
+    backend,
+    apiBase,
+    roomFor,
+    /** The Server-Timing value to put on the app's pages (and every response) when this API is mounted. */
+    serverTiming,
   }
+}
 
-  return { handle, close, ready: () => rescan(true), projects: () => [...projects.values()].map((p) => ({ ...p.meta, dir: p.dir })) }
+/** A Content-Length as a number of bytes: Infinity when there is none or it isn't one, so an
+ * unknown size counts as over any cap. */
+function declaredLength(value) {
+  return value !== null && value !== undefined && /^\d+$/.test(String(value).trim()) ? Number(value) : Infinity
+}
+
+/** A Node request's body as a web stream that reads only as fast as it's read. `drain` drops the
+ * rest; a reader that stops (an upload over the cap) leaves the rest unread, and `ended` says
+ * whether the body came in whole. */
+function webBody(req) {
+  let done = false
+  let ended = false
+  const drain = () => {
+    done = true
+    req.resume()
+  }
+  const stream = new ReadableStream(
+    {
+      start(controller) {
+        req.on('data', (chunk) => {
+          if (done) return
+          controller.enqueue(new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength))
+          if (controller.desiredSize <= 0) req.pause()
+        })
+        req.on('end', () => {
+          ended = true
+          if (done) return
+          done = true
+          controller.close()
+        })
+        const fail = (error) => {
+          if (done) return
+          done = true
+          controller.error(error)
+        }
+        req.on('error', fail)
+        // A sender that went away mid-body: the write stops, and its temporary file goes.
+        req.on('close', () => {
+          if (!req.complete) fail(new Error('The request ended before its body did'))
+        })
+        req.pause()
+      },
+      pull() {
+        if (!done) req.resume()
+      },
+      cancel() {
+        done = true
+      },
+    },
+    { highWaterMark: 64 * 1024, size: (chunk) => chunk.byteLength },
+  )
+  return { stream, drain, ended: () => ended }
+}
+
+/** Until the response can take more, or is gone; both listeners go either way. */
+function drained(res) {
+  return new Promise((resolve) => {
+    const done = () => {
+      res.off('drain', done)
+      res.off('close', done)
+      resolve()
+    }
+    res.on('drain', done)
+    res.on('close', done)
+  })
+}
+
+/** A web stream, to a Node response; a reader that goes away cancels it, so the backend lets go. */
+async function pipeBody(body, res) {
+  const reader = body.getReader()
+  const stop = () => void reader.cancel().catch(() => {})
+  res.on('close', stop)
+  try {
+    for (;;) {
+      const { value, done } = await reader.read()
+      if (done) break
+      if (!res.write(value)) await drained(res)
+      if (res.destroyed) return stop()
+    }
+    res.end()
+  } catch {
+    res.destroy()
+  } finally {
+    res.off('close', stop)
+  }
 }

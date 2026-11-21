@@ -2,7 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { startStarscape } from '@starlove/ui/starscape';
 import '../../src/workspace/style';
-import { initBackgroundFromStorage } from '../../src/nebula/ui/useBackground';
+import { initBackdropFromStorage } from '../../src/workspace/backdrop';
 import { initMotionFromStorage } from '../../src/nebula/ui/useMotion';
 import { initThemeFromStorage, resolveStoredTheme } from '../../src/nebula/ui/useTheme';
 import { createFakeRegistry, type FakeRegistry } from '../../src/workspace/dev/fakeRegistry';
@@ -12,7 +12,7 @@ import { ProbeView } from './shell-probe';
 // What main.tsx does before first paint, plus the workspace's preferences.
 initThemeFromStorage();
 initMotionFromStorage();
-initBackgroundFromStorage(resolveStoredTheme());
+initBackdropFromStorage(resolveStoredTheme());
 initPreferencesFromStorage();
 startStarscape();
 
@@ -39,7 +39,7 @@ createRoot(document.getElementById('root')!).render(
     <Workspace
       registry={registry}
       persistent={params.get('persistent') !== '0'}
-      intro={intro === 'welcome' || intro === 'migrated' ? intro : null}
+      intro={intro === 'welcome' ? intro : null}
       onIntroDone={() => {
         shell.introDone += 1;
       }}

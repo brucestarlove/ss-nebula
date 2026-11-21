@@ -1,3 +1,4 @@
+import type { FileStore } from '../../../../files/types';
 import { readObsidianExcalidrawMarkdown } from '../../../../nebula/excalidraw/obsidianMarkdown';
 import { isExcalidrawScene, normalizeExcalidrawScene, type ExcalidrawElementLike, type ExcalidrawScene } from '../../../../nebula/excalidraw/scene';
 import { isNebulaExcalidrawDocument } from '../../../../nebula/storage/types';
@@ -24,6 +25,21 @@ export function drawableScene(text: string, path: string): { elements: Excalidra
   const { scene: safe } = withoutRemoteFiles(scene);
   const elements = safe.elements.filter((element) => !element.isDeleted);
   return elements.length === 0 ? null : { elements, files: safe.files ?? {} };
+}
+
+/**
+ * drawableScene, with the images an Obsidian drawing keeps as files beside
+ * it (its `## Embedded Files`) read from the project, as the canvas view
+ * reads them (canvasImages.ts): a note shows a canvas's images too. A
+ * reference that can't be read is a missing image, as on the canvas.
+ */
+export async function drawableSceneWithImages(store: FileStore, text: string, path: string): Promise<ReturnType<typeof drawableScene>> {
+  const drawing = drawableScene(text, path);
+  if (!drawing || path.toLowerCase().endsWith('.excalidraw')) return drawing;
+  // Loaded here, not with the index, which reads canvases through this module too.
+  const { readReferencedImages } = await import('../../canvas/canvasImages');
+  const images = await readReferencedImages(store, path, text, drawing, { present: new Set(Object.keys(drawing.files)) });
+  return Object.keys(images.files).length === 0 ? drawing : { ...drawing, files: { ...(images.files as SceneFiles), ...drawing.files } };
 }
 
 /** The picture exportToSvg makes of a scene is its bounds plus this much on every side (canvasSvg.ts). */

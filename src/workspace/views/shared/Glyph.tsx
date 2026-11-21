@@ -17,8 +17,8 @@ const PATHS = {
   plus: 'M8 3.25v9.5M3.25 8h9.5',
   minus: 'M3.25 8h9.5',
   fit: 'M2.75 6V2.75H6 M10 2.75h3.25V6 M13.25 10v3.25H10 M6 13.25H2.75V10',
-  // A note's Markdown source (the source switch): a hash, Markdown's heading mark.
-  source: 'M6.4 2.75 5.1 13.25 M10.9 2.75 9.6 13.25 M2.75 6h10.75 M2.5 10h10.75',
+  // A note's Markdown source (the source switch): angle brackets round a slash, the mark for markup.
+  source: 'M5 4.5 1.75 8 5 11.5 M11 4.5 14.25 8 11 11.5 M9.4 2.75 6.6 13.25',
   // The page width switch: arrows out to the edges, and back in to the column.
   widen: 'M1.75 8h4.5 M9.75 8h4.5 M3.75 6 1.75 8l2 2 M12.25 6l2 2-2 2 M8 3.25v9.5',
   narrow: 'M1.75 8h4 M10.25 8h4 M3.75 6l2 2-2 2 M12.25 6l-2 2 2 2 M8 3.25v9.5',

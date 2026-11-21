@@ -1,13 +1,4 @@
 // What e2e/harness/storage-harness.ts puts on window, for the specs that drive it.
-export type MigrationReportJson = {
-  status: string;
-  projects: Array<{ projectId: string; name: string; boardId: string }>;
-  keys: string[];
-  error?: string;
-  warnings?: string[];
-  rollbackErrors?: string[];
-};
-
 export type StorageHarness = {
   wipe(): Promise<void>;
   open(options?: { withoutWebLocks?: boolean }): Promise<{ persistent: boolean; reason?: string }>;
@@ -17,8 +8,6 @@ export type StorageHarness = {
   readTree(path: string): Promise<string>;
   seedLocalStorage(entries: Record<string, string>): void;
   localStorage(): Record<string, string>;
-  migrate(options?: { slowMs?: number; hangFrom?: number }): Promise<MigrationReportJson>;
-  writes(): number;
   projects(): Promise<Array<{ id: string; name: string }>>;
   paths(id: string): Promise<string[]>;
   removeWhileWriting(): Promise<{ results: string[]; tree: string[] }>;

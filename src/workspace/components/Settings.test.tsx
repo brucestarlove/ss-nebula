@@ -2,7 +2,8 @@ import { act } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_PREFERENCES } from '../../files/types';
 import type { BackdropControls } from '../useBackdrop';
-import { render, type Rendered } from '../views/testing/render';
+import { byLabel, click, render, type Rendered } from '../views/testing/render';
+import type { RecentlyDeleted } from '../useRemovedProjects';
 import { SettingsDrawer, type SettingsProps } from './Settings';
 
 beforeAll(() => {
@@ -156,5 +157,84 @@ describe('Settings, Appearance: the background', () => {
   it('leaves Image out where there is nowhere to keep it', async () => {
     rendered = await render(<SettingsDrawer {...props({ backdrop: backdrop({ canUseImages: false }) })} />);
     expect(radios('Night background')).toEqual(['Starfield', 'Colour']);
+  });
+});
+
+describe('Settings, Project, on a server project', () => {
+  const server = { id: 'night-sky', name: 'Night Sky', color: '#7c8cff', created: '2026-10-22T00:00:00.000Z', createdBy: 'nebula', tier: 'server' as const };
+  const serverProps = (patch: Partial<SettingsProps> = {}) =>
+    props({ tab: 'project', project: server, serverPlace: { label: 'suite', folder: '' }, keptBy: 'suite', ...patch });
+  const removed = (patch: Partial<RecentlyDeleted> = {}): RecentlyDeleted => ({ projects: [], error: null, busy: null, restore: vi.fn(), reload: vi.fn(), ...patch });
+  const deleteButton = () => byLabel(document.body, 'Delete project…') as HTMLButtonElement | null;
+  const spaceLine = () => document.querySelector('.ws-set-space');
+
+  it('offers Delete project… where the server can delete, and it asks to remove', async () => {
+    const onRemove = vi.fn();
+    rendered = await render(<SettingsDrawer {...serverProps({ canDelete: true, onRemove })} />);
+    expect(deleteButton()).not.toBeNull();
+    expect(deleteButton()!.disabled).toBe(false);
+    await click(deleteButton());
+    expect(onRemove).toHaveBeenCalledTimes(1);
+  });
+
+  it('turns Delete project… off while the project list is locked', async () => {
+    const onRemove = vi.fn();
+    rendered = await render(<SettingsDrawer {...serverProps({ canDelete: true, canChangeProject: false, onRemove })} />);
+    expect(deleteButton()!.disabled).toBe(true);
+    await click(deleteButton());
+    expect(onRemove).not.toHaveBeenCalled();
+  });
+
+  it('has no button to remove where the server can’t delete', async () => {
+    rendered = await render(<SettingsDrawer {...serverProps({ canDelete: false })} />);
+    expect(deleteButton()).toBeNull();
+    expect(byLabel(document.body, 'Remove project…')).toBeNull();
+    expect(byLabel(document.body, 'Remove from Nebula…')).toBeNull();
+  });
+
+  it('keeps the browser and folder projects’ own remove buttons', async () => {
+    rendered = await render(<SettingsDrawer {...props({ tab: 'project' })} />);
+    expect(byLabel(document.body, 'Remove project…')).not.toBeNull();
+    expect(deleteButton()).toBeNull();
+    await rendered.unmount();
+    rendered = await render(<SettingsDrawer {...props({ tab: 'project', project: { ...server, tier: 'folder' }, folderName: 'Night Sky' })} />);
+    expect(byLabel(document.body, 'Remove from Nebula…')).not.toBeNull();
+    expect(deleteButton()).toBeNull();
+  });
+
+  it('lists Recently deleted only where the host gives it, also with no project open', async () => {
+    rendered = await render(<SettingsDrawer {...serverProps({ canDelete: true })} />);
+    expect(document.querySelectorAll('.ws-removed-row')).toHaveLength(0);
+    await rendered.rerender(<SettingsDrawer {...serverProps({ canDelete: true, recentlyDeleted: removed({ projects: [{ id: 'old', name: 'Old', color: '#fff', removed: 'x', purgeAfter: '2026-12-05T00:00:00.000Z' }] }) })} />);
+    expect(document.querySelectorAll('.ws-removed-row')).toHaveLength(1);
+    await rendered.rerender(<SettingsDrawer {...serverProps({ canDelete: true })} />);
+    expect(document.querySelectorAll('.ws-removed-row')).toHaveLength(0); // taken away again
+    await rendered.rerender(<SettingsDrawer {...props({ tab: 'project', project: null, recentlyDeleted: removed({ projects: [{ id: 'old', name: 'Old', color: '#fff', removed: 'x', purgeAfter: '2026-12-05T00:00:00.000Z' }] }) })} />);
+    expect(document.querySelectorAll('.ws-removed-row')).toHaveLength(1);
+  });
+
+  it('shows the space the place sends, with a link for an http(s) upgrade only', async () => {
+    rendered = await render(<SettingsDrawer {...serverProps({ space: { used: 120_000_000, limit: 1_000_000_000, upgrade: 'https://suite.test/plans' } })} />);
+    expect(spaceLine()).not.toBeNull();
+    const link = spaceLine()!.querySelector('a')!;
+    expect(link.getAttribute('href')).toBe('https://suite.test/plans');
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel')).toContain('noopener');
+    await rendered.rerender(<SettingsDrawer {...serverProps({ space: { used: 120_000_000, upgrade: 'javascript:alert(1)' } })} />);
+    expect(spaceLine()).not.toBeNull();
+    expect(spaceLine()!.querySelector('a')).toBeNull();
+    await rendered.rerender(<SettingsDrawer {...serverProps({ space: { used: 120_000_000 } })} />);
+    expect(spaceLine()!.querySelector('a')).toBeNull();
+  });
+
+  it('shows no space where the place sends none, or for a browser or folder project', async () => {
+    rendered = await render(<SettingsDrawer {...serverProps({ space: null })} />);
+    expect(spaceLine()).toBeNull();
+    await rendered.rerender(<SettingsDrawer {...serverProps({ space: undefined })} />);
+    expect(spaceLine()).toBeNull();
+    await rendered.rerender(<SettingsDrawer {...props({ tab: 'project', space: { used: 1, limit: 2 } })} />);
+    expect(spaceLine()).toBeNull();
+    await rendered.rerender(<SettingsDrawer {...props({ tab: 'project', project: { ...server, tier: 'folder' }, folderName: 'Night Sky', space: { used: 1, limit: 2 } })} />);
+    expect(spaceLine()).toBeNull();
   });
 });

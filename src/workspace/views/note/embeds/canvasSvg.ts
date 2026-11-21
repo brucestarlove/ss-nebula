@@ -1,6 +1,6 @@
 import { exportToSvg } from '@excalidraw/excalidraw';
 import type { FileStore } from '../../../../files/types';
-import { drawableScene, EXPORT_PADDING } from './canvasScene';
+import { drawableSceneWithImages, EXPORT_PADDING } from './canvasScene';
 import { firstFamily, fontFaceCss } from './canvasFonts';
 
 /**
@@ -17,7 +17,8 @@ export type CanvasTheme = 'light' | 'dark';
 
 /** The drawing at `path` as an SVG image, transparent, for the night or day theme; null for a drawing with nothing on it. `text` is the file's text when the caller has read it already. */
 export async function renderCanvasSvg(store: FileStore, path: string, theme: CanvasTheme, text?: string): Promise<Blob | null> {
-  const drawing = drawableScene(text ?? (await store.readText(path)), path);
+  // With the images it keeps as files beside it (2.0.4).
+  const drawing = await drawableSceneWithImages(store, text ?? (await store.readText(path)), path);
   if (!drawing) return null;
   const svg = await exportToSvg({
     elements: drawing.elements as unknown as Parameters<typeof exportToSvg>[0]['elements'],

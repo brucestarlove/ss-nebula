@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { createMemoryFileStore, type MemoryFileStore } from '../../e2e/harness/views-store';
-import { linkRunMessage, MAX_LINK_NOTE_CHARS, updateLinksAfterMove, type LinkRun } from './updateLinksRun';
+import { embeddedFiles } from '../nebula/excalidraw/embeddedFiles';
+import { toObsidianExcalidrawMarkdown } from '../nebula/excalidraw/obsidianMarkdown';
+import { linkRunMessage, MAX_LINK_NOTE_CHARS, updateLinksAfterMove, updateLinksAfterMoves, type LinkRun } from './updateLinksRun';
 
 // What happens to the project's notes after a rename or a move, against a store:
 // which are written, which are left, and what is said about it.
@@ -151,5 +153,100 @@ describe('linkRunMessage', () => {
     expect(linkRunMessage({ links: 5, notes: 2, unsaved: 1, changed: 2, long: 1, failed: 1 })).toBe(
       'Updated 5 links in 2 notes. Left 1 note as it was: it has unsaved changes. Left 2 notes as they were: they changed meanwhile. Left 1 note as it was: it is over 200,000 characters. Couldn’t update 1 note.',
     );
+  });
+});
+
+describe('the images a canvas names (2.0.4)', () => {
+  const SKY = new Blob([new Uint8Array([1, 2, 3])]);
+  /** An Obsidian drawing with these Embedded Files lines, and a text element that says [[Sky]] (the drawing's own). */
+  const canvasText = (...lines: string[]) =>
+    toObsidianExcalidrawMarkdown(
+      { type: 'excalidraw', version: 2, source: 't', elements: [{ id: 'abcd1234', type: 'text', x: 0, y: 0, width: 5, height: 5, text: 'Sky', originalText: 'Sky', link: '[[Sky.png]]' }], appState: {}, files: {} },
+      { embedded: { add: lines.map((line, at) => [`id${at + 1}`, line] as const) } },
+    );
+  const world = (): Record<string, string | Blob> => ({
+    'Photos/Sky.png': SKY,
+    'Sketches/Map.excalidraw.md': canvasText('Sky.png|100%'),
+    'Sketches/Other.excalidraw.md': canvasText('Sky.png'),
+    'Notes/Plan.md': 'The sky: ![[Sky.png]]',
+  });
+  const linesOf = (text: string | undefined) => embeddedFiles(text ?? '').map((line) => line.link);
+
+  it('rewrites the lines of every canvas that names a renamed image, and counts them apart from the notes', async () => {
+    const store = createMemoryFileStore(world());
+    const run = await renamed(store, 'Photos/Sky.png', 'Photos/Clouds.png');
+    expect(run).toEqual({ ...NONE, links: 3, notes: 1, canvases: 2 });
+    expect(linesOf(store.peek('Sketches/Map.excalidraw.md'))).toEqual(['Clouds.png|100%']);
+    expect(linesOf(store.peek('Sketches/Other.excalidraw.md'))).toEqual(['Clouds.png']);
+    expect(store.peek('Notes/Plan.md')).toBe('The sky: ![[Clouds.png]]');
+  });
+
+  it('writes each canvas only over the text it read, and writes nothing for a canvas it has nothing to change in', async () => {
+    const memory = createMemoryFileStore(world());
+    await memory.rename('Photos/Sky.png', 'Photos/Clouds.png');
+    memory.writes.length = 0;
+    const seen: Array<[string, unknown]> = [];
+    const store = { ...memory, write: (path: string, data: string | Blob, options?: Parameters<typeof memory.write>[2]) => (seen.push([path, options]), memory.write(path, data, options)) };
+    await updateLinksAfterMove(store, { from: 'Photos/Sky.png', to: 'Photos/Clouds.png', unsaved: () => false });
+    const canvasWrite = seen.find(([path]) => path === 'Sketches/Map.excalidraw.md')!;
+    expect(canvasWrite[1]).toEqual({ ifUnchanged: { text: canvasText('Sky.png|100%') } });
+    // An image that moves without changing what its name reaches costs no write.
+    const quiet = createMemoryFileStore(world());
+    expect(await renamed(quiet, 'Photos/Sky.png', 'Gallery/Sky.png')).toEqual(NONE);
+    expect(quiet.writes).toEqual([]);
+  });
+
+  it('has no `canvases` and no `canvasesLeft` in a run that touched none', async () => {
+    const run = await renamed(createMemoryFileStore(sample()), 'Guides/Orion.md', 'Guides/Hunter.md');
+    expect(run).not.toHaveProperty('canvases');
+    expect(run).not.toHaveProperty('canvasesLeft');
+  });
+
+  it('leaves a canvas with unsaved changes as it was, and counts it as a canvas left', async () => {
+    const store = createMemoryFileStore(world());
+    const run = await renamed(store, 'Photos/Sky.png', 'Photos/Clouds.png', (path) => path === 'Sketches/Map.excalidraw.md');
+    expect(run).toEqual({ ...NONE, links: 2, notes: 1, canvases: 1, unsaved: 1, canvasesLeft: 1 });
+    expect(store.peek('Sketches/Map.excalidraw.md')).toBe(world()['Sketches/Map.excalidraw.md']);
+    expect(linesOf(store.peek('Sketches/Other.excalidraw.md'))).toEqual(['Clouds.png']);
+  });
+
+  it('leaves a canvas that changed while it was being read, never writing over the change', async () => {
+    const store = createMemoryFileStore(world());
+    await store.rename('Photos/Sky.png', 'Photos/Clouds.png');
+    store.writes.length = 0;
+    const read = store.readText.bind(store);
+    const elsewhere = `${canvasText('Sky.png|100%')}\n\nEdited in another tab.`;
+    store.readText = async (path) => {
+      const text = await read(path);
+      if (path === 'Sketches/Map.excalidraw.md') await store.write(path, elsewhere);
+      return text;
+    };
+    const run = await updateLinksAfterMove(store, { from: 'Photos/Sky.png', to: 'Photos/Clouds.png', unsaved: () => false });
+    expect(run).toMatchObject({ changed: 1, canvasesLeft: 1, canvases: 1, notes: 1 });
+    expect(store.peek('Sketches/Map.excalidraw.md')).toBe(elsewhere);
+  });
+
+  it('counts a note left apart from a canvas left', async () => {
+    const store = createMemoryFileStore(world());
+    const run = await renamed(store, 'Photos/Sky.png', 'Photos/Clouds.png', (path) => path === 'Notes/Plan.md' || path === 'Sketches/Map.excalidraw.md');
+    expect(run).toMatchObject({ unsaved: 2, canvasesLeft: 1 });
+  });
+
+  it('updates a canvas of over 200,000 characters: its lines are a few, however big its drawing is', async () => {
+    const big = canvasText('Sky.png').replace('%%\n## Drawing', `${'Back of the card. '.repeat(13_000)}\n%%\n## Drawing`);
+    expect(big.length).toBeGreaterThan(MAX_LINK_NOTE_CHARS);
+    const store = createMemoryFileStore({ ...world(), 'Sketches/Big.excalidraw.md': big });
+    const run = await renamed(store, 'Photos/Sky.png', 'Photos/Clouds.png');
+    expect(run.long).toBe(0);
+    expect(linesOf(store.peek('Sketches/Big.excalidraw.md'))).toEqual(['Clouds.png']);
+  });
+
+  it('follows a batch of images replaced by others (Convert images) in the canvases that named them', async () => {
+    const store = createMemoryFileStore({ ...world(), 'Photos/Clouds.webp': SKY });
+    await store.remove('Photos/Sky.png');
+    store.writes.length = 0;
+    const run = await updateLinksAfterMoves(store, [{ from: 'Photos/Sky.png', to: 'Photos/Clouds.webp' }], { unsaved: () => false });
+    expect(run).toMatchObject({ canvases: 2, notes: 1, links: 3 });
+    expect(linesOf(store.peek('Sketches/Map.excalidraw.md'))).toEqual(['Clouds.webp|100%']);
   });
 });

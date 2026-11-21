@@ -1,0 +1,32 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "cleanUrls": true,
+  "trailingSlash": false,
+  "redirects": [
+    { "source": "/p/:path*", "destination": "/app/p/:path*", "permanent": false },
+    { "source": "/b/:path*", "destination": "/app", "permanent": false },
+    { "source": "/app/ss-nebula-og.png", "destination": "/ss-nebula-og.png", "permanent": false },
+    { "source": "/install", "destination": "/", "permanent": false },
+    { "source": "/support", "destination": "https://starscape.app/#feedback", "permanent": false }
+  ],
+  "rewrites": [
+    { "source": "/favicon.ico", "destination": "/ss-nebula-32x32.png" },
+    { "source": "/app/p/:path*", "destination": "/app.html" }
+  ],
+  "headers": [
+    {
+      "source": "/assets/(.*)",
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
+    },
+    { "source": "/third-party-licenses.txt", "headers": [{ "key": "Content-Type", "value": "text/plain; charset=utf-8" }] },
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "Content-Security-Policy", "value": "default-src 'self'; script-src 'self' 'sha256-aU8bDOXlRk2raF4+vHOhwa0O9/p8ye/nMr4uLOdemwg=' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob:; frame-src blob:; worker-src 'self' blob:; connect-src 'self' https://libraries.excalidraw.com https://raw.githubusercontent.com; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+        { "key": "Strict-Transport-Security", "value": "max-age=63072000" }
+      ]
+    }
+  ]
+}

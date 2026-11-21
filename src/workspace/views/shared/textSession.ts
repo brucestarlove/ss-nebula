@@ -1,4 +1,5 @@
 import { blobToBytes } from '../../../files/bytes';
+import { watchAccount } from '../../../files/account';
 import { errorName, type FileChangedError } from '../../../files/errors';
 import { basename, isInside } from '../../../files/paths';
 import type { FileChange, FileEntry, FileStore } from '../../../files/types';
@@ -375,6 +376,12 @@ export function createTextSession(store: FileStore, initialPath: string, options
     }
   };
   const unwatch = store.watch(onChange);
+  // The session ended and is back: an edit a refused save kept is saved now, by the normal path
+  // (a file changed meanwhile is asked about, never written over). Nothing was dropped or marked
+  // saved when the save was refused, so there's nothing to rebuild.
+  const unaccount = watchAccount(store, (status) => {
+    if (status === 'signed-in' && state.dirty && state.saveError !== undefined && !closing && !waiting()) void queueWrite();
+  });
 
   /** The file as it is now (null: gone) when it isn't what this session
    * last saw, else undefined. Another tab's save or delete can land before
@@ -617,6 +624,7 @@ export function createTextSession(store: FileStore, initialPath: string, options
       // (re-review R1). Nothing unsaved (Reload, say), no copy.
       const kept = await keepConflictCopy();
       unwatch();
+      unaccount();
       listeners.clear();
       // A copy that couldn't be written stays unsaved, so the page still asks.
       if (!kept) return;

@@ -5,8 +5,9 @@ import type { FileEntry } from '../files/types';
 // below 10, as file managers say them.
 export { formatBytes };
 
-export function countLabel(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? '' : 's'}`;
+/** '1 file', '2 files'; a noun that doesn't take a plain s gives its plural ('canvas', 'canvases'). */
+export function countLabel(count: number, noun: string, plural = `${noun}s`): string {
+  return `${count} ${count === 1 ? noun : plural}`;
 }
 
 /** '14 files · 2.1 MB' */

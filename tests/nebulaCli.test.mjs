@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { helpText } from '../cli/nebula-cli.mjs'
 
 const root = resolve(import.meta.dirname, '..')
 const binPath = join(root, 'bin', 'nebula.mjs')
@@ -48,6 +49,24 @@ describe('Nebula CLI', () => {
     }
   })
 
+  it('prints the same help for run and serve with --help or -h, and starts nothing', () => {
+    for (const args of [['run', '--help'], ['run', '-h'], ['serve', '--help'], ['serve', '-h'], ['run', '--port', '0', '--help']]) {
+      const result = runCli(args)
+
+      expect(result.status, args.join(' ')).toBe(0)
+      expect(result.stderr, args.join(' ')).toBe('')
+      expect(result.stdout, args.join(' ')).toBe(helpText())
+      expect(result.stdout, args.join(' ')).toBe(runCli(['help']).stdout)
+    }
+  })
+
+  it('still refuses an option it does not know, naming it', () => {
+    const result = runCli(['run', '--nope'])
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('--nope')
+  })
+
   it('prints the package version through -v and --version', () => {
     for (const args of [['-v'], ['--version']]) {
       const result = runCli(args)
@@ -76,8 +95,9 @@ describe('Nebula CLI', () => {
     expect(runCli(['init']).stdout).not.toContain('localStorage')
   })
 
-  it('builds the packaged app for the root of the server that serves it, so a file’s address reloads', () => {
-    expect(pkg.scripts['build:cli-app']).toContain('--base=/ ')
+  it('builds the packaged app with relative addresses, so it runs under any base path, and carries routes.json', () => {
+    expect(pkg.scripts['build:cli-app']).toContain('--base=./ ')
+    expect(pkg.scripts['build:cli-app']).toContain("copyFileSync('routes.json', 'dist/app/routes.json')")
   })
 
   it('serves the app for a file’s address whatever its extension, as the site does', async () => {

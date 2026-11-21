@@ -19,7 +19,13 @@ export type FileEntry = {
   size?: number;
   /** Milliseconds since the epoch. Files only, when the store knows it. */
   modified?: number;
+  /** Who last wrote the file through Nebula, when the store knows it (a server project: always on
+   * the database backend, only for this run's writes on folders; never in the browser). */
+  modifiedBy?: Actor;
 };
+
+/** Who made a change, as the server's records name them (cli/backend.mjs `Actor`, Orbit's actor words). */
+export type Actor = { type: 'human' | 'agent'; id: string; name: string };
 
 /** A change to a store. A remove whose path is '' means the project was
  * removed on purpose (or moved to a folder): treat everything in it as
@@ -156,6 +162,8 @@ export type NewProject = {
    * is copied into the (empty) folder and checked before the project
    * switches to it, keeping its id, and its browser copy is deleted. */
   from?: string;
+  /** On the server that served the page, where it makes projects. */
+  where?: 'server';
 };
 
 /** `.nebula/workspace.json`: what was open, restored when you come back. */

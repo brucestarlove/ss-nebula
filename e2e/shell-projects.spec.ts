@@ -271,13 +271,4 @@ test.describe('welcome', () => {
     await page.getByRole('button', { name: 'Start empty' }).click();
     await expect(page.getByRole('dialog', { name: 'New project' })).toBeVisible();
   });
-
-  test('people whose canvases moved get the one-time note', async ({ page }) => {
-    await openShell(page, 'intro=migrated');
-    const dialog = page.getByRole('dialog', { name: 'Starscape Nebula' });
-    await expect(dialog).toContainText('Your canvases are now files in projects.');
-    await dialog.getByRole('button', { name: 'Got it' }).click();
-    await expect(dialog).toHaveCount(0);
-    expect(await page.evaluate(() => window.__shell.introDone)).toBe(1);
-  });
 });

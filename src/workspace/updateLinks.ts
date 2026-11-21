@@ -27,6 +27,7 @@
  */
 import { basename, dirname } from '../files/paths';
 import type { FileEntry } from '../files/types';
+import { mayHaveEmbeddedFiles, rewriteEmbeddedLinks } from '../nebula/excalidraw/embeddedFiles';
 import { linkMatches, markdownPath, resolveLink, resolveMarkdownPath } from './views/note/links';
 
 /** The project's files before and after a move, and where each moved file went. Built once per move, used for every note. */
@@ -255,4 +256,19 @@ export function updateLinks(text: string, from: string, to: string, world: LinkW
   }
   out += text.slice(at);
   return tally.count === 0 ? { text, count: 0 } : { text: out, count: tally.count };
+}
+
+/**
+ * A canvas's text with the image references in its `## Embedded Files`
+ * section following the move (2.0.4), by the same rules as a note's
+ * `[[links]]`: a reference that still finds its file is left as written,
+ * and one that wouldn't is rewritten in its own form (bare name, path,
+ * alias). Only those lines change: the section is plain markdown even in a
+ * compressed drawing, and the drawing itself (its text elements' links
+ * included) is left byte for byte.
+ */
+export function updateCanvasLinks(text: string, from: string, to: string, world: LinkWorld): LinkUpdate {
+  if (!mayHaveEmbeddedFiles(text)) return { text, count: 0 };
+  const context: Context = { from, to, world };
+  return rewriteEmbeddedLinks(text, (link) => rewriteWikilink(link, context));
 }

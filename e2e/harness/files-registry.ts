@@ -1,8 +1,7 @@
 // Served by the Vite dev server for e2e/files-registry.spec.ts (and the other
-// files-* specs): the browser registry, migration, sample and zip, driven
+// files-* specs): the browser registry, sample and zip, driven
 // from Playwright through window.filesRegistry.
 import { readObsidianExcalidrawMarkdown } from '../../src/nebula/excalidraw/obsidianMarkdown';
-import { migrateLegacyCanvases } from '../../src/files/migration';
 import { openBrowserRegistry, OPFS_TREE } from '../../src/files/opfsRegistry';
 import { requestPersistentStorage, storageStatus } from '../../src/files/persist';
 import type { BrowserRegistry } from '../../src/files/registry';
@@ -11,7 +10,6 @@ import { projectToZip } from '../../src/files/zip';
 import type { FileChange, FileStore } from '../../src/files/types';
 
 let registry: BrowserRegistry | null = null;
-let persistent = false;
 const stores = new Map<string, FileStore>();
 const heard: Array<{ id: string; change: FileChange }> = [];
 
@@ -56,7 +54,6 @@ const harness = {
   async open(): Promise<{ persistent: boolean; reason?: string }> {
     const handle = await openBrowserRegistry();
     registry = handle.registry;
-    persistent = handle.persistent;
     stores.clear();
     return { persistent: handle.persistent, reason: handle.reason };
   },
@@ -94,12 +91,6 @@ const harness = {
   async entries(id: string): Promise<Array<{ path: string; type: string; size?: number }>> {
     return (await (await store(id)).list()).map(({ path, type, size }) => ({ path, type, size }));
   },
-  async migrate(seed: Record<string, string>) {
-    for (const [key, value] of Object.entries(seed)) localStorage.setItem(key, value);
-    return migrateLegacyCanvases({ storage: localStorage, registry: opened(), persistent });
-  },
-  localStorage: () => Object.fromEntries(Object.keys(localStorage).map((key) => [key, localStorage.getItem(key)])),
-  clearLocalStorage: () => localStorage.clear(),
   async canvas(id: string, path: string) {
     const scene = readObsidianExcalidrawMarkdown(await (await store(id)).readText(path));
     return { elements: scene.elements, files: scene.files };

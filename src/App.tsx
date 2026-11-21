@@ -1,13 +1,14 @@
 import { Component, useCallback, useEffect, useMemo, useState, type ErrorInfo, type ReactNode } from 'react'
-import { bootNebula, hasLegacyCanvases, readLegacyRoutes, type Boot } from './app/boot'
+import { bootNebula, type Boot } from './app/boot'
 import { askToKeepOnFirstEdit } from './app/keepOnEdit'
-import { withServerTier } from './app/serverTier'
-import { appBase, appHome, fileUrl, parseRoute, resolveLegacyRoute, type OpenTarget } from './app/routes'
+import { openTiers } from './app/serverTier'
+import { appAsset, appHome, appMount, fileUrl, parseRoute, type OpenTarget } from './app/routes'
 import { openBrowserRegistry } from './files/opfsRegistry'
 import { requestPersistentStorage } from './files/persist'
+import { STANDALONE, type Hosting } from './files/places'
 import type { BrowserRegistry } from './files/registry'
 import { scopedStore } from './files/scopedStore'
-import { Workspace, type OlderTabOffer } from './workspace/Workspace'
+import { Workspace } from './workspace/Workspace'
 import { saveBlob } from './workspace/download'
 
 type AppErrorBoundaryState = {
@@ -66,7 +67,13 @@ type Ready = {
   registry: BrowserRegistry
   /** What the address asked to open. */
   initialFile: OpenTarget | null
+  /** The homes the page's host offers, and its server. */
+  hosting: Hosting
 }
+
+/** Where the app is mounted: `/app` on the site, '' at the root (`pnpm dev`,
+ * `nebula run`), or where a host put it (`/nebula`). Read once, from the page. */
+const APP_BASE = appMount()
 
 // One start per page, whatever React does with effects (StrictMode runs them
 // twice in development).
@@ -75,27 +82,24 @@ let starting: Promise<Ready> | null = null
 function start(): Promise<Ready> {
   starting ??= (async () => {
     const storage = localStorageOrNull()
-    const route = parseRoute(window.location)
+    const route = parseRoute(window.location, APP_BASE)
+    let hosting = STANDALONE
     const boot = await bootNebula({
       storage,
-      openRegistry: async () => withServerTier(await openBrowserRegistry(), storage),
-      migrate: async (input) => (await import('./files/migration')).migrateLegacyCanvases(input),
-      seed: async (registry) => (await import('./files/sample')).seedSampleProject(registry),
+      openRegistry: async () => {
+        const tiers = await openTiers(storage, () => openBrowserRegistry())
+        hosting = tiers.hosting
+        return tiers.handle
+      },
+      seed: async (registry) => (await import('./files/sample')).seedSampleProject(registry, { baseUrl: appAsset('sample/') }),
     })
-    let initialFile: OpenTarget | null = null
-    if (route?.type === 'file') initialFile = { projectId: route.projectId, path: route.path }
-    else if (route?.type === 'legacy') {
-      initialFile = await resolveLegacyRoute(route, { registry: boot.registry, routes: readLegacyRoutes(storage) }).catch(() => null)
-    }
-    const registry = boot.persistent ? askToKeepOnFirstEdit(boot.registry, requestPersistentStorage) : boot.registry
-    return { boot, registry, initialFile }
+    const initialFile: OpenTarget | null = route ? { projectId: route.projectId, path: route.path, context: route.context } : null
+    // Asking the browser to keep its storage means nothing when the server keeps the files.
+    const registry = boot.persistent && hosting.homes.includes('browser') ? askToKeepOnFirstEdit(boot.registry, requestPersistentStorage) : boot.registry
+    return { boot, registry, initialFile, hosting }
   })()
   return starting
 }
-
-/** Where the app is mounted: `/app` on the site, '' at the root (`pnpm dev`,
- * `nebula run`). Read once, from the address the app was opened at. */
-const APP_BASE = appBase(window.location.pathname)
 
 /** The address follows the open file, so a reload (or a bookmark) returns to it. */
 function followInAddress(projectId: string | null, path: string | null) {
@@ -163,31 +167,6 @@ function App() {
     },
     [registry],
   )
-  // A 1.x canvas the move left behind, as an .excalidraw file (re-review R3).
-  const downloadLeftBehind = useCallback((key: string) => {
-    void import('./app/legacyCanvases').then(({ legacyCanvasAsExcalidraw }) => {
-      const file = legacyCanvasAsExcalidraw(localStorageOrNull(), key)
-      if (file) saveBlob(new Blob([file.text], { type: 'application/json' }), file.filename)
-    })
-  }, [])
-  // Canvases a Nebula 1.x tab saved after the move, offered once per visit
-  // (re-review R6). The browser tier only, where 1.x ran in this browser,
-  // and not on the visit that moved them: its note offers what stayed behind.
-  const olderTabCanvases = useMemo<OlderTabOffer | null>(() => {
-    if (!ready?.boot.persistent || ready.boot.migration?.status === 'migrated') return null
-    const storage = localStorageOrNull()
-    if (!hasLegacyCanvases(storage)) return null
-    const target = ready.registry
-    const load = () => import('./app/legacyCanvases')
-    return {
-      find: async () => (await load()).findOlderTabCanvases(storage, target),
-      importCopy: async (key, projectId) => (await load()).importOlderTabCopy({ storage, registry: target, key, projectId }),
-      download: downloadLeftBehind,
-      // Put away: not offered again until an older tab saves it again.
-      dismiss: (canvases) => void load().then(({ recordOlderTabHandled }) => recordOlderTabHandled(storage, canvases)),
-    }
-  }, [ready, downloadLeftBehind])
-
   return (
     <AppErrorBoundary>
       {error ? <Fail error={error} /> : null}
@@ -196,15 +175,12 @@ function App() {
           registry={ready.registry}
           persistent={ready.boot.persistent}
           intro={ready.boot.intro}
-          leftBehind={ready.boot.leftBehind}
-          onDownloadLeftBehind={downloadLeftBehind}
-          olderTabCanvases={olderTabCanvases}
-          notice={ready.boot.notice}
           initialFile={ready.initialFile}
           onActiveFileChange={followInAddress}
           linkTo={linkTo}
           downloadProject={downloadProject}
           deviceStore={deviceStore}
+          hosting={ready.hosting}
         />
       ) : null}
     </AppErrorBoundary>

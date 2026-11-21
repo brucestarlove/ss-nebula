@@ -123,6 +123,9 @@ describe('NoteView’s editor', () => {
       expect(localStorage.getItem('nebula:note-editing')).toBe('source');
       await first.unmount();
       mounted.splice(mounted.indexOf(first), 1);
+      // Read or edit is remembered too (2.0.4): the next note would open editing. This test is
+      // about the live/source choice, so the next note starts from reading, as `editing()` expects.
+      localStorage.removeItem('nebula:note-opens');
       const second = await editing();
       expect(switchOf(second).getAttribute('aria-pressed')).toBe('true');
       expect(second.container.querySelector('.cm-line.ws-cm-h2')).toBeNull();

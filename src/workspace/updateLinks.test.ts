@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { linkWorld, mayHaveLinks, updateLinks, type LinkWorld } from './updateLinks';
+import { embeddedFiles } from '../nebula/excalidraw/embeddedFiles';
+import { readObsidianExcalidrawMarkdown, toObsidianExcalidrawMarkdown } from '../nebula/excalidraw/obsidianMarkdown';
+import { linkWorld, mayHaveLinks, updateCanvasLinks, updateLinks, type LinkWorld } from './updateLinks';
 
 /** The project before, a list of moves (a file or a folder, old → new), and what that makes of the files. */
 function moveWorld(files: string[], moves: Record<string, string>): { world: LinkWorld; at: (path: string) => string } {
@@ -216,5 +218,86 @@ describe('updateLinks: a whole move', () => {
 
   it('a note inside the renamed folder keeps its sibling links, and writes nothing for them', () => {
     expect(run('[[Sirius]] and ![](deep/../Sirius.md)', { Stars: 'Planets' }, 'Stars/Rigel.md', files)).toEqual({ text: '[[Sirius]] and ![](deep/../Sirius.md)', count: 0 });
+  });
+});
+
+describe('updateCanvasLinks: the Embedded Files lines of a canvas', () => {
+  const CANVAS = 'Sketches/Map.excalidraw.md';
+  const IMAGES = ['Photos/Sky.png', 'Photos/Moon.png', 'Other/Moon 2.png', 'Notes/Orion.md', CANVAS];
+
+  /** A drawing with a text element that holds a link of its own, and these Embedded Files lines. */
+  function canvas(lines: string[], { crlf = false, compressed = true }: { crlf?: boolean; compressed?: boolean } = {}): string {
+    const scene = {
+      type: 'excalidraw' as const,
+      version: 2,
+      source: 'test',
+      elements: [{ id: 'abcd1234', type: 'text', x: 0, y: 0, width: 50, height: 20, text: 'See [[Orion]]', originalText: 'See [[Orion]]', link: '[[Orion]]' }],
+      appState: {},
+      files: {},
+    };
+    const text = toObsidianExcalidrawMarkdown(scene, { compressed, embedded: { add: lines.map((line, at) => [`id${at + 1}`, line] as const) } });
+    return crlf ? text.replace(/\n/g, '\r\n') : text;
+  }
+
+  const update = (text: string, moves: Record<string, string>, files = IMAGES) => {
+    const { world, at } = moveWorld(files, moves);
+    return updateCanvasLinks(text, CANVAS, at(CANVAS), world);
+  };
+  const links = (text: string) => embeddedFiles(text).map((file) => file.link);
+
+  it('follows a renamed image, a bare name staying bare while it names the file alone', () => {
+    const before = canvas(['Sky.png']);
+    const result = update(before, { 'Photos/Sky.png': 'Photos/Clouds.png' });
+    expect(result.count).toBe(1);
+    expect(links(result.text)).toEqual(['Clouds.png']);
+  });
+
+  it('writes the shortest path that names the file alone when the bare name would be ambiguous', () => {
+    const result = update(canvas(['Moon.png']), { 'Photos/Moon.png': 'Photos/Moon 2.png' });
+    expect(links(result.text)).toEqual(['Photos/Moon 2.png']);
+  });
+
+  it('keeps the alias, the size and the `#…` after the name', () => {
+    const before = canvas(['Sky.png|100%', 'Sky.png#page=2', 'Sky.png#page=2|50']);
+    const result = update(before, { 'Photos/Sky.png': 'Photos/Clouds.png' });
+    expect(result.count).toBe(3);
+    expect(links(result.text)).toEqual(['Clouds.png|100%', 'Clouds.png#page=2', 'Clouds.png#page=2|50']);
+  });
+
+  it('leaves a line that still finds its file, as written', () => {
+    const before = canvas(['Sky.png', 'Photos/Moon.png']);
+    // Sky.png moves to another folder and is still the only Sky.png; Photos/Moon.png is a path, which a folder move follows.
+    const moved = update(before, { 'Photos/Sky.png': 'Gallery/Sky.png' });
+    expect(moved).toEqual({ text: before, count: 0 });
+    expect(update(before, { 'Notes/Orion.md': 'Notes/Hunter.md' })).toEqual({ text: before, count: 0 });
+  });
+
+  it('follows a folder that was renamed, a line written as a path following it', () => {
+    const result = update(canvas(['Photos/Sky.png']), { Photos: 'Pictures' });
+    expect(links(result.text)).toEqual(['Pictures/Sky.png']);
+  });
+
+  it('changes only the links: the drawing, compressed or not, and every other byte, CRLF included, stay', () => {
+    for (const options of [{}, { crlf: true }, { compressed: false }]) {
+      const before = canvas(['Sky.png|100%', 'Moon.png'], options);
+      const { text, count } = update(before, { 'Photos/Sky.png': 'Photos/Clouds.png' });
+      expect(count).toBe(1);
+      expect(text).toBe(before.replace('[[Sky.png|100%]]', '[[Clouds.png|100%]]'));
+      // The text element's own link, `[[Orion]]`, is the drawing's: a rename of Orion doesn't reach it here.
+      expect(readObsidianExcalidrawMarkdown(text).elements[0].link).toBe('[[Orion]]');
+    }
+  });
+
+  it('checks a canvas that moved itself from its new place, so a bare name that now means another file gets a path', () => {
+    // Moon.png resolves to the file nearest the canvas: beside it in Sketches, there is none, so Photos/Moon.png (shallower) wins.
+    const files = ['Photos/Moon.png', 'Elsewhere/Deep/Moon.png', CANVAS];
+    const { world, at } = moveWorld(files, { [CANVAS]: 'Elsewhere/Deep/Map.excalidraw.md' });
+    const result = updateCanvasLinks(canvas(['Moon.png']), CANVAS, at(CANVAS), world);
+    expect(links(result.text)).toEqual(['Photos/Moon.png']);
+  });
+
+  it('is quick to say no: a text without an Embedded Files section has nothing to rewrite', () => {
+    const none = toObsidianExcalidrawMarkdown({ type: 'excalidraw', version: 2, source: 't', elements: [], appState: {}, files: {} });
+    expect(update(none, { 'Photos/Sky.png': 'Photos/Clouds.png' })).toEqual({ text: none, count: 0 });
   });
 });

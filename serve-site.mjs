@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Tiny static server for checking dist/site/ before deploying. It reads the
-// real vercel.json and applies its redirects, rewrites, trailing-slash rule
+// real routes.json and applies its redirects, rewrites, trailing-slash rule
 // and headers (the Content-Security-Policy included), so the local preview,
 // and the e2e suite on the production build, see what the deployed site sends.
 // Supported patterns: literal paths, `:name` (one segment), `/:name*` (zero or
@@ -12,8 +12,9 @@ import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs'
 import { extname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
-// The mark a Nebula server puts on every response (cli/nebula-files.mjs SERVER_TIMING).
-const SERVER_TIMING = 'nebula-files;desc="1"'
+// The mark a Nebula server puts on every response, naming where its API is (cli/nebula-files.mjs
+// SERVER_TIMING); the files API gives its own (`files.serverTiming`), this is for one that doesn't.
+const SERVER_TIMING = 'nebula-files;desc="/nebula-api/v1"'
 
 const HERE = resolve(fileURLToPath(import.meta.url), '..')
 const SITE_ROOT = join(HERE, 'dist', 'site')
@@ -42,7 +43,7 @@ function escapeRegExp(text) {
   return text.replace(/[.+?^${}()|[\]\\]/g, '\\$&')
 }
 
-/** Compile a vercel.json `source` into a RegExp plus its parameter names. */
+/** Compile a routes.json `source` into a RegExp plus its parameter names. */
 export function compileSource(source) {
   if (/[()[\]]/.test(source.replaceAll('(.*)', ''))) {
     throw new Error(`serve-site: unsupported pattern ${source} (use :name, /:name* or (.*))`)
@@ -137,7 +138,7 @@ export function resolveSiteRequest(config, url, exists) {
 }
 
 /**
- * The headers vercel.json gives a request, matched on the path as requested
+ * The headers routes.json gives a request, matched on the path as requested
  * (before rewrites), as Vercel does. Every matching rule applies, in order; a
  * later rule's value wins for the same header. Names come back lowercased.
  */
@@ -163,7 +164,7 @@ export function resolveSiteHeaders(config, url) {
  * Server-Timing mark the app looks for (src/app/serverTier.ts).
  */
 export function startSiteServer({ port = Number(process.env.PORT || 4311), host = '127.0.0.1', root = SITE_ROOT, files = null } = {}) {
-  const config = JSON.parse(readFileSync(join(HERE, 'vercel.json'), 'utf8'))
+  const config = JSON.parse(readFileSync(join(HERE, 'routes.json'), 'utf8'))
   const exists = (pathname) => {
     const filePath = join(root, pathname)
     return filePath.startsWith(root) && existsSync(filePath) && statSync(filePath).isFile()
@@ -171,7 +172,7 @@ export function startSiteServer({ port = Number(process.env.PORT || 4311), host 
 
   const server = createServer(async (req, res) => {
     if (files) {
-      res.setHeader('server-timing', SERVER_TIMING)
+      res.setHeader('server-timing', files.serverTiming ?? SERVER_TIMING)
       if (await files.handle(req, res)) return
     }
     for (const [name, value] of Object.entries(resolveSiteHeaders(config, req.url ?? '/'))) res.setHeader(name, value)
@@ -219,5 +220,5 @@ if (runDirectly) {
   }
   const server = await startSiteServer({ files })
   const { port } = server.address()
-  console.log(`Serving dist/site at http://127.0.0.1:${port} with vercel.json's routing${files ? `, and the folders in ${process.env.NEBULA_FILES_PROJECTS}` : ''}`)
+  console.log(`Serving dist/site at http://127.0.0.1:${port} with routes.json's routing${files ? `, and the folders in ${process.env.NEBULA_FILES_PROJECTS}` : ''}`)
 }

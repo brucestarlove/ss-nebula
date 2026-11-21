@@ -1,10 +1,11 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ExcalidrawProps } from '@excalidraw/excalidraw/types';
 import '@excalidraw/excalidraw/index.css';
+import './excalidraw.css';
 import type { FileViewProps } from '../../../files/types';
 import { LazyNebulaExcalidrawShell } from '../../../nebula/LazyNebulaExcalidrawShell';
 import OtherView from '../other/OtherView';
-import { errorMessage } from '../shared/download';
+import { SaveFailure } from '../shared/SaveFailure';
 import { unreachableMessage } from '../shared/fileSessions';
 import { formatCount, titleFromName } from '../shared/format';
 import { ViewLoading } from '../shared/SessionBars';
@@ -14,6 +15,7 @@ import { useProjectLinks } from '../shared/projectLinks';
 import { linkHeading, makesNote, parseWikilink, resolveLink, resolveMarkdownPath } from '../note/links';
 import '../views.css';
 import './canvas.css';
+import { fileIdFor } from './canvasImages';
 import { createFileSceneStore, type FileSceneState, type FileSceneStore } from './fileSceneStore';
 
 const IDLE: FileSceneState = { pending: false, elementCount: null, zoom: 1, conflict: false, removed: false, revision: 0 };
@@ -139,21 +141,18 @@ export default function CanvasView(props: FileViewProps) {
         </div>
       ) : state.error !== undefined ? (
         <div className="ws-conflict ws-canvas-bar" role="alert">
-          <span className="ws-conflict-text">Couldn&rsquo;t save. {errorMessage(state.error)}</span>
-          <button type="button" className="ws-view-btn" data-no-arc onClick={() => void sceneStore?.flush()}>
-            Try again
-          </button>
+          <SaveFailure error={state.error} onTryAgain={() => void sceneStore?.flush()} store={store} />
         </div>
       ) : null}
       {phase.status === 'ready' && sceneStore ? (
         <LazyNebulaExcalidrawShell
           // A new revision is the file as changed elsewhere: load it afresh.
           key={state.revision}
-          chrome={false}
           context={context}
           store={sceneStore}
           onLinkOpen={onLinkOpen}
           linksFromText
+          generateIdForFile={fileIdFor}
           fallback={<ViewLoading name={entry.name} />}
         />
       ) : (

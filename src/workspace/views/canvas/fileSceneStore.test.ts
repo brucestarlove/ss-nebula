@@ -12,6 +12,7 @@ import { slowWrites } from '../testing/slowWrites';
 import { scopedStore } from '../../../files/scopedStore';
 import zipcode from '../../../files/fixtures/obsidian/Edraw - Bus timetable.md?raw';
 import { createFileSceneStore, serialize, type FileSceneStore } from './fileSceneStore';
+import { embeddedFiles } from '../../../nebula/excalidraw/embeddedFiles';
 
 const REF = { boardId: 'night-sky', canvasId: 'Sketches/Winter hexagon.excalidraw.md' };
 
@@ -254,9 +255,13 @@ describe('file scene store', () => {
         documentWith(loaded, scene([element('a', { version: 2, isDeleted: true }), image], { 'file-1': IMAGE_FILE, 'file-2': { ...IMAGE_FILE, id: 'file-2' } })),
       );
       await sceneStore.flush();
-      const written = readObsidianExcalidrawMarkdown(String(files.writes[0].data));
+      // The image in use is written as its own file first, then the drawing names it (2.0.4).
+      expect(files.writes.map((write) => write.path)).toEqual([expect.stringMatching(/^Attachments\/Pasted image \d{14}\.png$/), REF.canvasId]);
+      const text = String(files.writes[1].data);
+      const written = readObsidianExcalidrawMarkdown(text);
       expect(written.elements.map((item) => item.id)).toEqual(['img']);
-      expect(Object.keys(written.files ?? {})).toEqual(['file-1']);
+      expect(Object.keys(written.files ?? {})).toEqual([]);
+      expect(embeddedFiles(text).map((line) => line.id)).toEqual(['file-1']);
     });
 
     it('follows a rename and never writes a deleted canvas back', async () => {
@@ -608,7 +613,9 @@ describe('file scene store', () => {
         { id: 'rect', type: 'rectangle', x: 42 },
         { id: 'img', type: 'image', x: 200 },
       ]);
-      expect(reloaded.scene.files).toEqual({ 'file-1': IMAGE_FILE });
+      // The image comes back from its own file (2.0.4), so its `created` is the file's time.
+      expect(reloaded.scene.files).toEqual({ 'file-1': { ...IMAGE_FILE, created: expect.any(Number) } });
+      expect(embeddedFiles(written).map((line) => line.id)).toEqual(['file-1']);
     });
 
     it('round-trips elements and embedded images through .excalidraw JSON', async () => {

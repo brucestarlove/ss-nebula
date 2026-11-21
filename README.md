@@ -1,8 +1,8 @@
 # Starscape Nebula
 
-Nebula is a workspace for notes, drawings and media, kept in projects in your browser or in a folder on your computer. A project is a folder of real files: Markdown notes, Excalidraw canvases, images, PDFs, audio, video, text and code, each opening in a tab with its own view. There is no account and no server: the files stay on your device.
+Nebula is a workspace for notes, drawings and media, kept in projects in your browser or in a folder on your computer. A project is a folder of real files: Markdown notes, Excalidraw canvases, images, PDFs, audio, video, text and code, each opening in a tab with its own view. There is no account: the files stay on your device, or on a machine you run.
 
-[nebula.starscape.app](https://nebula.starscape.app) says what it is; the app runs at [nebula.starscape.app/app](https://nebula.starscape.app/app). The same canvas ships as a React package for Orbit and other hosts.
+[nebula.starscape.app](https://nebula.starscape.app) says what it is; the app runs at [nebula.starscape.app/app](https://nebula.starscape.app/app). Nebula is an app, not a library: the site, and `nebula run`, which serves the same app, and optionally your own folders, from your machine.
 
 ## What you get
 
@@ -40,11 +40,13 @@ Nebula asks the browser to keep them (persistent storage) after your first edit.
 
 **Or in folders on a machine you run** (the server tier, any browser): `nebula run --projects <folder>` serves every folder in it as a project, and the app it serves lists them beside the browser's own. Nebula reads and writes their files there and shows changes other apps and agents make as they land.
 
-**From Nebula 1.x:** canvases saved in `localStorage` (`nebula:excalidraw:<board>:<canvas>`) are copied into projects on the first visit, one project per board (the default board becomes "My First Project"), and the originals stay where they are. Old links (`/b/<board>/c/<canvas>` and `?board=&canvas=`) open the file each canvas became. A file's or folder's own address is `/app/p/<project>/<path>` on the site (`/p/<project>/<path>` where the app is served at the root, as `pnpm dev` and `nebula run` do); 2.0's `/p/…` links redirect into `/app`.
+**From Nebula 1.x:** canvases it saved in `localStorage` (`nebula:excalidraw:<board>:<canvas>`) aren't read any more, and neither are its older library keys. Nebula never deletes them: they stay in that browser until you clear them. An old link (`/b/<board>/c/<canvas>`) lands on the app's front door.
+
+A file's or folder's own address is `/app/p/<project>/<path>` on the site (`/p/<project>/<path>` where the app is served at the root, as `pnpm dev` and `nebula run` do); `/p/…` links on the site redirect into `/app`.
 
 ## Security headers
 
-`vercel.json` sends a Content-Security-Policy with every response, and `serve-site.mjs` sends the same headers locally, so the end-to-end suite runs under it. Nothing a project holds can reach another site, and opening a note or a canvas contacts no one: Excalidraw's fonts come from this site (`/fonts/`, copied from the package into every build) rather than esm.sh.
+`routes.json` sends a Content-Security-Policy with every response, and `serve-site.mjs` sends the same headers locally, so the end-to-end suite runs under it. Nothing a project holds can reach another site, and opening a note or a canvas contacts no one: Excalidraw's fonts come from this site (`/fonts/`, copied from the package into every build) rather than esm.sh.
 
 | Directive | Allows | Why |
 |---|---|---|
@@ -67,26 +69,35 @@ pnpm run verify          # typecheck, unit tests, build, lint
 pnpm run build:site      # the deployable site in dist/site, plus dist/site-chunks.json
 ```
 
-The end-to-end suite runs on the production build, served by `serve-site.mjs` with `vercel.json`'s routing and headers, in Chromium and WebKit:
+The end-to-end suite runs on the production build, served by `serve-site.mjs` with `routes.json`'s routing and headers, in Chromium and WebKit:
 
 ```sh
 NEBULA_E2E_BUILT=1 pnpm exec playwright test --project=chromium e2e/app-
 NEBULA_E2E_BUILT=1 pnpm exec playwright test --project=webkit e2e/app-
 ```
 
-Each test gets a fresh browser profile (WebKit keeps OPFS only in a persistent one) and fails if the policy blocks anything or a request leaves the site. `e2e/app-budget.spec.ts` checks the first load against `dist/site-chunks.json`: Excalidraw, CodeMirror, react-markdown, the migration and the sample each load only when a visit needs them. Tests marked fixme wait on bugs in another lane's code; `NEBULA_E2E_FIXME=1` runs them anyway.
+Each test gets a fresh browser profile (WebKit keeps OPFS only in a persistent one) and fails if the policy blocks anything or a request leaves the site. `e2e/app-budget.spec.ts` checks the first load against `dist/site-chunks.json`: Excalidraw, CodeMirror, react-markdown and the sample each load only when a visit needs them. Tests marked fixme wait on bugs in another lane's code; `NEBULA_E2E_FIXME=1` runs them anyway.
 
 Without `NEBULA_E2E_BUILT`, Playwright starts the dev server for the lane specs (`e2e/files-*`, `shell-*`, `views-*`), whose harness pages live in `e2e/harness/`. `NEBULA_E2E_PORT` picks the port.
 
 ## Self-hosted CLI
 
-From npm (Nebula 2 is `@starlove/nebula` 2.0.1; 1.x was the canvas alone):
+From npm (`@starlove/nebula` is the app and its CLI; 1.x was a canvas library, which 2.x no longer ships):
+
+```sh
+npm install -g @starlove/nebula
+nebula run
+```
+
+or without installing:
 
 ```sh
 npx @starlove/nebula run
 ```
 
-Or from a checkout:
+The package has no dependencies: the app is built into it, and the CLI uses only Node's own modules (Node 20.19+ or 22.12+).
+
+From a checkout:
 
 ```sh
 pnpm install
@@ -103,45 +114,23 @@ nebula run --project ~/Notes                 # one folder, one project
 nebula run --projects ~/Work --label studio  # every folder inside ~/Work
 ```
 
-It answers only loopback names (`127.0.0.1`, `localhost`) unless told another with `--allow-host <name>` (a tailnet name behind `tailscale serve`), and refuses requests from other sites. It has no accounts: keep it on your own machine or a private network. No Orbit board engine, database or daemon.
+Or it keeps the projects itself, in a database (Node 22.13 or later, for `node:sqlite`):
 
-Projects made there live in the browser that opens it, for that address: the ones at `http://127.0.0.1:4321` aren't the ones at nebula.starscape.app. Download a project as a `.zip` to move it.
+```sh
+nebula run --database ~/nebula-data          # nebula.db and bytes/ in that folder, made if new
+```
+
+The tree and every change's history are in `nebula.db`, the files' contents in `bytes/`, and New project in the app makes projects there. They survive a restart, and so does each change's record of who made it and when. A server does one or the other: `--database` isn't taken with `--project` or `--projects`.
+
+It answers only loopback names (`127.0.0.1`, `localhost`) unless told another with `--allow-host <name>` (a tailnet name behind `tailscale serve`), and refuses requests from other sites. It has no accounts: keep it on your own machine or a private network. No Orbit board engine or daemon.
+
+Without `--project`, `--projects` or `--database`, projects made there live in the browser that opens it, for that address: the ones at `http://127.0.0.1:4321` aren't the ones at nebula.starscape.app. Download a project as a `.zip` to move it.
 
 What changed in each version: [CHANGELOG.md](CHANGELOG.md).
 
-## React package
-
-For Starscape's own hosts (the Suite, Orbit), from this repo: it isn't published.
-
-React and React DOM are peer dependencies. The package is the canvas (Nebula's Excalidraw shell, its library controls and themes), with `localStorage` storage by default. For host-owned persistence, pass a custom `SceneStore`:
-
-```ts
-import type { SceneStore } from '@starlove/nebula';
-
-const store: SceneStore = {
-  async load({ boardId, canvasId }) {
-    return fetch(`/api/projects/${boardId}/canvases/${canvasId}`).then((r) =>
-      r.ok ? r.json() : null,
-    );
-  },
-  async save(document) {
-    await fetch(`/api/projects/${document.boardId}/canvases/${document.canvasId}`, {
-      method: 'PUT',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(document),
-    });
-  },
-  async list(boardId) {
-    return fetch(`/api/projects/${boardId}/canvases`).then((r) => r.json());
-  },
-};
-```
-
-Then pass `store` to `mountNebula` or `LazyNebulaExcalidrawShell`. A host serving the canvas should also serve Excalidraw's fonts (`node_modules/@excalidraw/excalidraw/dist/prod/fonts`) and set `window.EXCALIDRAW_ASSET_PATH` to where they are, or Excalidraw fetches them from esm.sh.
-
 ## Builds
 
-`pnpm run build` builds the standalone app for local checks. `pnpm run build:site` builds the deployable site into `dist/site`: the landing page (`site/`) at `/` and the app at `/app` (`app.html`), with `vercel.json` sending 2.0's `/p/…` and 1.x's `/b/…` links into the app. `pnpm run build:landing` rebuilds the landing alone, and `pnpm run dev:site` serves the site locally with the same routing and headers. The landing's pictures of the app are made from a demo project (`site/demo/`) by `site/shots/capture.mjs` (against `pnpm dev`) and `site/shots/encode.py`; remake them whenever the app's look changes. `pnpm run build:lib` builds the npm library into `dist`, `pnpm run build:cli-app` adds the packaged app at `dist/app`, and `pnpm run build:package` does both for npm packing (`pnpm run pack:dry-run` to check).
+`pnpm run build` builds the standalone app for local checks. `pnpm run build:site` builds the deployable site into `dist/site`: the landing page (`site/`) at `/` and the app at `/app` (`app.html`), with `routes.json` sending 2.0's `/p/…` links, and 1.x's `/b/…` links, into the app. `pnpm run build:landing` rebuilds the landing alone, and `pnpm run dev:site` serves the site locally with the same routing and headers. The landing's pictures of the app are made from a demo project (`site/demo/`) by `site/shots/capture.mjs` (against `pnpm dev`) and `site/shots/encode.py`; remake them whenever the app's look changes. `pnpm run build:package` builds the packaged app into `dist/app`, the only thing besides `bin/` and `cli/` the npm package carries (`pnpm run pack:dry-run` to check).
 
 ## Licence
 

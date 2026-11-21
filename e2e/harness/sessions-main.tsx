@@ -6,7 +6,7 @@ import { blobToBytes } from '../../src/files/bytes';
 import { createOpfsRegistry } from '../../src/files/opfsRegistry';
 import type { FileStore } from '../../src/files/types';
 import { isObsidianExcalidrawMarkdown, readObsidianExcalidrawMarkdown } from '../../src/nebula/excalidraw/obsidianMarkdown';
-import { initBackgroundFromStorage } from '../../src/nebula/ui/useBackground';
+import { initBackdropFromStorage } from '../../src/workspace/backdrop';
 import { initMotionFromStorage } from '../../src/nebula/ui/useMotion';
 import { initThemeFromStorage, resolveStoredTheme } from '../../src/nebula/ui/useTheme';
 import { Workspace, initPreferencesFromStorage } from '../../src/workspace';
@@ -16,7 +16,7 @@ import { instrumentStore, type ReadFaults, type StoreCall } from './storeWrapper
 // What main.tsx does before first paint.
 initThemeFromStorage();
 initMotionFromStorage();
-initBackgroundFromStorage(resolveStoredTheme());
+initBackdropFromStorage(resolveStoredTheme());
 initPreferencesFromStorage();
 startStarscape();
 

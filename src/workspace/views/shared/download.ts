@@ -1,4 +1,5 @@
 import type { FileEntry, FileStore } from '../../../files/types';
+import { accountError, spaceFullMessage } from './accountErrors';
 import { OPAQUE_TYPE, typedBlob } from './mime';
 
 // Long enough for any browser to start the download from the URL.
@@ -20,7 +21,11 @@ export async function downloadEntry(store: FileStore, entry: Pick<FileEntry, 'pa
   setTimeout(() => URL.revokeObjectURL(url), REVOKE_AFTER_MS);
 }
 
+/** What went wrong, in words: a store's own message, but for a session that ended or a space that's
+ * full (the person's account, not the file), words that say what to do. */
 export function errorMessage(error: unknown): string {
+  const account = accountError(error);
+  if (account) return account.kind === 'signed-out' ? 'You’re signed out. Sign in again to carry on.' : `${spaceFullMessage(account)} Free some space or get more.`;
   if (error instanceof Error) return error.message;
   return typeof error === 'string' ? error : 'Unknown error';
 }

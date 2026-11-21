@@ -1,5 +1,57 @@
 # Changelog
 
+## 2.0.4 (2026-11-21)
+
+A Nebula server remembers who changed each file and what it was, deleted files come back, and pictures become files of their own.
+
+### Highlights
+
+- **History, and Restore.** On a Nebula server that keeps projects in its database (Starscape hosting, and `nebula run --database`), the right panel's **History** lists a file's earlier versions: who saved each one, when, and how much it changed. **Preview** shows one (a note as a note, a canvas as its drawing, an image as itself), and **Restore** brings it back. The current version stays in History, and a file someone else changed meanwhile is never restored over. On a server that serves folders, History lists who changed the file and when, and says that the folder's own history, such as git or backups, is where earlier versions live.
+- **History that stays small.** Nebula keeps each file's versions the way Time Machine does: one every 10 minutes for the last hour, one an hour for the last day, then one a day for 14 days. The version just before another person or agent saved, and the one before a delete, are always kept. A save that changes nothing stores nothing. Ten thousand saves to one note leave about 40 versions.
+- **"Edited by Docu, 5 min ago".** On a Nebula server, every file says who last changed it, and "you" for your own changes, in the note's line and in the status line for every other kind of file. In the browser or a folder you picked there is only you, so the line reads "Edited 5 min ago".
+- **Pictures as files.** An image pasted or dropped onto a canvas, or into a note while you edit it, is saved as its own file in `Attachments/` (`Pasted image 20261121014500.png`, or its own name when dropped). The canvas names it the way Obsidian Excalidraw does, and the note gets `![[…]]` where your cursor is. A canvas then saves only its drawing, the picture shows in the files, and the same folder opens in Obsidian. Renaming the picture updates the canvases that use it. **Download as .excalidraw** puts the pictures back inside, so the file stands alone. **Move images to files**, on a canvas or a whole project, does the same for drawings made before, copying first and deleting nothing.
+- **Deleted files come back,** on a Nebula server that keeps history (Starscape hosting, and `nebula run --database`). **Recently deleted**, in Settings, lists the open project's files deleted in the last 14 days, a deleted folder's files one by one with their folder, and **Restore** brings one back to its path, never over a file that is there now. The delete dialog says so on such a server. Elsewhere a deleted file is still gone for good.
+- **Deleting a project can be undone** on a Nebula server's database: **Recently deleted**, in Settings, restores it for 14 days.
+
+### Also
+
+- **`nebula run --help` and `nebula serve --help`** print the help, as `nebula help` does.
+- **The reading view selects and copies,** by dragging, double-clicking or Ctrl+A (⌘A). The rest of the window stays out of the selection.
+- **Tags look like links,** the same in the page, in the editor and in the Markdown source, and a click on one searches for it. The source switch beside Edit now shows `</>`.
+- **Read or edit is remembered.** Switch a note to editing, and the next one you open is ready to edit. Switch back, and they open to read.
+- **Deleting a file others refer to says so first,** listing them under **Referenced by**: the notes that link to it and the canvases that use it, the first five and how many more.
+- **For hosts.** A host can set how much space an account has (`allowance`): a save past it is refused with the numbers and an upgrade link, and Settings shows the space used. A host whose session has ended answers with `signedOut()` (its message can run to 300 characters), and the app keeps every unsaved edit until the person signs in again. In a frame, the app and its host talk through a small set of messages (shown or hidden, open a file, shortcuts, sign in), and a hidden Nebula lets go of its live connection. A file opened from an Orbit card names the card on every save. A backend that keeps history says so with `capabilities.deletedFiles` and answers `GET <api>/projects/<id>/deleted`; a restore into a path another file has taken answers 412. The rules every backend keeps, History's among them, ship as `@starlove/nebula/conformance/backend` and `/conformance/bytes`, for a host's own storage to pass. `docs/hosting.md` covers all of it.
+
+### Breaking
+
+- **The database moves to schema 2** the first time 2.0.4 opens it, after a whole copy of it beside itself (`nebula.db.schema1-<date>.bak`). Nebula 2.0.3 then opens it read-only.
+- **On the database backend, a save identical to the file adds no version** and no entry to the change log.
+- **The package exports paths for hosts** (`./app`, `./files`, `./backend`, `./backends/database`, `./bytes/store`, `./bytes/folder` and the two conformance modules); a host's `import.meta.resolve` workaround can become a plain import.
+
+## 2.0.3 (2026-11-21)
+
+Nebula becomes an app you can host: one server, any address, three ways to keep projects.
+
+### Highlights
+
+- **Every change says who made it.** A Nebula server records each write, new folder, rename and delete with when it happened, who made it (a person or an agent, named) and, when the writer gives one, what it was for (an Orbit card's link). `GET <api>/changes` lists them across projects, newest first, and a file's listing names who last wrote it.
+- **Projects in a database.** `nebula run --database <folder>` keeps projects in one SQLite file, with each file's contents beside it. History survives restarts, a folder of thousands of files renames at once, and a deleted or replaced file can be brought back for 14 days. New project makes a project there. Needs Node 22.13 or later; folders still run on Node 20.
+- **Nebula under any address.** A server can mount the whole app, its page, its files and its API, under a path such as `/nebula`, and choose which places it offers: only its own, for a host shared by several accounts. `docs/hosting.md` shows how.
+- **One install, nothing to resolve.** `npm install -g @starlove/nebula` and `npx @starlove/nebula run` install the app and its CLI with no dependencies, in seconds, on npm 10 and 11.
+
+### Breaking
+
+- **`@starlove/nebula` is the app and its CLI, not a library.** The React library (`mountNebula`, `LazyNebulaExcalidrawShell`, the `localStorage` scene store) and the Orbit adapter are gone.
+- **Nebula 1.x's canvases are no longer moved in.** Their keys stay in the browser, untouched; 1.x's `/b/…` links open the app.
+- **`vercel.json` is `routes.json`**, the one source of routes and headers for every server.
+- **The server tier's mark** is `Server-Timing: nebula-files;desc="<api base>"` (it was `desc="1"`), and a project made by a server records that server's person as `createdBy` (it was `nebula-server`).
+
+### Also
+
+- The canvas keeps only its own look: 1.x's whole interface, which had lived on unseen inside it, is gone, and the first load carries about 50 KB less CSS.
+- New project wraps its choices rather than overflow when a server can make projects too.
+- An upload over the server's size limit is refused at once, without sending the rest.
+
 ## 2.0.2 (2026-11-17)
 
 Find anything you wrote or drew, see what links where, and serve your own folders.

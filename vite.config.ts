@@ -44,9 +44,8 @@ function manualChunks(id: string): string | undefined {
     return 'vendor-react'
   }
 
-  // The standalone app imports Starscape UI globals once. Give those assets a
-  // stable debug name now; a future Suite embed can provide equivalent host CSS
-  // instead of treating this app entry as the library contract.
+  // The app imports Starscape UI globals once. Give those assets a stable
+  // debug name.
   if (moduleId.includes('/node_modules/@starscapedigital/ui-v3-css/')) {
     return 'starscape-ui'
   }

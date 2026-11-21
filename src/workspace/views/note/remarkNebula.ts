@@ -5,7 +5,7 @@
  *   what was written between the brackets (`data-wikilink`, `data-embed`);
  *   the reading view's components (embeds/) draw them as links and embeds.
  *   With no components they read as plain text: the alias, or the target.
- * - Inline `#tags` become tag pills.
+ * - Inline `#tags` become tags (a link to search, as the page draws them).
  *
  * It only rewrites text nodes, so code stays as written. No dependencies:
  * the tree is walked by hand.

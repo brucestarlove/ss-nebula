@@ -1,11 +1,12 @@
-import { Compartment } from '@codemirror/state';
+import { Compartment, type Extension } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { FileStore } from '../../../../files/types';
 import CodeEditor, { type CodeEditorProps } from '../../code/CodeEditor';
 import { isApplePlatform } from '../../shared/hooks';
 import { useProjectLinks } from '../../shared/projectLinks';
 import { editorNames } from './accessibility';
+import { imageFiles, type ImageFilesTarget } from './imageFiles';
 import { projectLinksFacet, type EditorLinks } from './projectLinks';
 import { modeExtensions, noteEditorSetup } from './setup';
 import '../../code/code.css';
@@ -25,6 +26,8 @@ export type NoteEditorProps = Omit<CodeEditorProps, 'variant' | 'onLanguage'> & 
   source?: boolean;
   /** Escape: the page takes the focus (its toolbar). Without it Escape does nothing here. */
   onLeave?: () => void;
+  /** The note's status line: why a pasted or dropped image wasn't added. */
+  onStatus?: (message: string) => void;
 };
 
 /**
@@ -35,20 +38,36 @@ export type NoteEditorProps = Omit<CodeEditorProps, 'variant' | 'onLanguage'> & 
  */
 export default function NoteEditor(props: NoteEditorProps) {
   const [plain] = useState(Boolean(props.plainSource));
+  const images = useImageFiles(props);
   if (plain) {
-    const { path, plainSource, store, projectId, source, onLeave, ...rest } = props;
+    const { path, plainSource, store, projectId, source, onLeave, onStatus, ...rest } = props;
     void path;
     void plainSource;
     void store;
     void projectId;
     void source;
     void onLeave;
-    return <CodeEditor {...rest} variant="note" />;
+    void onStatus;
+    return <CodeEditor {...rest} variant="note" extensions={images} />;
   }
-  return <LiveEditor {...props} />;
+  return <LiveEditor {...props} images={images} />;
 }
 
-function LiveEditor(props: NoteEditorProps) {
+/**
+ * Images pasted or dropped into either editor (imageFiles.ts). One extension
+ * for the life of the editor; what it needs is read when an image arrives, so
+ * a changing file list or status callback never rebuilds the editor.
+ */
+function useImageFiles({ store, onStatus }: Pick<NoteEditorProps, 'store' | 'onStatus'>): Extension {
+  const { files } = useProjectLinks();
+  const latest = useRef<ImageFilesTarget>({ store: store ?? null, files, onStatus });
+  useEffect(() => {
+    latest.current = { store: store ?? null, files, onStatus };
+  });
+  return useMemo(() => imageFiles(() => latest.current), []);
+}
+
+function LiveEditor(props: NoteEditorProps & { images: Extension }) {
   const { value, revision, readOnly = false, path = '', store = null, projectId = '', source = false } = props;
   const projectLinks = useProjectLinks();
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -94,6 +113,7 @@ function LiveEditor(props: NoteEditorProps) {
           },
         }),
         linksRef.current.of(projectLinksFacet.of(latestLinks.current)),
+        latest.current.images,
         EditorView.updateListener.of((update) => {
           if (update.docChanged) latest.current.onChange(update.state.doc.toString());
         }),

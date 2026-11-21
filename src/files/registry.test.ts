@@ -151,7 +151,7 @@ describe('createBrowserRegistry', () => {
     await expect(registry.remove('nope')).rejects.toMatchObject({ name: 'NotFoundError' });
   });
 
-  it('can keep a given id, for migrated boards, but never a taken or unsafe one', async () => {
+  it('can keep a given id, but never a taken or unsafe one', async () => {
     const record = await registry.create({ name: 'My First Project', color: '#7c8cff', id: 'ss-nebula' });
     expect(record.id).toBe('ss-nebula');
     expect(await dirOf('ss-nebula')).toMatch(/^[a-z0-9]{10}$/);
@@ -202,7 +202,7 @@ describe('createBrowserRegistry', () => {
     expect(heard).toEqual([{ type: 'write', path: 'a.md' }]);
   });
 
-  it("gives a project's files without marking it opened, for migration and downloads", async () => {
+  it("gives a project's files without marking it opened, for downloads", async () => {
     const a = await registry.create({ name: 'A', color: '#7c8cff' });
     const b = await registry.create({ name: 'B', color: '#7c8cff' });
     await (await registry.files(b.id)).write('note.md', 'B');

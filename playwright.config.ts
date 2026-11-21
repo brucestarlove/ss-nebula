@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
 // One port per checkout, so parallel lanes never test each other's server. NEBULA_E2E_BUILT=1 serves the production build
-// (dist/site, through serve-site.mjs and vercel.json's routing) instead of
+// (dist/site, through serve-site.mjs and routes.json's routing) instead of
 // the dev server.
 const port = Number(process.env.NEBULA_E2E_PORT || 4340);
 const built = process.env.NEBULA_E2E_BUILT === '1';

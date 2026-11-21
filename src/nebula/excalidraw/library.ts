@@ -14,9 +14,7 @@ export const EXCALIDRAW_LIBRARY_SUBMIT_URL =
   "https://github.com/excalidraw/excalidraw-libraries#guidelines";
 
 const EXCALIDRAW_LIBRARY_MIME_TYPE = "application/vnd.excalidrawlib+json";
-// Legacy flat store, written before Nebula tracked multiple named libraries.
-const LEGACY_LIBRARY_STORAGE_PREFIX = "nebula:excalidraw-library";
-// Current store: named collections plus the active selection, scoped per board.
+// Named collections plus the active selection, scoped per board.
 const LIBRARY_COLLECTIONS_STORAGE_PREFIX = "nebula:excalidraw-libraries";
 
 /**
@@ -41,10 +39,6 @@ export type LibraryCollectionsState = {
   activeId: string;
 };
 
-function legacyStorageKey(boardId: string): string {
-  return `${LEGACY_LIBRARY_STORAGE_PREFIX}:${boardId}`;
-}
-
 function collectionsStorageKey(boardId: string): string {
   return `${LIBRARY_COLLECTIONS_STORAGE_PREFIX}:${boardId}`;
 }
@@ -60,18 +54,6 @@ function personalCollection(items: LibraryItems = []): LibraryCollection {
     items,
     createdAt: Date.now(),
   };
-}
-
-function readLegacyItems(boardId: string): LibraryItems {
-  if (typeof window === "undefined") return [];
-  try {
-    const stored = window.localStorage.getItem(legacyStorageKey(boardId));
-    if (!stored) return [];
-    const parsed: unknown = JSON.parse(stored);
-    return Array.isArray(parsed) ? (parsed as unknown as LibraryItems) : [];
-  } catch {
-    return [];
-  }
 }
 
 /** Keep Personal first and present, and guarantee activeId points at a real collection. */
@@ -122,12 +104,12 @@ export function loadLibraryCollections(
       }
     }
   } catch {
-    // Corrupt store — fall through to legacy migration / default below.
+    // Corrupt store — fall through to the default below.
   }
 
-  // First run on this board: migrate any legacy flat library into Personal.
+  // First run on this board: an empty Personal library.
   return normalizeState({
-    collections: [personalCollection(readLegacyItems(boardId))],
+    collections: [personalCollection()],
     activeId: PERSONAL_LIBRARY_ID,
   });
 }

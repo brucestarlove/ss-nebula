@@ -1,32 +1,31 @@
 {
   "name": "@starlove/nebula",
-  "version": "2.0.2",
-  "description": "Starscape Nebula: notes, Excalidraw drawings and media as real files in projects, in your browser. Its canvas also ships as a React component.",
+  "version": "2.0.4",
+  "description": "Starscape Nebula: notes, Excalidraw drawings and media as real files in projects, in your browser or served from your own folders (nebula run).",
   "license": "AGPL-3.0",
   "type": "module",
   "bin": {
     "nebula": "./bin/nebula.mjs"
   },
   "packageManager": "pnpm@10.22.0",
-  "main": "./dist/index.js",
-  "module": "./dist/index.js",
-  "types": "./dist/nebula/index.d.ts",
   "exports": {
-    ".": {
-      "types": "./dist/nebula/index.d.ts",
-      "import": "./dist/index.js"
-    },
-    "./style.css": "./dist/style.css",
+    "./app": "./cli/app.mjs",
+    "./files": "./cli/nebula-files.mjs",
+    "./backend": "./cli/backend.mjs",
+    "./backends/database": "./cli/backends/database.mjs",
+    "./bytes/store": "./cli/bytes/store.mjs",
+    "./bytes/folder": "./cli/bytes/folder.mjs",
+    "./conformance/bytes": "./cli/conformance/bytes.mjs",
+    "./conformance/backend": "./cli/conformance/backend.mjs",
     "./package.json": "./package.json"
   },
   "files": [
     "bin",
     "cli",
-    "dist",
+    "dist/app",
     "README.md",
     "CHANGELOG.md",
-    "LICENSE",
-    "package.json"
+    "LICENSE"
   ],
   "sideEffects": [
     "*.css",
@@ -66,13 +65,11 @@
     "build:app": "tsc -b && vite build",
     "build:site": "pnpm run typecheck && node scripts/build-site.mjs",
     "build:landing": "vite build --config vite.site.config.ts",
-    "build:vercel": "pnpm run build:site",
     "build:cloudflare": "pnpm run build:site && node scripts/cloudflare-assets.mjs",
     "deploy": "pnpm run verify && pnpm run build:cloudflare && wrangler deploy",
     "deploy:preview": "pnpm run build:cloudflare && wrangler versions upload --preview-alias preview",
-    "build:cli-app": "vite build --base=/ --outDir dist/app --emptyOutDir=false",
-    "build:package": "pnpm run build:lib && pnpm run build:cli-app",
-    "build:lib": "vite build --config vite.lib.config.ts && tsc -p tsconfig.lib.json --pretty false",
+    "build:cli-app": "vite build --base=./ --outDir dist/app --emptyOutDir && node -e \"require('node:fs').copyFileSync('routes.json', 'dist/app/routes.json')\"",
+    "build:package": "pnpm run build:cli-app",
     "typecheck": "tsc -b --pretty false",
     "lint": "eslint .",
     "test": "vitest run --environment jsdom --pool=vmThreads",
@@ -91,16 +88,6 @@
   "engines": {
     "node": "^20.19.0 || >=22.12.0"
   },
-  "peerDependencies": {
-    "react": ">=18",
-    "react-dom": ">=18"
-  },
-  "dependencies": {
-    "@excalidraw/excalidraw": "^0.18.1",
-    "@starlove/ui": "^3.3.3",
-    "@starlove/ui-react": "^3.3.3",
-    "lz-string": "^1.5.0"
-  },
   "devDependencies": {
     "@axe-core/playwright": "^4.14.0",
     "@codemirror/autocomplete": "^6.20.4",
@@ -111,8 +98,11 @@
     "@codemirror/state": "^6.7.6",
     "@codemirror/view": "^6.43.15",
     "@eslint/js": "^9.36.0",
+    "@excalidraw/excalidraw": "^0.18.1",
     "@lezer/highlight": "^1.2.5",
     "@playwright/test": "1.64.1",
+    "@starlove/ui": "^3.3.3",
+    "@starlove/ui-react": "^3.3.3",
     "@types/node": "^24.6.0",
     "@types/react": "^19.1.16",
     "@types/react-dom": "^19.1.9",
@@ -124,6 +114,7 @@
     "fflate": "^0.8.3",
     "globals": "^16.4.0",
     "jsdom": "^27.4.0",
+    "lz-string": "^1.5.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-markdown": "^10.1.0",

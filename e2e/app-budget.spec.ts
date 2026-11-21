@@ -6,8 +6,8 @@ import { closeIntro, expect, openApp, test } from './app-fixtures';
 
 // The load budget: the first load of
 // the app (/app, whose page is app.html beside the landing's index.html, PLAN
-// §2.14) carries the workspace only. Excalidraw, CodeMirror, react-markdown, the
-// migration and the sample each arrive in a chunk of their own, and only when
+// §2.14) carries the workspace only. Excalidraw, CodeMirror, react-markdown and
+// the sample each arrive in a chunk of their own, and only when
 // the visit needs them. Measured on the production build from the network:
 // every JavaScript response and its bytes, classified by the modules the
 // build put in each chunk (dist/site-chunks.json, written by vite.config.ts's
@@ -20,7 +20,6 @@ const HEAVY: Record<string, RegExp> = {
   Excalidraw: /(^|\/)node_modules\/@excalidraw\//,
   CodeMirror: /(^|\/)node_modules\/(@codemirror|codemirror|@lezer)\//,
   'react-markdown': /(^|\/)node_modules\/(react-markdown|remark-[\w-]+|micromark[\w-]*|unified)\//,
-  migration: /^src\/files\/migration\.ts$/,
   sample: /^src\/files\/sample(\.ts$|\/)/,
 };
 
@@ -148,5 +147,4 @@ test('the first load carries the workspace; each heavy part waits for the visit 
   const later = await done();
   await report(testInfo, 'edit-and-canvas', later);
   expect(summary(later).heavy).toEqual(expect.arrayContaining(['CodeMirror']));
-  expect(summary(later).heavy).not.toContain('migration');
 });

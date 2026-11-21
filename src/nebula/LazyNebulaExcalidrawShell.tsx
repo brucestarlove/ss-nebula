@@ -1,7 +1,7 @@
 import { lazy, Suspense } from 'react';
 import type { ReactNode } from 'react';
 import type { ExcalidrawProps } from '@excalidraw/excalidraw/types';
-import type { NebulaContextInput } from './context';
+import type { NebulaContext } from './context';
 import type { SceneStore } from './storage/types';
 
 const NebulaExcalidrawShell = lazy(() =>
@@ -11,31 +11,21 @@ const NebulaExcalidrawShell = lazy(() =>
 );
 
 export type LazyNebulaExcalidrawShellProps = {
-  context?: NebulaContextInput;
-  store?: SceneStore;
-  fallback?: ReactNode;
-  onReady?: () => void;
-  /** `false` renders the canvas alone, without Nebula's chrome; see
-   * NebulaExcalidrawShellProps.chrome. Defaults to `true`. */
-  chrome?: boolean;
+  context: NebulaContext;
+  store: SceneStore;
+  /** Shown while the canvas's chunk loads: the canvas view gives its own. */
+  fallback: ReactNode;
   /** See NebulaExcalidrawShellProps.onLinkOpen. */
   onLinkOpen?: ExcalidrawProps['onLinkOpen'];
   /** See NebulaExcalidrawShellProps.linksFromText. */
   linksFromText?: boolean;
+  /** See NebulaExcalidrawShellProps.generateIdForFile. */
+  generateIdForFile?: ExcalidrawProps['generateIdForFile'];
 };
 
 export function LazyNebulaExcalidrawShell(props: LazyNebulaExcalidrawShellProps) {
   return (
-    <Suspense
-      fallback={
-        props.fallback ?? (
-          <div className="nebula-loading" role="status" aria-live="polite">
-            <span className="nebula-loading__title">Opening Nebula canvas…</span>
-            <span className="nebula-loading__hint">Local-first scene data stays in this browser.</span>
-          </div>
-        )
-      }
-    >
+    <Suspense fallback={props.fallback}>
       <NebulaExcalidrawShell {...props} />
     </Suspense>
   );

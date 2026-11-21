@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // nebula.starscape.app runs on Cloudflare Workers static assets, which read
-// two files from the assets directory: _headers and _redirects. vercel.json
+// two files from the assets directory: _headers and _redirects. routes.json
 // stays the one source of routes and headers (serve-site.mjs reads it for the
 // local preview and the tailnet copy), and this writes both files from it. A
 // rule it can't translate exactly stops the build rather than going missing.
@@ -10,14 +10,14 @@ import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-const BANNER = '# Generated from vercel.json by scripts/cloudflare-assets.mjs. Edit vercel.json instead.'
+const BANNER = '# Generated from routes.json by scripts/cloudflare-assets.mjs. Edit routes.json instead.'
 const SEGMENTS = '((?:/[A-Za-z0-9._~-]+)+)'
 
 function untranslatable(what) {
   return new Error(`cloudflare-assets: can’t translate ${what}`)
 }
 
-/** vercel.json's header sources as Cloudflare paths: '/(.*)' → '/*', '/assets/(.*)' → '/assets/*'. */
+/** routes.json's header sources as Cloudflare paths: '/(.*)' → '/*', '/assets/(.*)' → '/assets/*'. */
 function headerPath(source) {
   if (source === '/(.*)') return '/*'
   const prefix = new RegExp(`^${SEGMENTS}/\\(\\.\\*\\)$`).exec(source)
@@ -34,7 +34,7 @@ export function cloudflareHeaders(config) {
     const lines = blocks.get(path) ?? []
     for (const { key, value } of rule.headers) {
       if (!value) throw untranslatable(`an empty ${key} on ${rule.source}`)
-      // Cloudflare joins a header two matching rules both set; vercel.json never relies on that.
+      // Cloudflare joins a header two matching rules both set; routes.json never relies on that.
       const name = key.toLowerCase()
       if (seen.has(name) && seen.get(name) !== path) throw untranslatable(`${key}, set for both ${seen.get(name)} and ${path}`)
       seen.set(name, path)
@@ -49,7 +49,7 @@ function statusOf(rule) {
   return rule.statusCode ?? (rule.permanent === false ? 307 : 308)
 }
 
-/** One vercel.json source and destination as _redirects lines: a fixed path, or a prefix whose
+/** One routes.json source and destination as _redirects lines: a fixed path, or a prefix whose
  * `:name*` (zero or more segments) becomes a bare line plus a `/*` line with `:splat`. */
 function lines(rule, code) {
   const fixed = new RegExp(`^${SEGMENTS}$`).exec(rule.source)
@@ -105,6 +105,6 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
     console.error(`cloudflare-assets: no built site at ${dir} (run pnpm run build:site first)`)
     process.exit(1)
   }
-  writeCloudflareAssets(dir, JSON.parse(readFileSync(join(root, 'vercel.json'), 'utf8')))
+  writeCloudflareAssets(dir, JSON.parse(readFileSync(join(root, 'routes.json'), 'utf8')))
   console.log(`cloudflare-assets: wrote _headers and _redirects in ${dir}`)
 }

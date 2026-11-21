@@ -33,7 +33,10 @@ async function openPlan(page: Page) {
 }
 
 async function edit(page: Page) {
-  await page.locator('.ws-stage').getByRole('button', { name: 'Edit' }).click();
+  // Read or edit is remembered (2.0.4): a note opened after another was edited opens editing, and
+  // pressing Edit then would take it back to reading.
+  const button = page.locator('.ws-stage').getByRole('button', { name: 'Edit' });
+  if ((await button.getAttribute('aria-pressed')) !== 'true') await button.click();
   const content = page.locator('[data-testid="note-editor"] .cm-content');
   await expect(content).toBeVisible({ timeout: 20_000 });
   return content;

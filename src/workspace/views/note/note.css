@@ -57,6 +57,23 @@
   position: relative;
 }
 
+/* The page's text is selectable and copyable (2.0.4). ss-ui's reset sets
+ * user-select: none on body, so every other part of the app, the rail, tabs,
+ * tree and buttons, stays unselectable; only the page opts back in. */
+.ws-note .ws-page {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* Controls inside the page stay as chrome. A tag button is text in the
+ * sentence, so it's selected and copied as text. */
+.ws-note .ws-page .ws-page-tools,
+.ws-note .ws-page button:not(.ws-tag-button),
+.ws-note .ws-page .ws-remote-bar {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 .ws-page-tools {
   position: absolute;
   top: 0.9rem;
@@ -285,11 +302,6 @@
   max-width: 100%;
   height: auto;
   border-radius: 10px;
-}
-
-.ws-prose .ws-tag-inline {
-  font-size: 0.78em;
-  vertical-align: 0.08em;
 }
 
 /* ---- [[wikilinks]]: a link inside the project ------------------------- */

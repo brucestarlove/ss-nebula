@@ -1,6 +1,7 @@
 import { syntaxTree } from '@codemirror/language';
 import { type EditorState, type Extension, Prec, type Range, StateField, type Transaction } from '@codemirror/state';
 import { Decoration, type DecorationSet, EditorView, keymap, WidgetType } from '@codemirror/view';
+import { searchForTag } from '../../../searchEvent';
 import { frontmatterLines, openWebLink, webHref } from './livePreview';
 import { projectLinksFacet, projectLinksOf, type EditorLinks } from './projectLinks';
 import { drawTable, sourceFallback } from './tableCells';
@@ -187,6 +188,12 @@ class TableWidget extends WidgetType {
         if (href && webHref(href)) {
           event.preventDefault();
           openWebLink(href);
+          return;
+        }
+        const tag = event.target.closest<HTMLElement>('.ws-tag[data-tag]')?.dataset.tag;
+        if (tag) {
+          event.preventDefault();
+          searchForTag(tag);
           return;
         }
         const wiki = event.target.closest<HTMLElement>('.ws-wikilink[data-wiki]');

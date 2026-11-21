@@ -445,7 +445,7 @@ function inline(out: Collector, sel: Selections, node: SyntaxNode): boolean {
 /** Where a #tag can't be: code, addresses, HTML and comments. */
 const NO_TAGS = new Set(['InlineCode', 'FencedCode', 'CodeBlock', 'CodeText', 'URL', 'Autolink', 'HTMLBlock', 'HTMLTag', 'CommentBlock', 'Comment', 'LinkLabel']);
 
-/** #tags on the lines of `range`, drawn as the page's tag pills (remarkNebula's shape). */
+/** #tags on the lines of `range`, drawn as the page draws them, as links (remarkNebula's shape). */
 function tags(out: Collector, range: Span): void {
   const { doc } = out.state;
   const tree = syntaxTree(out.state);
@@ -679,8 +679,8 @@ const linkClicks = EditorView.domEventHandlers({
   },
 });
 
-/** While Ctrl/⌘ is held, links show the pointer that says a click opens them. */
-const modifierHeld = ViewPlugin.fromClass(
+/** While Ctrl/⌘ is held, links show the pointer that says a click opens them (tags.ts shares it, so the source's tags do too). */
+export const modifierHeld = ViewPlugin.fromClass(
   class {
     readonly dom: HTMLElement;
     readonly onKey: (event: KeyboardEvent) => void;

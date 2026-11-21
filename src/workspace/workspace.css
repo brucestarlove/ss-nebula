@@ -1060,13 +1060,16 @@
   color: var(--ws-muted);
 }
 
+/* A #tag reads as a link, however it's drawn (2.0.4): the reading view, the
+ * note's header and live preview all carry .ws-tag, and the Markdown source
+ * marks it .ws-cm-tag (editor.css). It's the colour and underline of a
+ * [[wikilink]] (note.css), never a pill. */
 .ws-tag {
-  padding: 0.12rem 0.5rem;
-  border-radius: 999px;
-  background: var(--accent-active);
-  color: var(--ws-tag-ink);
-  font-size: 0.72rem;
-  font-weight: 560;
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, var(--accent) 40%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
 }
 
 .ws-prose {
@@ -1314,7 +1317,8 @@
   box-shadow: none;
 }
 
-.ws-status-text {
+.ws-status-text,
+.ws-status-edited {
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -2196,6 +2200,66 @@
   justify-content: flex-end;
 }
 
+/* The confirm dialog's list under its paragraph (deleting a file others refer to): a quiet
+ * heading, one line per file, its kind and folder in the muted ink, and "and N more" past six,
+ * so the dialog never grows with the number of files. */
+.ws-confirm-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: -0.35rem;
+}
+
+.ws-confirm-list h3 {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ws-muted);
+}
+
+.ws-confirm-list ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.ws-confirm-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: 0;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.ws-confirm-list-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink);
+}
+
+.ws-confirm-list-quiet {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8rem;
+  color: var(--ws-muted);
+}
+
+.ws-small-inner .ws-confirm-list-more {
+  font-size: 0.82rem;
+}
+
 /* New project: a planet comes into being as you name and colour it. */
 .ws-np.dialog {
   width: min(38rem, calc(100vw - 2rem));
@@ -2230,7 +2294,8 @@
 
 .ws-np-top {
   display: grid;
-  grid-template-columns: 11.5rem 1fr;
+  /* minmax(0, …): a wide row inside (three Where choices) wraps instead of widening the dialog. */
+  grid-template-columns: 11.5rem minmax(0, 1fr);
   gap: 1.3rem;
 }
 
@@ -2456,9 +2521,25 @@
 
 /* ------------------------------------------------------------------ *
  * The background: a colour or an image of your own (Settings →
- * Appearance; src/workspace/backdrop.ts and useBackdrop.ts). A colour
- * reuses 1.x's plain rules (NebulaShell.css) with --nebula-bg-color.
+ * Appearance; src/workspace/backdrop.ts and useBackdrop.ts).
  * ------------------------------------------------------------------ */
+
+/* Starfield and Parchment are the ss-ui backgrounds' own. A colour keeps
+ * Nebula 1.x's plain values on <html data-bg> ('black' at night, 'white' by
+ * day): <body> takes the flat fill (the :root prefix wins over the package's
+ * body rules) and the starfield hides. */
+:root[data-bg="white"] body {
+  background: var(--nebula-bg-color, #ffffff);
+}
+
+:root[data-bg="black"] body {
+  background: var(--nebula-bg-color, #000000);
+}
+
+[data-bg="white"] .grain,
+[data-bg="black"] .grain {
+  display: none;
+}
 
 :root[data-bg="image"] .grain {
   display: none;
@@ -2934,7 +3015,7 @@
   }
 
   .ws-np-top {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: 1rem;
   }
 
@@ -2987,63 +3068,6 @@
 
 .ws-swatch:disabled {
   box-shadow: none;
-}
-
-/* The canvases a move left behind, each with its download (re-review R3),
-   and the older tab's saves (R6). */
-.ws-left-behind {
-  list-style: none;
-  margin: 0.45rem 0 0;
-  padding: 0;
-  display: grid;
-  gap: 0.3rem;
-}
-
-.ws-left-behind li {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  min-width: 0;
-}
-
-.ws-left-behind li > span {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 600;
-}
-
-.ws-left-behind .ws-btn {
-  flex: 0 0 auto;
-  padding: 0.25rem 0.6rem;
-}
-
-.ws-older {
-  align-items: flex-start;
-}
-
-.ws-older-body {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.ws-older-body > p {
-  margin: 0;
-}
-
-/* On a phone a name gets its own line, its buttons below it. */
-@media (max-width: 768px) {
-  .ws-left-behind li {
-    flex-wrap: wrap;
-    gap: 0.35rem 0.5rem;
-  }
-
-  .ws-left-behind li > span {
-    flex-basis: 100%;
-    white-space: normal;
-  }
 }
 
 /* ---- Help: where your files live -------------------------------------- */
@@ -3107,10 +3131,12 @@
   text-underline-offset: 0.18em;
 }
 
-/* New project's Where: the two choices share the row, each growing with its label, so no
-   empty strip at the right reads as a third choice (desktop; a phone already fills it). */
+/* New project's Where: the choices share the row, each growing with its label, so no
+   empty strip at the right reads as another choice; three (a server beside the browser and a
+   folder) wrap onto a second row rather than overflow. */
 .ws-np-where {
   display: flex;
+  flex-wrap: wrap;
 }
 
 .ws-np-where .segmented-option {
@@ -3295,23 +3321,29 @@
 
 /* Tags */
 
-/* A tag that opens search: the page's pill (.ws-tag), as a button. */
+/* A tag that opens search: the page's link look (.ws-tag), on a real button so
+ * the keyboard and a screen reader reach it. Everything a button brings is
+ * cleared, so it sits in the text like a link. */
 .ws-tag-button {
   display: inline-block;
+  margin: 0;
+  padding: 0;
   border: 0;
-  font-family: inherit;
-  line-height: inherit;
+  border-radius: 3px;
+  background: none;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: inherit;
   cursor: pointer;
-  transition: background-color 140ms var(--ws-ease), box-shadow 140ms var(--ws-ease);
 }
 
 .ws-tag-button:hover {
-  box-shadow: inset 0 0 0 1px var(--accent-border);
+  text-decoration-color: currentcolor;
 }
 
 .ws-tag-button:focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  outline-offset: 2px;
 }
 
 /* Not linked yet: closed until asked for. */

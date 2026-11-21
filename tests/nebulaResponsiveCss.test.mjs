@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-const css = readFileSync(resolve(import.meta.dirname, '..', 'src', 'nebula', 'ui', 'NebulaShell.css'), 'utf8')
+const css = readFileSync(resolve(import.meta.dirname, '..', 'src', 'workspace', 'views', 'canvas', 'excalidraw.css'), 'utf8')
 
 function mediaBlock(maxWidth) {
   const marker = `@media (max-width: ${maxWidth}px) {`
@@ -28,7 +28,7 @@ function mediaBlock(maxWidth) {
   return blocks.join('\n')
 }
 
-describe('Nebula responsive Excalidraw chrome CSS', () => {
+describe('The canvas’s responsive Excalidraw CSS', () => {
   it('normalizes the mobile misc tool strip before the narrowest phone breakpoint', () => {
     const css860 = mediaBlock(860)
 

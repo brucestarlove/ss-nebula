@@ -10,3 +10,5 @@ import '@starlove/ui/components/kbd';
 import '@starlove/ui/components/slider';
 import './fonts.css';
 import './workspace.css';
+import './signals.css';
+import './history.css';

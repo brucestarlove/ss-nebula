@@ -7,19 +7,6 @@ settings:
 importers:
 
   .:
-    dependencies:
-      '@excalidraw/excalidraw':
-        specifier: ^0.18.1
-        version: 0.18.1(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      '@starlove/ui':
-        specifier: ^3.3.3
-        version: 3.3.3
-      '@starlove/ui-react':
-        specifier: ^3.3.3
-        version: 3.3.3(react@19.2.6)(sonner@2.0.7(react-dom@19.2.6(react@19.2.6))(react@19.2.6))
-      lz-string:
-        specifier: ^1.5.0
-        version: 1.5.0
     devDependencies:
       '@axe-core/playwright':
         specifier: ^4.14.0
@@ -48,12 +35,21 @@ importers:
       '@eslint/js':
         specifier: ^9.36.0
         version: 9.39.4
+      '@excalidraw/excalidraw':
+        specifier: ^0.18.1
+        version: 0.18.1(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@lezer/highlight':
         specifier: ^1.2.5
         version: 1.2.5
       '@playwright/test':
         specifier: 1.64.1
         version: 1.64.1
+      '@starlove/ui':
+        specifier: ^3.3.3
+        version: 3.3.3
+      '@starlove/ui-react':
+        specifier: ^3.3.3
+        version: 3.3.3(react@19.2.6)(sonner@2.0.7(react-dom@19.2.6(react@19.2.6))(react@19.2.6))
       '@types/node':
         specifier: ^24.6.0
         version: 24.12.4
@@ -87,6 +83,9 @@ importers:
       jsdom:
         specifier: ^27.4.0
         version: 27.4.0
+      lz-string:
+        specifier: ^1.5.0
+        version: 1.5.0
       react:
         specifier: ^19.1.1
         version: 19.2.6

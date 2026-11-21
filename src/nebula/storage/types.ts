@@ -20,17 +20,9 @@ export type SceneStoreRef = {
   canvasId: string;
 };
 
-export type CanvasSummary = {
-  canvasId: string;
-  name: string;
-  updatedAt: string;
-};
-
 export interface SceneStore {
   load(ref: SceneStoreRef): Promise<NebulaExcalidrawDocument | null>;
   save(document: NebulaExcalidrawDocument): Promise<void>;
-  /** Enumerate the canvases persisted for a board, most-recently-updated first. */
-  list(boardId: string): Promise<CanvasSummary[]>;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

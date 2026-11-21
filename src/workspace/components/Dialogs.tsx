@@ -70,24 +70,50 @@ export function WsDialog({ open, onClose, className, labelledBy, initialFocus, b
 
 /* ------------------------------------------------------------------ */
 
+/** Files listed under the confirm dialog's paragraph (the delete dialog's
+ * “Referenced by”): a short list, then how many more, so a file a hundred
+ * notes link to keeps the dialog the size it always is. */
+export type ConfirmList = {
+  heading: string;
+  items: { key: string; name: string; /** Where it is, shown quietly: its folder. */ where?: string; /** What it is, when that matters: “canvas”. */ kind?: string }[];
+  more: number;
+};
+
 type ConfirmProps = {
   open: boolean;
   title: string;
   body: ReactNode;
+  list?: ConfirmList;
   confirmLabel: string;
   danger?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 };
 
-export function ConfirmDialog({ open, title, body, confirmLabel, danger, onConfirm, onCancel }: ConfirmProps) {
+export function ConfirmDialog({ open, title, body, list, confirmLabel, danger, onConfirm, onCancel }: ConfirmProps) {
   const id = useId();
+  const listId = useId();
   const confirm = useRef<HTMLButtonElement>(null);
   return (
     <WsDialog open={open} onClose={onCancel} className="ws-small ws-confirm" labelledBy={id} initialFocus={confirm}>
       <div className="ws-small-inner">
         <h2 id={id}>{title}</h2>
         <p>{body}</p>
+        {list && list.items.length > 0 ? (
+          <section className="ws-confirm-list" aria-labelledby={listId}>
+            <h3 id={listId}>{list.heading}</h3>
+            <ul>
+              {list.items.map((item) => (
+                <li key={item.key}>
+                  <span className="ws-confirm-list-name">{item.name}</span>
+                  {item.kind ? <span className="ws-confirm-list-quiet">{item.kind}</span> : null}
+                  {item.where ? <span className="ws-confirm-list-quiet">{item.where}</span> : null}
+                </li>
+              ))}
+            </ul>
+            {list.more > 0 ? <p className="ws-confirm-list-more">and {list.more} more</p> : null}
+          </section>
+        ) : null}
         <footer className="ws-dialog-foot">
           <Button className="ws-btn-quiet" onClick={onCancel}>
             Cancel
@@ -204,22 +230,32 @@ type NewProjectProps = {
   /** This browser can keep a project in a folder on this computer:
    * the dialog asks where its files live. */
   canUseFolders?: boolean;
+  /** Where it may go, as the page's host offers (src/files/places.ts): this
+   * browser, a folder (with canUseFolders) and the server that served the
+   * page. When not given, this browser and, with canUseFolders, a folder. */
+  homes?: ProjectHome[];
+  /** What the server calls itself, for its choice and its note. */
+  serverLabel?: string;
+  /** Waiting for the server to make it. */
+  busy?: boolean;
+  /** Why it couldn't be made, said in the dialog. */
+  error?: string | null;
   onCreate: (input: { name: string; color: string; where: ProjectHome }) => void;
   onCancel: () => void;
 };
 
 /** Where a new project's files live. */
-export type ProjectHome = 'browser' | 'folder';
+export type ProjectHome = 'browser' | 'folder' | 'server';
 
-const HOMES: Array<{ value: ProjectHome; label: string }> = [
-  { value: 'browser', label: 'In this browser' },
-  { value: 'folder', label: 'In a folder on this computer' },
-];
+function homeLabel(home: ProjectHome, serverLabel: string): string {
+  return home === 'browser' ? 'In this browser' : home === 'folder' ? 'In a folder on this computer' : `On ${serverLabel}`;
+}
 
 /** New project: the planet takes shape as you name and colour it. Its files
- * stay in this browser, or, where the browser can, go in a folder on this
- * computer that the person picks next. */
-export function NewProjectDialog({ open, persistent, initialColour, defaultName, canUseFolders, onCreate, onCancel }: NewProjectProps) {
+ * stay in this browser, go in a folder on this computer that the person
+ * picks next (where the browser can), or are made on the server that served
+ * the page (where it makes projects). */
+export function NewProjectDialog({ open, persistent, initialColour, defaultName, canUseFolders, homes, serverLabel, busy, error, onCreate, onCancel }: NewProjectProps) {
   const id = useId();
   const input = useRef<HTMLInputElement>(null);
   return (
@@ -231,6 +267,10 @@ export function NewProjectDialog({ open, persistent, initialColour, defaultName,
         initialColour={initialColour}
         defaultName={defaultName}
         canUseFolders={canUseFolders}
+        homes={homes}
+        serverLabel={serverLabel}
+        busy={busy}
+        error={error}
         onCreate={onCreate}
         onCancel={onCancel}
       />
@@ -245,19 +285,27 @@ function NewProjectBody({
   initialColour,
   defaultName = 'Untitled project',
   canUseFolders = false,
+  homes,
+  serverLabel = 'the server',
+  busy = false,
+  error = null,
   onCreate,
   onCancel,
 }: Omit<NewProjectProps, 'open'> & { titleId: string; inputRef: RefObject<HTMLInputElement | null> }) {
   const [name, setName] = useState('');
   const [colour, setColour] = useState(initialColour);
-  const [home, setHome] = useState<ProjectHome>('browser');
+  const choices: ProjectHome[] = homes ?? (canUseFolders ? ['browser', 'folder'] : ['browser']);
+  const [home, setHome] = useState<ProjectHome>(choices[0] ?? 'browser');
   const shown = name.trim() || defaultName;
-  const inFolder = canUseFolders && home === 'folder';
+  const where: ProjectHome = choices.includes(home) ? home : (choices[0] ?? 'browser');
+  const inFolder = where === 'folder';
+  const onServer = where === 'server';
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
+    if (busy) return;
     // Straight from the click: a folder picker needs it.
-    onCreate({ name: shown, color: colour, where: inFolder ? 'folder' : 'browser' });
+    onCreate({ name: shown, color: colour, where });
   };
 
   return (
@@ -293,7 +341,7 @@ function NewProjectBody({
             </span>
             <Swatches value={colour} onChange={setColour} label="Colour" />
           </div>
-          {canUseFolders ? (
+          {choices.length > 1 ? (
             <div className="ws-field">
               <span className="ws-set-label" aria-hidden="true">
                 Where
@@ -305,22 +353,22 @@ function NewProjectBody({
                 onKeyDown={(event) =>
                   handleRadioKeys(
                     event,
-                    HOMES.map((option) => option.value),
-                    home,
+                    choices,
+                    where,
                     setHome,
                   )
                 }
               >
-                {HOMES.map((option) => (
+                {choices.map((option) => (
                   <Button
-                    key={option.value}
+                    key={option}
                     className="segmented-option"
                     role="radio"
-                    aria-checked={option.value === home}
-                    tabIndex={option.value === home ? 0 : -1}
-                    onClick={() => setHome(option.value)}
+                    aria-checked={option === where}
+                    tabIndex={option === where ? 0 : -1}
+                    onClick={() => setHome(option)}
                   >
-                    {option.label}
+                    {homeLabel(option, serverLabel)}
                   </Button>
                 ))}
               </div>
@@ -329,18 +377,25 @@ function NewProjectBody({
           <p className="ws-np-note">
             {inFolder
               ? 'You’ll choose the folder next. Files already in it open as they are, with Nebula’s own settings in a .nebula folder beside them. Other apps can open them too.'
-              : persistent
-                ? `Its files are saved in this browser, on this device.${canUseFolders ? '' : ` ${FOLDERS_NEED_CHROMIUM}`}`
-                : 'This browser can’t keep files here, so its files last until you close this tab.'}
+              : onServer
+                ? `Its files are kept by ${serverLabel}, not in this browser.`
+                : persistent
+                  ? `Its files are saved in this browser, on this device.${canUseFolders ? '' : ` ${FOLDERS_NEED_CHROMIUM}`}`
+                  : 'This browser can’t keep files here, so its files last until you close this tab.'}
           </p>
+          {error ? (
+            <p className="ws-set-help ws-set-warn" role="alert">
+              {error}
+            </p>
+          ) : null}
         </div>
       </div>
       <footer className="ws-dialog-foot ws-np-foot">
         <Button className="ws-btn-quiet" onClick={onCancel}>
           Cancel
         </Button>
-        <Button type="submit" className="welcome-dialog-cta">
-          {inFolder ? 'Choose folder…' : 'Create project'}
+        <Button type="submit" className="welcome-dialog-cta" disabled={busy}>
+          {inFolder ? 'Choose folder…' : busy ? 'Creating…' : 'Create project'}
         </Button>
       </footer>
     </form>
@@ -349,21 +404,12 @@ function NewProjectBody({
 
 /* ------------------------------------------------------------------ */
 
-/** What a move of 1.x canvases didn't do (re-review R3): canvases that
- * stayed in localStorage, and its other warnings. */
-export type MigrationLeftBehind = {
-  canvases: Array<{ key: string; name: string }>;
-  warnings: string[];
-};
-
 type IntroProps = {
-  variant: 'welcome' | 'migrated';
-  /** For 'migrated': what didn't move. Null or absent when everything did. */
-  leftBehind?: MigrationLeftBehind | null;
-  /** Downloads a canvas that stayed behind as an .excalidraw file. */
-  onDownloadLeftBehind?: (key: string) => void;
   open: boolean;
   persistent: boolean;
+  /** Only the host's server keeps projects here (its name): the welcome
+   * offers to start one there, with no sample. */
+  keptBy?: string | null;
   projectName: string;
   canDownload: boolean;
   onExplore: () => void;
@@ -371,57 +417,21 @@ type IntroProps = {
 };
 
 /** The welcome (Orbit's dialog shell), for brand-new visitors, over the
- * sample project; and the one-time note for people whose canvases moved in.
- * It describes only what has shipped. */
-export function IntroDialog({ variant, open, persistent, projectName, canDownload, onExplore, onStartEmpty, leftBehind, onDownloadLeftBehind }: IntroProps) {
+ * sample project. It describes only what has shipped. */
+export function IntroDialog({ open, persistent, keptBy = null, projectName, canDownload, onExplore, onStartEmpty }: IntroProps) {
   const id = useId();
   const main = useRef<HTMLButtonElement>(null);
-  const keep = persistent
+  const keep = keptBy
+    ? `Projects you start here are kept by ${keptBy}, not in this browser.`
+    : persistent
     ? `Projects you start here are saved in this browser, on this device, and nowhere else.${canDownload ? ' Browsers can clear what websites keep, so download a project as a .zip to keep a copy.' : ''}`
     : `This browser can’t keep files here, so projects last until you close this tab.${canDownload ? ' Download a project as a .zip to keep it.' : ''}`;
 
-  const stayed = leftBehind?.canvases ?? [];
-  const warnings = leftBehind?.warnings ?? [];
-  const one = stayed.length === 1;
-  const notices: { label: string; text: string; more?: ReactNode }[] =
-    variant === 'welcome'
-      ? [
-          { label: 'Your files', text: keep },
-          { label: 'Drawings', text: 'Canvases are Excalidraw drawings. Export them for Excalidraw or Obsidian.' },
-          { label: 'Sample', text: `${projectName} is a small sample project. Explore it, then delete it whenever you like.` },
-        ]
-      : [
-          {
-            label: 'Your canvases',
-            text: `Each board you had is now a project, and each canvas${stayed.length ? ' that moved' : ''} is a file in it, saved in this browser on this device.`,
-          },
-          // Said only when it's true (re-review R3); otherwise what wasn't.
-          ...(stayed.length === 0 && warnings.length === 0 ? [{ label: 'Nothing lost', text: 'Nebula copied them. The originals stay where they were.' }] : []),
-          ...(stayed.length
-            ? [
-                {
-                  label: 'Not moved',
-                  text: `${one ? '1 canvas' : `${stayed.length} canvases`} couldn’t be moved, so ${one ? 'it stays' : 'they stay'} in this browser where Nebula 1.x kept ${one ? 'it' : 'them'}. Download ${one ? 'it' : 'each'} as an .excalidraw file to upload into a project.`,
-                  more: (
-                    <ul className="ws-left-behind">
-                      {stayed.map((canvas) => (
-                        <li key={canvas.key}>
-                          <span>{canvas.name}</span>
-                          {onDownloadLeftBehind ? (
-                            <Button className="ws-btn" aria-label={`Download “${canvas.name}” as .excalidraw`} onClick={() => onDownloadLeftBehind(canvas.key)}>
-                              Download
-                            </Button>
-                          ) : null}
-                        </li>
-                      ))}
-                    </ul>
-                  ),
-                },
-              ]
-            : []),
-          ...(warnings.length ? [{ label: 'Also', text: warnings.join(' ') }] : []),
-          { label: 'Drawings', text: 'Canvases are Excalidraw drawings. Export them for Excalidraw or Obsidian.' },
-        ];
+  const notices: { label: string; text: string }[] = [
+    { label: 'Your files', text: keep },
+    { label: 'Drawings', text: 'Canvases are Excalidraw drawings. Export them for Excalidraw or Obsidian.' },
+    ...(keptBy ? [] : [{ label: 'Sample', text: `${projectName} is a small sample project. Explore it, then delete it whenever you like.` }]),
+  ];
 
   return (
     <WsDialog open={open} onClose={onExplore} className="ws-welcome" labelledBy={id} initialFocus={main}>
@@ -436,9 +446,7 @@ export function IntroDialog({ variant, open, persistent, projectName, canDownloa
             Starscape Nebula
           </h2>
           <p className="welcome-dialog-lede">
-            {variant === 'welcome'
-              ? 'Notes, drawings and media, together in projects. Nebula runs in your browser, with no account.'
-              : 'Your canvases are now files in projects.'}
+            {keptBy ? 'Notes, drawings and media, together in projects.' : 'Notes, drawings and media, together in projects. Nebula runs in your browser, with no account.'}
           </p>
         </div>
         <ul className="welcome-dialog-notices">
@@ -446,12 +454,20 @@ export function IntroDialog({ variant, open, persistent, projectName, canDownloa
             <li key={notice.label}>
               <span className="welcome-dialog-notice-label">{notice.label}</span>
               {notice.text}
-              {notice.more}
             </li>
           ))}
         </ul>
         <footer className="welcome-dialog-footer ws-dialog-foot">
-          {variant === 'welcome' ? (
+          {keptBy ? (
+            <>
+              <Button className="ws-btn-quiet" onClick={onExplore}>
+                Not now
+              </Button>
+              <Button ref={main} className="welcome-dialog-cta" onClick={onStartEmpty}>
+                Start a project
+              </Button>
+            </>
+          ) : (
             <>
               <Button className="ws-btn-quiet" onClick={onStartEmpty}>
                 Start empty
@@ -460,10 +476,6 @@ export function IntroDialog({ variant, open, persistent, projectName, canDownloa
                 Explore the sample
               </Button>
             </>
-          ) : (
-            <Button ref={main} className="welcome-dialog-cta" onClick={onExplore}>
-              Got it
-            </Button>
           )}
         </footer>
       </div>

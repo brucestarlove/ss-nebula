@@ -14,7 +14,6 @@ import {
   isNebulaExcalidrawDocument,
   NEBULA_EXCALIDRAW_DOCUMENT_TYPE,
   NEBULA_EXCALIDRAW_DOCUMENT_VERSION,
-  type CanvasSummary,
   type NebulaExcalidrawDocument,
   type SceneStore,
   type SceneStoreRef,
@@ -22,6 +21,8 @@ import {
 import { conflictCopyName, writeConflictCopy } from '../shared/conflictCopy';
 import { FolderUnreachableError, carryEdit, claimCarried, heldHere, openFileSession, reportKeptCopy, writeAllowed, writesSettled, type OpenFileSession, type SessionScope } from '../shared/fileSessions';
 import { titleFromName } from '../shared/format';
+import { imageFileName, imageLink, writeImageFile } from '../../attachments';
+import { createImageCache, dataURLBytes, inlineData, ownNameOf, readReferencedImages, usedFileIds, withImages, type ReferencedImages } from './canvasImages';
 import { withoutRemoteFiles, type SceneFiles } from './sceneFiles';
 
 /**
@@ -33,6 +34,13 @@ import { withoutRemoteFiles, type SceneFiles } from './sceneFiles';
  * - a plain `.md` drawing reads like `.excalidraw.md` and is written back in
  *   that format;
  * - an empty file opens as an empty canvas.
+ *
+ * A markdown drawing's images can be files beside it (2.0.4), named in its
+ * `## Embedded Files` section the Obsidian Excalidraw way: they're read on
+ * open and handed to Excalidraw in memory, and never written into the
+ * drawing. An image added here is written as its own file first, then the
+ * drawing names it; images the drawing already held inside stay inside
+ * until Move images to files (moveImagesOut.ts).
  *
  * Opening never writes: the first save after load is Excalidraw's echo of the
  * scene as it opened, and only a change to the elements or their images
@@ -90,7 +98,7 @@ export type FileSceneStoreOptions = {
   scope?: SessionScope;
   /** Writes a scene as the file's text; `serialize` below unless a test
    * looks at what it's handed. */
-  serialize?: (original: string | null, scene: ExcalidrawScene, format: CanvasFormat) => string;
+  serialize?: (original: string | null, scene: ExcalidrawScene, format: CanvasFormat, references?: ImageReferences) => string;
   /** How long a save that found its file gone waits for the rename before
    * it looks again, and, still gone, shows the file as deleted elsewhere
    * (H7). */
@@ -148,6 +156,10 @@ const EXPORTED_APP_STATE = ['gridSize', 'gridStep', 'gridModeEnabled', 'viewBack
 
 export type CanvasFormat = Format;
 
+/** A markdown drawing's images held as files beside it: file id → the link
+ * its `## Embedded Files` line has (or gets). */
+export type ImageReferences = ReadonlyMap<string, string>;
+
 /**
  * Every write of a canvas goes through here, and only here. A markdown
  * drawing keeps everything in its file that isn't the drawing: frontmatter, the notes above `# Excalidraw Data`, Element
@@ -158,13 +170,32 @@ export type CanvasFormat = Format;
  * one 400 KB photo, 16 s for five and 52 s for twenty (measured 2026-10-25,
  * after Bruce asked about "too many images").
  *
+ * Images held by reference (2.0.4) aren't in the drawing, so they don't
+ * count: only the images still inside it decide. A canvas whose images are
+ * all files is small, and is written compressed as any other.
+ *
  * `original` is the file's text as it is now: as opened, then as last
  * written, reloaded or taken from elsewhere; null when there's none. `format`
  * is 'json' for an `.excalidraw` file, which is Excalidraw's JSON.
+ *
+ * `references` are a markdown drawing's images whose data lives in files:
+ * they're left out of the drawing, and each one an element uses gets its
+ * `## Embedded Files` line if the file has none (a line already there stays
+ * as written). A line for one no element uses any more goes, as the plugin
+ * drops it. A JSON file has no such section, and keeps every image inside.
  */
-export function serialize(original: string | null, scene: ExcalidrawScene, format: CanvasFormat = 'markdown'): string {
+export function serialize(original: string | null, scene: ExcalidrawScene, format: CanvasFormat = 'markdown', references?: ImageReferences): string {
   const clean = forFile(scene);
-  if (format === 'markdown') return updateObsidianExcalidrawMarkdown(original ?? '', clean, imageBytes(clean) > COMPRESS_IMAGES_UP_TO ? { compressed: false } : {});
+  if (format === 'markdown') {
+    if (!references || references.size === 0) return updateObsidianExcalidrawMarkdown(original ?? '', clean, imageBytes(clean) > COMPRESS_IMAGES_UP_TO ? { compressed: false } : {});
+    const used = usedFileIds(clean);
+    const drawing = { ...clean, files: Object.fromEntries(Object.entries(clean.files ?? {}).filter(([id]) => !references.has(id))) };
+    const embedded = {
+      add: [...references].filter(([id]) => used.has(id)),
+      drop: new Set([...references.keys()].filter((id) => !used.has(id))),
+    };
+    return updateObsidianExcalidrawMarkdown(original ?? '', drawing, imageBytes(drawing) > COMPRESS_IMAGES_UP_TO ? { compressed: false, embedded } : { embedded });
+  }
   const appState: Record<string, unknown> = {};
   for (const key of EXPORTED_APP_STATE) if (clean.appState && key in clean.appState) appState[key] = clean.appState[key];
   // Nebula draws on a transparent canvas so the sky shows; elsewhere that
@@ -361,6 +392,21 @@ export function createFileSceneStore({
   /** Images the file holds that aren't given to Excalidraw (not `data:`,
    * re-review R2): every write puts them back, so the file keeps them. */
   let held: SceneFiles = {};
+  /** Images whose data is in a file beside the drawing (its `## Embedded
+   * Files`), as the last load read them: file id → link. Never written
+   * inside the drawing. */
+  let referenced = new Map<string, string>();
+  /** Images this canvas wrote out as files itself, file id → link: kept
+   * across loads, so a save after an undo still names the file. */
+  const wroteOut = new Map<string, string>();
+  /** Images the drawing held inside when this canvas read it: they stay
+   * inside (never rewritten silently) until Move images to files. */
+  let inside = new Set<string>();
+  /** Images added on this canvas and not yet written as files: each save
+   * tries, and until one lands the image is kept inside the drawing. */
+  const added = new Set<string>();
+  /** The image files read, once per open. */
+  const images = createImageCache();
   /** The newest scene the canvas reported, for Keep mine. */
   let latestScene: ExcalidrawScene | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -399,9 +445,64 @@ export function createFileSceneStore({
     timer = null;
   };
 
-  /** The file as written: the scene, with the images held back put back. */
-  const fileText = (original: string | null, scene: ExcalidrawScene, format: Format) =>
-    write(original, Object.keys(held).length ? { ...scene, files: { ...held, ...scene.files } } : scene, format);
+  /** The images held by reference: those this canvas wrote out, and those
+   * the file names (whose line wins, a rename's rewrite included). */
+  const references = (): Map<string, string> => new Map([...wroteOut, ...referenced]);
+
+  /** The file as written: the scene, with the images held back put back,
+   * and those held by reference left out. `standalone` keeps every image
+   * inside, for a copy handed over as a download. */
+  const fileText = (original: string | null, scene: ExcalidrawScene, format: Format, standalone = false) => {
+    const whole = Object.keys(held).length ? { ...scene, files: { ...held, ...scene.files } } : scene;
+    const refs = format === 'markdown' && !standalone ? references() : null;
+    return refs && refs.size > 0 ? write(original, whole, format, refs) : write(original, whole, format);
+  };
+
+  /** Images added on this canvas, written as files before the drawing names
+   * them (2.0.4): each in Attachments/, create-only, under its own name or
+   * Obsidian's pasted-image one. One that can't be written stays inside
+   * the drawing for this save, so nothing is lost, and the next save tries
+   * it again. A drawing never names a file that isn't written. */
+  const writeImagesOut = async (scene: ExcalidrawScene) => {
+    const used = usedFileIds(scene);
+    const known = references();
+    const todo = [...added].filter((id) => used.has(id) && !known.has(id) && inlineData(scene.files?.[id]) !== null);
+    if (todo.length === 0) return;
+    let files: FileEntry[];
+    try {
+      files = await store.list();
+    } catch {
+      return;
+    }
+    for (const id of todo) {
+      const bytes = dataURLBytes(inlineData(scene.files?.[id])!);
+      if (!bytes) continue;
+      try {
+        const name = imageFileName(bytes.mimeType, new Date(), ownNameOf(id));
+        const written = await writeImageFile(store, bytes, { name, files });
+        files = [...files, { path: written, name: basename(written), type: 'file' }];
+        wroteOut.set(id, imageLink(written, files));
+        added.delete(id);
+      } catch {
+        // Kept inside the drawing this time; the next save tries again.
+      }
+    }
+  };
+
+  /** Notes the images a save carries that came from neither the file nor a
+   * reference: added on this canvas, so they go out as files. */
+  const noteAdded = (scene: ExcalidrawScene) => {
+    if (formatOf(path) !== 'markdown') return;
+    for (const [id, file] of Object.entries(scene.files ?? {})) {
+      if (!inside.has(id) && !referenced.has(id) && !wroteOut.has(id) && !(id in held) && inlineData(file) !== null) added.add(id);
+    }
+  };
+
+  /** Reads the images the file's text names, for the drawing it holds. */
+  const readImages = (text: string, parsed: { scene: ExcalidrawScene; held: SceneFiles }): Promise<ReferencedImages> =>
+    formatOf(path) === 'markdown'
+      ? readReferencedImages(store, path, text, parsed.scene, { present: new Set([...Object.keys(parsed.scene.files ?? {}), ...Object.keys(parsed.held)]), cache: images })
+      : Promise.resolve({ files: {}, links: new Map() });
 
   /** The file as it is now becomes the canvas: the shell remounts and loads it. */
   const takeFile = (text: string, { scene, held: kept }: { scene: ExcalidrawScene; held: SceneFiles }) => {
@@ -499,6 +600,9 @@ export function createFileSceneStore({
   };
 
   const unwatch = store.watch((change: FileChange) => {
+    // An image file read for this canvas that changes is read again next time.
+    if (change.type === 'write' || change.type === 'remove') images.forget(change.path);
+    if (change.type === 'rename') images.forget(change.from);
     if (change.type === 'unreachable') {
       // Not removed (S2): the change stays pending until the folder is back.
       paused = true;
@@ -664,6 +768,11 @@ export function createFileSceneStore({
           restore(scene, seq, force);
           return;
         }
+        // Images added here go out as files first, so the drawing can name them.
+        if (attempt === 1 && added.size > 0 && formatOf(path) === 'markdown') {
+          await writeImagesOut(scene);
+          if (removed || state.conflict || paused || moving) continue;
+        }
         const target = path;
         // Serialised before the check, so little time passes between the
         // check and the write (G3); again below if the check takes the
@@ -827,8 +936,8 @@ export function createFileSceneStore({
       return true;
     } catch (error: unknown) {
       // Not written: hand the change to the user as a download.
-      text ??= fileText(savedText, scene, formatOf(path));
-      const download = { filename: conflictCopyName(path, [], new Date()), text };
+      // A download stands alone: its images go inside it.
+      const download = { filename: conflictCopyName(path, [], new Date()), text: fileText(savedText, scene, formatOf(path), true) };
       reportKeptCopy({ scope, path, copy: null, error, download, release: () => handle.close() });
       return false;
     }
@@ -841,18 +950,18 @@ export function createFileSceneStore({
   const offerFailedSave = () => {
     const scene = latestScene ?? pendingScene!;
     const error = paused ? new FolderUnreachableError(state.unreachable ?? '') : (state.error ?? new Error('The change could not be saved.'));
-    const download = { filename: basename(path), text: fileText(savedText, scene, formatOf(path)) };
+    const download = { filename: basename(path), text: fileText(savedText, scene, formatOf(path), true) };
     reportKeptCopy({ scope, path, copy: null, error, download, failedSave: true, release: () => handle.close() });
   };
 
   /** The change carried for this file across Move to a folder… (S3), parsed;
    * null when there is none (or when it can't be read as a drawing, in which
    * case it's offered as a download, never dropped). */
-  const claimBrought = (): { parsed: { scene: ExcalidrawScene; held: SceneFiles }; base: string; done: () => void } | null => {
+  const claimBrought = (): { parsed: { scene: ExcalidrawScene; held: SceneFiles }; text: string; base: string; done: () => void } | null => {
     const edit = claimCarried(scope, path);
     if (!edit) return null;
     try {
-      return { parsed: parseFile(edit.text, formatOf(path)), base: edit.base, done: edit.done };
+      return { parsed: parseFile(edit.text, formatOf(path)), text: edit.text, base: edit.base, done: edit.done };
     } catch (error: unknown) {
       reportKeptCopy({ scope, path, copy: null, error, download: { filename: basename(path), text: edit.text }, failedSave: true, release: edit.done });
       return null;
@@ -871,20 +980,31 @@ export function createFileSceneStore({
         stat = await store.stat(path).catch(() => null);
         return store.readText(path);
       })
-      .then((text) => {
+      .then(async (text) => {
         // The file was taken again while this read (a change heard, Reload):
         // what this read is older, so it applies nothing; the canvas gets
         // the file as it is now (H4).
         if (startedAt !== generation) return load(ref);
         const parsed = parseFile(text, formatOf(path));
+        // The images it names as files beside it, read before it shows.
+        const named = await readImages(text, parsed);
+        if (startedAt !== generation) return load(ref);
         // A change that came with the project from where it was (S3): shown
         // instead of the file, saved over the bytes it was made on, else
         // asked about.
         const brought = claimBrought();
         const read = brought ? brought.parsed.scene : parsed.scene;
         held = brought ? brought.parsed.held : parsed.held;
-        // A reload shows the new drawing where the canvas was looking.
-        const scene = lastView ? { ...read, appState: { ...read.appState, ...lastView } } : read;
+        const shownImages = brought ? await readImages(brought.text, brought.parsed) : named;
+        referenced = shownImages.links;
+        // What the drawing holds inside stays inside; an image this canvas
+        // added and couldn't write out yet is still to go.
+        inside = new Set(Object.keys(read.files ?? {}).filter((id) => !added.has(id)));
+        // A reload shows the new drawing where the canvas was looking. The
+        // images read are Excalidraw's only: the signatures below are the
+        // file's own drawing's.
+        const withRead = withImages(read, shownImages);
+        const scene = lastView ? { ...withRead, appState: { ...withRead.appState, ...lastView } } : withRead;
         savedText = text;
         seen = stat;
         ownText = { text, format: formatOf(path) };
@@ -969,6 +1089,7 @@ export function createFileSceneStore({
         echoPending = false;
         return;
       }
+      noteAdded(scene);
       latestScene = scene;
       latestSeq += 1;
       lastView = viewOf(scene) ?? lastView;
@@ -998,10 +1119,6 @@ export function createFileSceneStore({
         timer = null;
         void writeNow();
       }, intervalMs);
-    },
-
-    async list(): Promise<CanvasSummary[]> {
-      return [{ canvasId: path, name: nameOf(path), updatedAt: new Date().toISOString() }];
     },
 
     getState: () => state,

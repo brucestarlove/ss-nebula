@@ -22,6 +22,10 @@ export type BrowserRegistryHandle = {
   persistent: boolean;
   /** Why nothing will be kept, when `persistent` is false. */
   reason?: string;
+  /** The page's host offers only its server (src/app/serverTier.ts): the
+   * registry is the server's, this browser keeps nothing, and no sample is
+   * made. */
+  onlyServer?: boolean;
 };
 
 /** The folder under the OPFS root that holds registry.json and projects/. */

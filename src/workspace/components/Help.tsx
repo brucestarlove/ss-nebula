@@ -13,6 +13,8 @@ type HelpProps = {
   canDownload: boolean;
   /** Whether this browser can keep a project in a folder on this computer: said only where it can, so no one is told of what they can't use. */
   canUseFolders?: boolean;
+  /** Only the host's server keeps projects here: its name, said in place of this browser. */
+  keptBy?: string | null;
   onClose: () => void;
 };
 
@@ -58,8 +60,15 @@ const STEPS: Step[] = [
 
 /** Where the files live, said plainly, then how to keep them: the thing a
  * person most needs to know about a workspace that lives in their browser. */
-function whereLines(persistent: boolean, canDownload: boolean, canUseFolders: boolean): string[] {
+function whereLines(persistent: boolean, canDownload: boolean, canUseFolders: boolean, keptBy: string | null): string[] {
   const download = 'Settings → Project → Download as .zip';
+  if (keptBy) {
+    return [
+      `Kept by ${keptBy}. Nebula reads and writes them there, and keeps none of them in this browser.`,
+      'Open Nebula there from another browser or device, and the same projects are there.',
+      ...(canDownload ? [`To keep a copy of your own: ${download}.`] : []),
+    ];
+  }
   if (!persistent) {
     return [
       `This browser can’t keep files for Nebula, so they last until you close this tab.${canDownload ? ` Download a project to keep it: ${download}.` : ''}`,
@@ -79,8 +88,8 @@ function whereLines(persistent: boolean, canDownload: boolean, canUseFolders: bo
 }
 
 /** The workspace's Help: where your files live, getting started, and the
- * keys. (The 1.x canvas shell keeps its own, src/nebula/ui/AboutDialog.) */
-export function Help({ open, persistent, canDownload, canUseFolders = false, onClose }: HelpProps) {
+ * keys. */
+export function Help({ open, persistent, canDownload, canUseFolders = false, keptBy = null, onClose }: HelpProps) {
   const id = useId();
   // Focus starts on Close, at the top, so Help opens on where the files live
   // (focus on Got it would scroll a tall Help to its end).
@@ -119,7 +128,7 @@ export function Help({ open, persistent, canDownload, canUseFolders = false, onC
               Where your files live
             </h3>
             <ul className="ws-help-where">
-              {whereLines(persistent, canDownload, canUseFolders).map((line) => (
+              {whereLines(persistent, canDownload, canUseFolders, keptBy).map((line) => (
                 <li key={line}>{line}</li>
               ))}
             </ul>
@@ -130,7 +139,7 @@ export function Help({ open, persistent, canDownload, canUseFolders = false, onC
               Getting started
             </h3>
             <ol className="nebula-about-steps">
-              {STEPS.map((step, index) => (
+              {STEPS.map((step) => (keptBy && step.title === 'Links' ? { ...step, body: `Right-click a file or folder and choose Copy link, for an Orbit card or a note. It opens the project on ${keptBy}.` } : step)).map((step, index) => (
                 <li key={step.title} className="nebula-about-step">
                   <span className="nebula-about-step__index">{String(index + 1).padStart(2, '0')}</span>
                   <div>

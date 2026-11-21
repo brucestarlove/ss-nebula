@@ -33,22 +33,25 @@ import type { FileEntry, FileStore, FolderAccess, FolderHandle, ProjectMeta, Pro
 export type CreateProjectInput = {
   name: string;
   color: string;
-  /** Keep this id instead of making one: migrated boards keep theirs. */
+  /** Keep this id instead of making one. */
   id?: string;
   /** The project lives in this folder (the folder tier). */
   folder?: FolderHandle;
   /** With `folder`: move this browser project there (see moveToFolder). */
   from?: string;
+  /** Make it on the server that served the page (src/files/serverRegistry.ts);
+   * the browser's own registry refuses it. */
+  where?: 'server';
 };
 
 export interface BrowserRegistry extends ProjectRegistry {
   create(input: CreateProjectInput): Promise<ProjectRecord>;
-  /** The project's files, without recording it as opened: migration, the
-   * sample, and downloading a project that isn't the current one. */
+  /** The project's files, without recording it as opened: the sample, and
+   * downloading a project that isn't the current one. */
   files(id: string): Promise<FileStore>;
-  /** The browser tier's own tree: registry.json, projects/, and the
-   * migration's record (migration.json). For the migration; reach a
-   * project's files through open() and files(). Optional, so a registry
+  /** The browser tier's own tree: registry.json, projects/ and appearance/.
+   * For the app's own device files; reach a project's files through open()
+   * and files(). Optional, so a registry
    * wrapped by the app (src/app/keepOnEdit.ts) still type-checks. */
   readonly tree?: FileStore;
   /** True once registry.json turns out to be from a newer Nebula: this tab
@@ -891,6 +894,7 @@ export function createBrowserRegistry(root: FileStore, options: BrowserRegistryO
       const name = cleanName(input.name);
       const color = cleanColour(input.color);
       if (input.id !== undefined && !isValidProjectId(input.id)) throw new InvalidProjectError(`${JSON.stringify(input.id)} can't be a project id`);
+      if (input.where === 'server') throw new InvalidProjectError('There’s no server here to make the project on');
       if (input.folder) {
         const folder = input.folder;
         const from = input.from;

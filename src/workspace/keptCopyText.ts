@@ -26,6 +26,8 @@ export function keptCopyText(kept: KeptCopy): string {
 function plainReason(error: unknown): string | null {
   const name = (error as { name?: unknown } | null)?.name;
   const message = rawReason(error);
+  if (name === 'SignedOutError') return 'you’re signed out';
+  if (name === 'SpaceFullError') return 'your space is full';
   if (name === 'QuotaExceededError' || /quota/i.test(message)) return 'this browser’s storage is full';
   if (name === 'InvalidPathError' && /longer than/.test(message)) return 'its name is too long';
   if (name === 'NotAllowedError' || name === 'SecurityError') return 'this browser won’t let Nebula save here';

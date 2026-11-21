@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  getObsidianExcalidrawInteropFilename,
   getObsidianTextElementsSection,
   isObsidianExcalidrawFile,
   isObsidianExcalidrawMarkdown,
@@ -128,12 +127,6 @@ describe('Obsidian Excalidraw markdown interop', () => {
         expect.objectContaining({ id: 'text-1', type: 'text' }),
         expect.objectContaining({ id: 'rect-1', type: 'rectangle' }),
       ]),
-    );
-  });
-
-  it('sanitizes Obsidian markdown export filenames', () => {
-    expect(getObsidianExcalidrawInteropFilename('Ss Nebula / Missions', 'board:id', 'main canvas')).toBe(
-      'Ss-Nebula-Missions-main-canvas.excalidraw.md',
     );
   });
 

@@ -5,11 +5,11 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { resolveSiteHeaders, resolveSiteRequest, startSiteServer } from '../serve-site.mjs'
 
-// The deployed site: the landing page at / and the app at /app. These tests read the real vercel.json through the
+// The deployed site: the landing page at / and the app at /app. These tests read the real routes.json through the
 // same resolver `pnpm run dev:site` and the tailnet copy serve with, so the
 // local preview and the config can't drift apart.
 const root = resolve(import.meta.dirname, '..')
-const config = JSON.parse(readFileSync(join(root, 'vercel.json'), 'utf8'))
+const config = JSON.parse(readFileSync(join(root, 'routes.json'), 'utf8'))
 
 const files = new Set(['/index.html', '/app.html', '/ss-nebula-og.png', '/site.webmanifest', '/assets/index-abc123.js'])
 const exists = (pathname) => files.has(pathname)
@@ -47,13 +47,13 @@ describe('nebula.starscape.app routing', () => {
     }
   })
 
-  it('sends 2.0’s links (/p/…) and 1.x’s (/b/…) into the app, with temporary redirects', () => {
+  it('sends 2.0’s links (/p/…) into the app and 1.x’s (/b/…) to its front door, with temporary redirects', () => {
     // Temporary: 2.0 sent /app permanently to /, and a browser that cached that
     // must not be taught another permanent move.
     expect(follow('/p/k3v9x2m1qa/README.md')).toMatchObject({ type: 'file', file: '/app.html', url: '/app/p/k3v9x2m1qa/README.md', hops: [307] })
     expect(follow('/p/k3v9x2m1qa')).toMatchObject({ type: 'file', file: '/app.html', url: '/app/p/k3v9x2m1qa', hops: [307] })
-    expect(follow('/b/demo/c/sketch')).toMatchObject({ type: 'file', file: '/app.html', url: '/app/b/demo/c/sketch', hops: [307] })
-    expect(follow('/app/b/demo/c/sketch')).toMatchObject({ type: 'file', file: '/app.html', hops: [] })
+    expect(follow('/b/demo/c/sketch')).toMatchObject({ type: 'file', file: '/app.html', url: '/app', hops: [307] })
+    expect(follow('/app/b/demo/c/sketch')).toMatchObject({ type: 'not-found' })
   })
 
   it('keeps 1.x’s social image address working', () => {
@@ -181,7 +181,7 @@ describe('serve-site.mjs', () => {
     for (const step of cleanup.splice(0)) await step()
   })
 
-  it('sends vercel.json’s headers with every file it serves', async () => {
+  it('sends routes.json’s headers with every file it serves', async () => {
     const siteRoot = mkdtempSync(join(tmpdir(), 'nebula-site-'))
     cleanup.push(() => rmSync(siteRoot, { recursive: true, force: true }))
     mkdirSync(join(siteRoot, 'assets'))

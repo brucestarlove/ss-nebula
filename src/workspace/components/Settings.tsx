@@ -1,4 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
+import { safeLink } from '../../app/frameBridge';
+import type { SpaceInfo } from '../../files/serverContract';
 import type { Preferences, ProjectRecord } from '../../files/types';
 import type { ResolvedTheme, ThemeMode } from '../../nebula/ui/useTheme';
 import { DAY_COLOURS, MAX_FADE, NIGHT_COLOURS, type BackdropMode } from '../backdrop';
@@ -7,6 +9,9 @@ import { Button } from './Button';
 import { handleRadioKeys, useEscapeLayer, useReturnFocus } from './hooks';
 import { Icon } from './icons';
 import { Swatches } from './Swatches';
+import { formatBytes } from '../views/shared/format';
+import { RecentlyDeleted } from './RecentlyDeleted';
+import { REMOVED_KEEP_DAYS, type RecentlyDeleted as RecentlyDeletedState } from '../useRemovedProjects';
 
 export type SettingsTab = 'appearance' | 'project';
 
@@ -34,6 +39,12 @@ export type SettingsProps = {
   folderName?: string | null;
   /** A server project's server and its folder there. */
   serverPlace?: { label: string; folder: string } | null;
+  /** The account's space on the server, when the place says (src/workspace/useSpace.ts): what's
+   * used, of what's allowed, and where to get more. */
+  space?: SpaceInfo | null;
+  /** Only the host's server keeps projects here (its name): where the files
+   * are is said as kept by it, not as a folder. */
+  keptBy?: string | null;
   /** Whether the browser has agreed to keep the files; null when it
    * doesn't say, undefined until it's asked. */
   kept?: boolean | null;
@@ -51,6 +62,10 @@ export type SettingsProps = {
   /** Move to a folder…, for a browser project where the browser can open
    * folders; absent otherwise. */
   onMoveToFolder?: () => void;
+  /** The server can delete this project and restore it for a while: Remove offers "Delete project…". */
+  canDelete?: boolean;
+  /** "Recently deleted", where the server keeps deleted projects. */
+  recentlyDeleted?: RecentlyDeletedState;
 };
 
 type Choice<T> = { value: T; label: string };
@@ -458,6 +473,7 @@ function ProjectPanel(props: SettingsProps) {
         <div className="drawer-section">
           <p className="ws-set-help">No project is open.</p>
         </div>
+        {props.recentlyDeleted ? <RecentlyDeleted {...props.recentlyDeleted} /> : null}
       </section>
     );
   }
@@ -505,10 +521,29 @@ function ProjectPanel(props: SettingsProps) {
       ) : (
         <BrowserFiles {...props} />
       )}
-      {props.serverPlace ? (
+      {props.serverPlace && props.canDelete ? (
         <div className="drawer-section">
           <h3 className="ws-set-h">Remove</h3>
-          <p className="ws-set-help">{`${project.name} lives on ${props.serverPlace.label}. To remove it, remove its folder ‘${props.serverPlace.folder}’ there.`}</p>
+          <p className="ws-set-help">
+            Deletes {project.name} and its {props.fileCount === 1 ? '1 file' : `${props.fileCount} files`} from {props.serverPlace.label}. You can restore it for {REMOVED_KEEP_DAYS} days, under Recently deleted.
+          </p>
+          <div className="ws-set-actions">
+            <Button className="ws-btn ws-btn-danger" disabled={props.canChangeProject === false} onClick={props.onRemove}>
+              <Icon name="trash" />
+              Delete project…
+            </Button>
+          </div>
+        </div>
+      ) : props.serverPlace ? (
+        <div className="drawer-section">
+          <h3 className="ws-set-h">Remove</h3>
+          <p className="ws-set-help">
+            {props.keptBy
+              ? `${project.name} is kept by ${props.keptBy}. Removing a project there isn’t possible yet.`
+              : props.serverPlace.folder
+                ? `${project.name} lives on ${props.serverPlace.label}. To remove it, remove its folder ‘${props.serverPlace.folder}’ there.`
+                : `${project.name} is kept by ${props.serverPlace.label}. Nebula can’t remove projects there.`}
+          </p>
         </div>
       ) : (
       <div className="drawer-section">
@@ -526,6 +561,7 @@ function ProjectPanel(props: SettingsProps) {
         </div>
       </div>
       )}
+      {props.recentlyDeleted ? <RecentlyDeleted {...props.recentlyDeleted} /> : null}
     </section>
   );
 }
@@ -573,26 +609,56 @@ function FolderFiles(props: SettingsProps & { folderName: string }) {
   );
 }
 
-/** A server project's files: real files in a folder on a server,
- * which other people and agents with access to it can change too. */
+/** What the account's space holds: "120 MB of 1 GB used", or "120 MB used" with no allowance, and
+ * the way to more when the host gives one. */
+function SpaceUsed({ space }: { space: SpaceInfo }) {
+  const upgrade = safeLink(space.upgrade);
+  const used = space.limit !== undefined && space.limit > 0 ? `${formatBytes(space.used)} of ${formatBytes(space.limit)} used` : `${formatBytes(space.used)} used`;
+  return (
+    <p className="ws-set-help ws-set-space">
+      {used}
+      {upgrade ? (
+        <>
+          {' · '}
+          <a href={upgrade} target="_blank" rel="noopener noreferrer">
+            Get more space
+          </a>
+        </>
+      ) : null}
+    </p>
+  );
+}
+
+/** A server project's files: real files in a folder on a server, or kept
+ * by a server with no folders (a database: the Suite, `nebula run
+ * --database`), which other people and agents with access to it can change
+ * too. */
 function ServerFiles(props: SettingsProps & { serverPlace: { label: string; folder: string } }) {
+  // Who keeps them, when there's no folder to name.
+  const keeper = props.keptBy ?? (props.serverPlace.folder ? null : props.serverPlace.label);
   return (
     <div className="drawer-section">
       <h3 className="ws-set-h">Files</h3>
       <div className="ws-where">
         <Icon name="folder" />
         <span>
-          <b>
-            In the folder ‘{props.serverPlace.folder}’, on {props.serverPlace.label}
-          </b>
+          <b>{keeper ? `Kept by ${keeper}` : `In the folder ‘${props.serverPlace.folder}’, on ${props.serverPlace.label}`}</b>
           <span>{props.usage}</span>
         </span>
       </div>
+      {props.space ? <SpaceUsed space={props.space} /> : null}
       <FileActions {...props} />
-      <p className="ws-set-help">
-        These are ordinary files on {props.serverPlace.label}: agents and other apps there can change them, and Nebula shows their changes as they happen. They’re
-        kept there, not in this browser: back them up where they are.
-      </p>
+      {keeper ? (
+        <p className="ws-set-help">
+          Nebula reads and writes them on {keeper}, and keeps none of them in this browser. Agents working there can change them too, and Nebula shows their
+          changes as they happen.
+        </p>
+      ) : (
+        <p className="ws-set-help">
+          These are ordinary files on {props.serverPlace.label}: agents and other apps there can change them, and Nebula shows their changes as they happen. They’re
+          kept there, not in this browser: back them up where they are.
+        </p>
+      )}
     </div>
   );
 }

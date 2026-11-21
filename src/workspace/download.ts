@@ -40,17 +40,24 @@ export function excalidrawFilename(name: string): string {
 }
 
 /** A canvas as plain Excalidraw JSON, for excalidraw.com and the desktop
- * apps. An empty file is an empty canvas. */
+ * apps. An empty file is an empty canvas. The file stands alone: images an
+ * Obsidian drawing keeps as files beside it (its `## Embedded Files`, 2.0.4)
+ * are read from the project and put back inside. One that can't be read
+ * is missing there, as it is on the canvas. */
 export async function downloadAsExcalidraw(store: FileStore, entry: Pick<FileEntry, 'path' | 'name'>): Promise<void> {
   const text = await store.readText(entry.path);
-  const [{ readObsidianExcalidrawMarkdown, isObsidianExcalidrawMarkdown }, { createEmptyExcalidrawScene }] = await Promise.all([
+  const [{ readObsidianExcalidrawMarkdown, isObsidianExcalidrawMarkdown }, { createEmptyExcalidrawScene }, { readReferencedImages }] = await Promise.all([
     import('../nebula/excalidraw/obsidianMarkdown'),
     import('../nebula/excalidraw/scene'),
+    import('./views/canvas/canvasImages'),
   ]);
   let scene: unknown;
   if (!text.trim()) scene = createEmptyExcalidrawScene();
-  else if (isObsidianExcalidrawMarkdown(text)) scene = readObsidianExcalidrawMarkdown(text);
-  else scene = JSON.parse(text);
+  else if (isObsidianExcalidrawMarkdown(text)) {
+    const drawing = readObsidianExcalidrawMarkdown(text);
+    const images = await readReferencedImages(store, entry.path, text, drawing, { present: new Set(Object.keys(drawing.files ?? {})) });
+    scene = { ...drawing, files: { ...images.files, ...drawing.files } };
+  } else scene = JSON.parse(text);
   const blob = new Blob([JSON.stringify(scene, null, 2)], { type: 'application/json' });
   saveBlob(blob, excalidrawFilename(entry.name));
 }

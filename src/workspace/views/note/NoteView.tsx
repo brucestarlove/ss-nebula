@@ -8,8 +8,10 @@ import { Glyph } from '../shared/Glyph';
 import { isApplePlatform, isModKey, isShown, useNow } from '../shared/hooks';
 import { PageWidthContext } from '../shared/pageWidth';
 import { SessionBars, ViewLoading } from '../shared/SessionBars';
+import { YouContext } from '../shared/you';
 import { useTextSession } from '../shared/useTextSession';
 import { useEditMode } from './editor/editMode';
+import { readOpensEditing, writeOpensEditing } from './editor/opensEditing';
 import { countWords, noteTags, parseFrontmatter, toggleTaskAt } from './markdown';
 import { NoteEnvContext, type NoteEnv } from './embeds/NoteEnv';
 import { NoteContext, WebImagesContext, webImagesAllowed, type WebImages } from './noteContexts';
@@ -29,6 +31,9 @@ const NoteEditor = lazy(() => import('./editor/NoteEditor'));
  * draws only what's on screen, so it stays quick at any length.
  */
 export const LONG_NOTE_CHARS = 200_000;
+
+/** How long the status line keeps saying an image wasn't added. */
+const IMAGE_NOTE_MS = 10_000;
 
 /** Whether a keydown is Mod+Shift+<key>: ⌘⇧ on Apple platforms, Ctrl+Shift elsewhere (hooks.ts's isModKey, with Shift). */
 function isModShiftKey(event: KeyboardEvent, key: string, apple: boolean): boolean {
@@ -57,7 +62,14 @@ export default function NoteView(props: FileViewProps & { longNoteChars?: number
     webImagesAllowed.add(imagesKey);
     imagesAllowed();
   }, [imagesKey]);
-  const [editing, setEditing] = useState(false);
+  // A note opens the way the person last left one: to read or to edit
+  // (opensEditing.ts). Read once, here; a long note and a read-only one
+  // override it below without changing it.
+  const [wantEditing, setWantEditing] = useState(readOpensEditing);
+  // Only a switch made on this page takes the keyboard into the editor. A note
+  // that opens already editing must leave the focus where it is: in the file
+  // tree, when the person is moving through it with the arrow keys.
+  const [focusEditor, setFocusEditor] = useState(false);
   // A long note opens as its source once, when it first loads; 'Read it' still renders it.
   const [longNote, setLongNote] = useState<number | null>(null);
   const [sized, setSized] = useState(false);
@@ -66,12 +78,19 @@ export default function NoteView(props: FileViewProps & { longNoteChars?: number
     setSized(true);
     if (state.text.length > longNoteChars && !state.readOnly) {
       setLongNote(new Blob([state.text]).size);
-      setEditing(true);
+      setWantEditing(true);
     }
   }
+  // A note that isn't UTF-8 is only read (its bytes would change on save). Nothing
+  // is edited before the text is in, which also keeps the editor's mode (live
+  // preview or source) from being decided on an empty note.
+  const readOnly = state.readOnly;
+  const editing = wantEditing && state.status === 'ready' && !readOnly;
   const pageWidth = useContext(PageWidthContext);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const pageRef = useRef<HTMLElement | null>(null);
   const now = useNow(30_000);
+  const you = useContext(YouContext);
   const title = titleFromName(entry.name);
   const folder = folderOf(entry.path);
   const apple = useMemo(() => isApplePlatform(), []);
@@ -88,9 +107,20 @@ export default function NoteView(props: FileViewProps & { longNoteChars?: number
   const tags = useMemo(() => noteTags(state.text), [state.text]);
   const words = useMemo(() => countWords(state.text), [state.text]);
 
+  // Why an image pasted or dropped wasn't added: the status line says it for a
+  // while, in place of the word count, so typing on doesn't wipe it at once.
+  const [imageNote, setImageNote] = useState<string | null>(null);
+  const imageNoteTimer = useRef<number | undefined>(undefined);
+  const reportImage = useCallback((message: string) => {
+    window.clearTimeout(imageNoteTimer.current);
+    setImageNote(message);
+    imageNoteTimer.current = window.setTimeout(() => setImageNote(null), IMAGE_NOTE_MS);
+  }, []);
+  useEffect(() => () => window.clearTimeout(imageNoteTimer.current), []);
+
   useEffect(() => {
-    if (state.status === 'ready') onStatus?.(formatCount(words, 'word'));
-  }, [onStatus, words, state.status]);
+    if (state.status === 'ready') onStatus?.(imageNote ?? formatCount(words, 'word'));
+  }, [onStatus, words, state.status, imageNote]);
 
 
   useEffect(() => {
@@ -110,14 +140,26 @@ export default function NoteView(props: FileViewProps & { longNoteChars?: number
   );
   const noteContext = useMemo(() => ({ toggle: toggleTask }), [toggleTask]);
 
-  // A note that isn't UTF-8 is only read (its bytes would change on save).
-  const readOnly = state.readOnly;
   const toggleEditing = useCallback(() => {
     if (editing) void session?.flush();
-    setEditing(!editing && !readOnly);
+    const next = !editing && !readOnly;
+    setWantEditing(next);
+    setFocusEditor(next);
     setLongNote(null);
     setModeStatus('');
+    // The person's choice, for the notes opened next. A note that can't be edited has none to make.
+    if (!readOnly) writeOpensEditing(next);
   }, [editing, session, readOnly]);
+
+  // 'Read it' on a long note's bar: this note is drawn for reading, whatever the
+  // person's choice for other notes, which it leaves as it is.
+  const readLongNote = useCallback(() => {
+    void session?.flush();
+    setWantEditing(false);
+    setFocusEditor(false);
+    setLongNote(null);
+    setModeStatus('');
+  }, [session]);
 
   // Leaving the editor removes it, and its focus with it: it goes to the Edit
   // button, where the keyboard was, instead of the top of the page.
@@ -160,6 +202,23 @@ export default function NoteView(props: FileViewProps & { longNoteChars?: number
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [apple, toggleEditing, toggleSource, editing, readOnly]);
 
+  // Ctrl/⌘-A, with the person's selection in the page, takes the page's text.
+  // The browser would take the whole document, chrome included.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const page = pageRef.current;
+      if (!page || !isModKey(event, 'a', apple) || !isShown(page)) return;
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      if (target && (target.isContentEditable || target.closest('input, textarea, select'))) return;
+      const selection = window.getSelection();
+      if (!selection?.anchorNode || !page.contains(selection.anchorNode)) return;
+      event.preventDefault();
+      selection.selectAllChildren(page);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [apple]);
+
   // The page shows the file name as the title; a first '# Title' that only
   // repeats it is left out of the text.
   const rendered = useMemo(() => <NoteMarkdown body={body} title={title} />, [body, title]);
@@ -169,12 +228,17 @@ export default function NoteView(props: FileViewProps & { longNoteChars?: number
   if (state.status === 'error') return <OtherView {...props} error={state.error} />;
   if (state.status === 'loading' || !session) return <ViewLoading name={title} />;
 
-  const edited = formatEdited(state.modified ?? entry.modified, now);
+  // A server that names who wrote the file gives its own time too, so the two agree; the session's
+  // clock (its last save or reload on this device) is the time where no one is named.
+  const edited =
+    entry.modifiedBy && entry.modified !== undefined
+      ? formatEdited(entry.modified, now, entry.modifiedBy, you)
+      : formatEdited(state.modified ?? entry.modified, now);
 
   return (
     <div className="ws-note" ref={rootRef} data-editing={editing && !readOnly ? '' : undefined}>
       <SessionBars session={session} state={state} onDownload={() => void downloadEntry(store, entry).catch(() => undefined)} />
-      <article className="ws-page">
+      <article className="ws-page" ref={pageRef}>
         {readOnly && !pageWidth ? null : (
           <div className="ws-page-tools" role="group" aria-label="Note tools">
             {pageWidth ? (
@@ -237,7 +301,7 @@ export default function NoteView(props: FileViewProps & { longNoteChars?: number
             </>
           )}
           {edited && <span>{edited}</span>}
-          {/* TAGS lane: the header's tags open search, like the ones in the text. */}
+          {/* The header's tags open search, and look as the ones in the text do: links. */}
           {tags.map((tag) => (
             <TagButton key={tag} tag={tag} />
           ))}
@@ -259,14 +323,14 @@ export default function NoteView(props: FileViewProps & { longNoteChars?: number
               <Glyph name="read" />
               This note is long ({formatBytes(longNote)}), so it opens as its source, which stays quick.
             </span>
-            <button type="button" className="ws-view-btn" data-no-arc onClick={toggleEditing}>
+            <button type="button" className="ws-view-btn" data-no-arc onClick={readLongNote}>
               Read it
             </button>
           </div>
         ) : null}
         {editing && !readOnly ? (
           <span className="ws-visually-hidden" role="status">
-            {modeStatus}
+            {imageNote ?? modeStatus}
           </span>
         ) : null}
         {editing && !readOnly ? (
@@ -281,9 +345,10 @@ export default function NoteView(props: FileViewProps & { longNoteChars?: number
               projectId={projectId}
               label={sourceForced || editMode === 'source' ? `${title}, Markdown source` : `${title}, live preview`}
               onLeave={leaveEditor}
+              onStatus={reportImage}
               plainSource={plainSource}
               source={editMode === 'source'}
-              autoFocus
+              autoFocus={focusEditor}
             />
           </Suspense>
         ) : (

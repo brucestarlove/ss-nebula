@@ -7,13 +7,18 @@ import { NEBULA_LOGO_SRC } from '../nebula/ui/logo';
 import { useMotion } from '../nebula/ui/useMotion';
 import { useTheme } from '../nebula/ui/useTheme';
 import { Button, Planet } from './components/Button';
-import { ConfirmDialog, IntroDialog, NewProjectDialog, PromptDialog, type MigrationLeftBehind, type ProjectHome } from './components/Dialogs';
+import { ConfirmDialog, IntroDialog, NewProjectDialog, PromptDialog, type ConfirmList, type ProjectHome } from './components/Dialogs';
+import { STANDALONE, onlyServer as offersOnlyServer, type Hosting } from '../files/places';
 import { Help } from './components/Help';
 import { iconForFile } from './components/fileIcon';
 import { useEscapeLayer, useMediaQuery } from './components/hooks';
 import { Icon } from './components/icons';
 import { MenuEntries, ProjectContextMenu, ProjectMenu, WsContextMenu, type MenuEntry } from './components/Menus';
 import { SEARCH_EVENT, type SearchRequest } from './searchEvent';
+import { AccountBanner, ContextMark } from './AccountBanner';
+import { contextOf } from '../files/account';
+import { useFrameBridge } from './useFrameBridge';
+import { useSpace } from './useSpace';
 import { QuickOpen } from './components/QuickOpen';
 import { Rail, type StarredItem } from './components/Rail';
 import { SettingsDrawer, type SettingsTab } from './components/Settings';
@@ -21,6 +26,7 @@ import { useBackdrop } from './useBackdrop';
 import { keptCopyText } from './keptCopyText';
 import type { HeadingJump } from './components/headings';
 import { OutlinePanel, Stage, StatusLine } from './components/Stage';
+import type { HistoryProps } from './components/HistoryPanel';
 import { Tabs, type TabMeta } from './components/Tabs';
 import { hasMod, menuAtElement, shortcutLabel, tabId, type MenuAt } from './components/ui';
 import { downloadAsExcalidraw, downloadFile, downloadText } from './download';
@@ -39,13 +45,17 @@ import { ProjectIndexProvider } from './ProjectIndexProvider';
 import { useProjectIndexBuild } from './useProjectIndexBuild';
 import { planNewNote } from './views/note/links';
 import { PageWidthContext } from './views/shared/pageWidth';
+import { YouContext } from './views/shared/you';
 import { describeConversions, isConvertible, replacedMoves, type ConvertOutcome, type ImageTools } from './imageConvert';
 import { ConvertImagesDialog } from './components/ConvertImages';
 import { buildTree } from './tree';
 import { useProjectSession } from './useProjectSession';
+import { useDeletedFiles } from './useDeletedFiles';
+import { REMOVED_KEEP_DAYS, useRemovedProjects } from './useRemovedProjects';
 import { viewFor as defaultViewFor } from './views';
 import { hasUnsavedAt, hasUnsavedChanges, holdWrites, subscribeKeptCopies, subscribeUnsaved } from './views/shared/fileSessions';
 import { linkRunMessage, updateLinksAfterMove, updateLinksAfterMoves } from './updateLinksRun';
+import { movableCanvas, referencesTo } from './canvasImageUse';
 
 export type WorkspaceProps = {
   /** `readOnly`, when the registry has it (the browser tier's), is true once
@@ -54,21 +64,10 @@ export type WorkspaceProps = {
   /** False when this browser won't keep files (private windows, storage
    * refused): the workspace says so, calmly, and offers a download. */
   persistent: boolean;
-  /** Show the welcome (a first visit) or the one-time note for people whose
-   * canvases moved into projects. */
-  intro?: 'welcome' | 'migrated' | null;
+  /** Show the welcome, on a first visit. */
+  intro?: 'welcome' | null;
   /** Called once the intro has been dismissed, so it isn't shown again. */
   onIntroDone?: () => void;
-  /** For the 'migrated' note: canvases that stayed behind, and the move's
-   * warnings (re-review R3). */
-  leftBehind?: MigrationLeftBehind | null;
-  /** Downloads a canvas that stayed behind (its localStorage key) as an
-   * .excalidraw file. */
-  onDownloadLeftBehind?: (key: string) => void;
-  /** Canvases a Nebula 1.x tab saved after the move (re-review R6): looked
-   * for once, when the workspace mounts, and offered quietly. The app gives
-   * it in the browser tier only. */
-  olderTabCanvases?: OlderTabOffer | null;
   /** Downloads a project as a .zip. Without it, Download as .zip is hidden. */
   downloadProject?: (id: string) => Promise<void>;
   /** The browser's image work for Convert image… (src/workspace/imageConvert.ts); tests swap in their own. */
@@ -81,7 +80,7 @@ export type WorkspaceProps = {
   viewFor?: (kind: FileKind) => ComponentType<FileViewProps>;
   /** Open this project, and this file in it, on start: a /p/… link. Read
    * once, when the workspace mounts. */
-  initialFile?: { projectId: string; path: string | null } | null;
+  initialFile?: { projectId: string; path: string | null; context?: string } | null;
   /** Called with the open project and file whenever either changes, so the
    * app can keep the address in step (null, null with no project). */
   onActiveFileChange?: (projectId: string | null, path: string | null) => void;
@@ -96,20 +95,10 @@ export type WorkspaceProps = {
   /** Folders on this computer: the browser's picker and its
    * permission prompts unless a test gives its own. */
   folders?: FolderActions;
-};
-
-/** A canvas a Nebula 1.x tab saved after the move: `projectId` is where its
- * earlier version went, null when it never moved. */
-export type OlderTabCanvas = { key: string; name: string; updatedAt: string; projectId: string | null };
-
-export type OlderTabOffer = {
-  find(): Promise<OlderTabCanvas[]>;
-  /** Writes it into the project as a new file; resolves with its path. */
-  importCopy(key: string, projectId: string): Promise<string>;
-  /** Downloads it as an .excalidraw file. */
-  download(key: string): void;
-  /** The user put these away: leave them out until saved again. */
-  dismiss?(canvases: OlderTabCanvas[]): void;
+  /** The homes the page's host offers, and its server (src/files/places.ts):
+   * in the Suite only the server, and then nothing is offered in this
+   * browser or a folder, and New project makes the project on the server. */
+  hosting?: Hosting;
 };
 
 /** A line about a change held in a conflict when its view went: where it
@@ -130,8 +119,12 @@ type DialogState =
       type: 'newProject';
       /** From the welcome's Start empty: the person's own first project. */
       first?: boolean;
+      /** Making it on the server: the dialog waits for the answer. */
+      busy?: boolean;
+      /** Why the server refused it, in its words. */
+      error?: string;
     }
-  | { type: 'confirm'; title: string; body: string; confirmLabel: string; danger?: boolean; onConfirm: () => void }
+  | { type: 'confirm'; title: string; body: string; list?: ConfirmList; confirmLabel: string; danger?: boolean; onConfirm: () => void }
   /** Convert image… (one file) or Convert images… (a folder's, with its path). */
   | { type: 'convert'; paths: string[]; folder: string | null }
   | {
@@ -169,9 +162,6 @@ export function Workspace({
   persistent,
   intro = null,
   onIntroDone,
-  leftBehind = null,
-  onDownloadLeftBehind,
-  olderTabCanvases = null,
   downloadProject,
   imageTools,
   onHelp,
@@ -182,6 +172,7 @@ export function Workspace({
   notice = null,
   deviceStore,
   folders = defaultFolders(),
+  hosting = STANDALONE,
 }: WorkspaceProps) {
   const theme = useTheme();
   const backdrop = useBackdrop(theme.resolved, deviceStore);
@@ -207,6 +198,9 @@ export function Workspace({
   // A link opens its project, then its file, once (see the effect below).
   const link = useRef(initialFile);
   const [linkPending, setLinkPending] = useState(initialFile !== null);
+  // The host's `navigate` (src/app/frameBridge.ts) sets a link like any other; this makes the
+  // link effect look again when nothing else it reads has changed.
+  const [linkTick, setLinkTick] = useState(0);
 
   // A project list from a newer Nebula can be opened, not changed
   // (re-review R5). The registry knows once it has read the list.
@@ -240,7 +234,21 @@ export function Workspace({
   // a bar over it says why, and how to open it again.
   // A folder on this computer, where the browser can open one and keeps the
   // project list (Chromium on a desktop; not a private window).
-  const canUseFolders = persistent && folders.supported;
+  const canUseFolders = persistent && folders.supported && hosting.homes.includes('browser') && hosting.homes.includes('folder');
+  // Only the host's server: where the files are kept is said by its name, never as this browser.
+  const onlyServer = offersOnlyServer(hosting);
+  const serverLabel = hosting.server?.label ?? 'the server';
+  // Who the server says is using the app: "Edited by you".
+  const you = hosting.server?.you;
+  // New project's homes: this browser, a folder, and the server where it makes projects.
+  const newHomes = useMemo<ProjectHome[]>(
+    () => [
+      ...(hosting.homes.includes('browser') ? (['browser'] as const) : []),
+      ...(canUseFolders ? (['folder'] as const) : []),
+      ...(hosting.server?.canCreate ? (['server'] as const) : []),
+    ],
+    [hosting, canUseFolders],
+  );
   // An open folder project whose folder went out of reach stays open (S2):
   // its tabs and sessions keep what's unsaved, and the bar says why.
   const [heldOpen, setHeldOpen] = useState<string | null>(null);
@@ -403,12 +411,13 @@ export function Workspace({
     (path: string | null) => {
       if (!linkTo || !currentId) return;
       const url = linkTo(currentId, path);
-      const copied = () => notify('Link copied. It opens in this browser, where the project is.');
+      const where = project?.tier === 'server' ? `It opens ${project.name} on ${project.server?.label ?? 'the server'}.` : 'It opens in this browser, where the project is.';
+      const copied = () => notify(`Link copied. ${where}`);
       const show = () => window.prompt('Copy this link', url);
       if (navigator.clipboard?.writeText) navigator.clipboard.writeText(url).then(copied, show);
       else show();
     },
-    [linkTo, currentId, notify],
+    [linkTo, currentId, project, notify],
   );
 
   // A new project starts with nothing open and nothing in flight.
@@ -432,7 +441,7 @@ export function Workspace({
   const projectIndex = useProjectIndexBuild(store, files);
   const usage = usageLabel(entries);
   // Where the files live, as the switcher, the menu and quick open say it.
-  const browserLocation = persistent ? 'In this browser' : 'In this tab only';
+  const browserLocation = onlyServer ? `On ${serverLabel}` : persistent ? 'In this browser' : 'In this tab only';
   const locationOf = useCallback(
     (record: ProjectRecord) => (record.tier === 'folder' ? 'On this computer' : record.tier === 'server' ? `On ${record.server?.label ?? 'the server'}` : browserLocation),
     [browserLocation],
@@ -445,9 +454,14 @@ export function Workspace({
     () => (project?.tier === 'server' ? (project.server ?? { label: 'the server', folder: project.name }) : null),
     [project],
   );
+  // A server that keeps its projects as folders names this one's; a database (the Suite,
+  // nebula run --database) has none, and its projects are named by the server alone.
+  const serverFolder = serverPlace?.folder || null;
   // How a file's delete says where it goes from.
   const deletedFrom = serverPlace
-    ? `the folder ‘${serverPlace.folder}’ on ${serverPlace.label}`
+    ? serverFolder
+      ? `the folder ‘${serverFolder}’ on ${serverPlace.label}`
+      : serverPlace.label
     : folderName
       ? `the folder ‘${folderName}’ on this computer`
       : persistent
@@ -455,6 +469,21 @@ export function Workspace({
         : 'this tab';
   const activeEntry = ws.active ? (entryByPath.get(ws.active) ?? null) : null;
   const activeKind: FileKind | null = activeEntry ? (kindOverrides[activeEntry.path] ?? kinds[activeEntry.path] ?? null) : null;
+  // The right panel's History: the open file's versions where the server keeps them, who changed it
+  // where it doesn't, and a line saying so in the browser and in folders.
+  const historyProps = useMemo<HistoryProps>(
+    () => ({
+      projectId: currentId ?? '',
+      entry: sessionReady ? activeEntry : null,
+      kind: activeKind,
+      store,
+      tier: project?.tier ?? null,
+      versions: hosting.server?.versions === true,
+      you,
+      onNotify: notify,
+    }),
+    [currentId, sessionReady, activeEntry, activeKind, store, project?.tier, hosting.server?.versions, you, notify],
+  );
   const iconKind = (path: string) => kinds[path] ?? kindFromName(basename(path));
 
   const starred: StarredItem[] = ws.starred.flatMap((path) => {
@@ -582,16 +611,6 @@ export function Workspace({
     [dismissKept, fail],
   );
 
-  // Canvases an older tab saved after the move: offered once per visit,
-  // quietly, until imported, downloaded or put away (re-review R6).
-  const [olderTab, setOlderTab] = useState<OlderTabCanvas[]>([]);
-  const askedOlderTab = useRef(false);
-  useEffect(() => {
-    if (!olderTabCanvases || askedOlderTab.current) return;
-    askedOlderTab.current = true;
-    olderTabCanvases.find().then(setOlderTab, (reason: unknown) => console.error('Nebula could not look for older tabs’ canvases', reason));
-  }, [olderTabCanvases]);
-
   const moveMeta = useCallback((from: string, to: string) => {
     const move = <T,>(current: Record<string, T>) => {
       const next: Record<string, T> = {};
@@ -629,11 +648,16 @@ export function Workspace({
     settle();
     if (!wanted.path) return;
     const entry = entryByPath.get(wanted.path);
-    if (entry?.type === 'file') openFile(wanted.path);
+    if (entry?.type === 'file') {
+      // An Orbit card's link: this tab's writes to the file name it, and nothing is kept on the
+      // device. A file opened without one stops naming an earlier card's.
+      contextOf(store)?.setContext(wanted.path, wanted.context ?? null);
+      openFile(wanted.path);
+    }
     // A folder link (from an Orbit card, say): the folder, open in the tree.
     else if (entry?.type === 'dir') showInFiles(wanted.path, true);
     else notify(`“${basename(wanted.path)}” isn’t in ${project?.name ?? 'this project'}.`);
-  }, [projectList, currentId, sessionReady, entryByPath, project, openFile, showInFiles, notify]);
+  }, [projectList, currentId, sessionReady, entryByPath, project, openFile, showInFiles, notify, store, linkTick]);
 
   // The open project and file, for the address. Quiet until a link has
   // opened, so the file restored underneath it never flashes by.
@@ -873,18 +897,37 @@ export function Workspace({
       const shown = entry.type === 'dir' ? entry.name : describeName(entry.name).label;
       const inside = entry.type === 'dir' ? entries.filter((other) => other.type === 'file' && isInside(other.path, path)).length : 0;
       // A folder's files go for good: the system's bin never sees them.
+      // Where the server lists its deleted files (the database backend), they come back from Settings.
       const undone = serverPlace
-        ? 'It won’t go to a bin, so this can’t be undone here.'
+        ? hosting.server?.deletedFiles === true
+          ? `${entry.type === 'dir' ? 'Its files' : 'It'} can be restored for ${REMOVED_KEEP_DAYS} days, in Settings under Recently deleted.`
+          : 'It won’t go to a bin, so this can’t be undone here.'
         : folderName
           ? 'It won’t go to your computer’s bin, so this can’t be undone.'
           : 'This can’t be undone.';
+      // What refers to it, listed under the paragraph before it goes (2.0.4): a
+      // note's link to it leads nowhere, and a canvas that uses it as an image shows it as missing.
+      const references = referencesTo(projectIndex.current(), path, entries);
+      const list: ConfirmList | undefined = references.shown.length
+        ? {
+            heading: 'Referenced by',
+            items: references.shown.map((reference) => ({
+              key: reference.path,
+              name: describeName(reference.path.slice(reference.path.lastIndexOf('/') + 1)).label,
+              kind: reference.canvas ? 'canvas' : undefined,
+              where: dirname(reference.path).split('/').join(' / ') || undefined,
+            })),
+            more: references.more,
+          }
+        : undefined;
       setDialog({
         type: 'confirm',
         title: `Delete “${shown}”?`,
         body:
-          entry.type === 'dir'
-            ? `The folder and the ${countLabel(inside, 'file')} in it will be deleted from ${deletedFrom}.${serverPlace ? ' Hidden files in it, such as .git, go with it.' : ''} ${undone}`
-            : `It will be deleted from ${deletedFrom}. ${undone}`,
+          (entry.type === 'dir'
+            ? `The folder and the ${countLabel(inside, 'file')} in it will be deleted from ${deletedFrom}.${serverFolder ? ' Hidden files in it, such as .git, go with it.' : ''} ${undone}`
+            : `It will be deleted from ${deletedFrom}. ${undone}`),
+        list,
         confirmLabel: 'Delete',
         danger: true,
         onConfirm: () => {
@@ -908,8 +951,52 @@ export function Workspace({
         },
       });
     },
-    [entryByPath, store, entries, deletedFrom, folderName, serverPlace, currentId, removing, dispatch, refresh, notify, fail],
+    [entryByPath, store, entries, projectIndex, deletedFrom, folderName, serverPlace, serverFolder, hosting.server?.deletedFiles, currentId, removing, dispatch, refresh, notify, fail],
   );
+
+  /** Move images to files (2.0.4): the images inside these canvases become
+   * files in Attachments/, named by reference (moveImagesOut.ts). Nothing is
+   * deleted; a canvas with unsaved changes, or changed meanwhile, is left
+   * and named. */
+  const moveImagesToFiles = useCallback(
+    (paths: string[]) => {
+      if (!store) return;
+      if (convertWait) {
+        notify(convertWait.replace('Convert images', 'Move the images'));
+        return;
+      }
+      const scope = currentId ?? store;
+      notify(paths.length === 1 ? 'Moving the canvas’s images to files…' : `Moving images to files in ${countLabel(paths.length, 'canvas', 'canvases')}…`);
+      void (async () => {
+        const { moveImagesOut, moveOutMessage } = await import('./moveImagesOut');
+        const run = await moveImagesOut(store, paths, {
+          unsaved: (path) => hasUnsavedAt(scope, path),
+          // A long run says where it is, every 25 canvases.
+          progress: (done, total) => {
+            if (total > 25 && done < total && done % 25 === 0) notify(`Moving images to files: ${done} of ${total} canvases…`);
+          },
+        });
+        await refresh();
+        notify(moveOutMessage(run));
+      })().catch(fail('Couldn’t move the images'));
+    },
+    [store, convertWait, currentId, refresh, notify, fail],
+  );
+
+  /** The project-wide Move images to files, asked first. */
+  const confirmMoveImages = useCallback(() => {
+    const canvases = entries.filter((entry) => entry.type === 'file' && movableCanvas(entry.path) && (kinds[entry.path] ?? kindFromName(entry.name)) === 'canvas').map((entry) => entry.path);
+    setDialog({
+      type: 'confirm',
+      title: 'Move canvas images to files?',
+      body: `Images held inside the project’s canvases (${countLabel(canvases.length, 'canvas', 'canvases')}) are copied into Attachments as files, and each canvas then names its images, as Obsidian Excalidraw does. Nothing is deleted. A canvas with unsaved changes, or one that changes while this runs, is left as it is.`,
+      confirmLabel: 'Move images',
+      onConfirm: () => {
+        setDialog(null);
+        moveImagesToFiles(canvases);
+      },
+    });
+  }, [entries, kinds, moveImagesToFiles]);
 
   const sizeByPath = useMemo(() => new Map(entries.flatMap((entry) => (entry.type === 'file' ? [[entry.path, entry.size ?? 0] as const] : []))), [entries]);
 
@@ -967,8 +1054,29 @@ export function Workspace({
     [closeOverlays],
   );
 
+  // The frame (src/app/frameBridge.ts): `ready` once the workspace is up, the active file as the
+  // title, and the host's `navigate` as a link, opened by the effect above.
+  const currentRef = useRef(currentId);
+  currentRef.current = currentId;
+  const navigateTo = useCallback(
+    (target: { project?: string; path?: string; context?: string }) => {
+      const projectId = target.project ?? currentRef.current;
+      if (!projectId) return;
+      link.current = { projectId, path: target.path ?? null, context: target.context };
+      setLinkPending(true);
+      setLinkTick((tick) => tick + 1);
+      if (currentRef.current !== projectId) switchProject(projectId);
+    },
+    [switchProject],
+  );
+  useFrameBridge({
+    ready: projectList !== null && (currentId === null || sessionReady),
+    title: project ? (activePath ? `${describeName(basename(activePath)).label} · ${project.name}` : project.name) : 'Nebula',
+    navigate: navigateTo,
+  });
+
   const createProject = useCallback(
-    async (input: { name: string; color: string; folder?: FolderHandle }) => {
+    async (input: { name: string; color: string; folder?: FolderHandle; where?: 'server' }) => {
       const created = await registry.create(input);
       await reloadProjects();
       setCurrentId(created.id);
@@ -981,9 +1089,21 @@ export function Workspace({
    * the click). Cancelling the picker leaves the dialog as it was. */
   const createFromDialog = useCallback(
     (input: { name: string; color: string; where: ProjectHome }) => {
-      if (input.where === 'browser') {
-        setDialog(null);
-        void createProject({ name: input.name, color: input.color }).catch(fail('Couldn’t make the project'));
+      if (input.where === 'browser' || input.where === 'server') {
+        if (input.where === 'browser') {
+          setDialog(null);
+          void createProject({ name: input.name, color: input.color }).catch(fail('Couldn’t make the project'));
+          return;
+        }
+        // On the server, the dialog stays until the server agrees, and says why it didn't.
+        setDialog((current) => (current?.type === 'newProject' ? { ...current, busy: true, error: undefined } : current));
+        void createProject({ name: input.name, color: input.color, where: 'server' }).then(
+          () => setDialog(null),
+          (reason: unknown) => {
+            console.error('Nebula: Couldn’t make the project', reason);
+            setDialog((current) => (current?.type === 'newProject' ? { ...current, busy: false, error: `Couldn’t make the project: ${errorText(reason)}` } : current));
+          },
+        );
         return;
       }
       void (async () => {
@@ -1070,9 +1190,37 @@ export function Workspace({
       const record = projects.find((item) => item.id === id);
       if (!record || listLocked) return;
       closeOverlays();
+      if (record.tier === 'server' && hosting.server?.canRemove) {
+        // A database's project (the Suite): deleted on the server, and restorable there for a while.
+        setDialog({
+          type: 'confirm',
+          title: `Delete “${record.name}”?`,
+          body: `${record.name} and ${id === currentId ? `its ${countLabel(files.length, 'file')}` : 'all its files'} leave your projects. You can restore it for ${REMOVED_KEEP_DAYS} days, in Settings under Recently deleted. After that it’s gone for good.`,
+          confirmLabel: 'Delete project',
+          danger: true,
+          onConfirm: () => {
+            setDialog(null);
+            setSettingsTab(null);
+            void (async () => {
+              await registry.remove(id);
+              const list = await reloadProjects();
+              if (id === currentId) setCurrentId([...list].sort(byCreated)[0]?.id ?? null);
+              notify(`Deleted “${record.name}”. You can restore it for ${REMOVED_KEEP_DAYS} days.`);
+            })().catch(fail('Couldn’t delete the project'));
+          },
+        });
+        return;
+      }
       if (record.tier === 'server') {
-        // Its folder is on the server, which lists it while it's there.
-        notify(`${record.name} lives on ${record.server?.label ?? 'the server'}. To remove it, remove its folder there.`);
+        // Its folder is on the server, which lists it while it's there; a server that can't remove
+        // projects leaves that to whoever keeps it.
+        notify(
+          onlyServer
+            ? `${record.name} is kept by ${serverLabel}. Removing a project there isn’t possible yet.`
+            : record.server?.folder
+              ? `${record.name} lives on ${record.server.label}. To remove it, remove its folder there.`
+              : `${record.name} is kept by ${record.server?.label ?? 'the server'}. Nebula can’t remove projects there.`,
+        );
         return;
       }
       if (record.tier === 'folder') {
@@ -1116,7 +1264,21 @@ export function Workspace({
         },
       });
     },
-    [projects, listLocked, closeOverlays, persistent, currentId, files.length, downloadProject, registry, reloadProjects, notify, fail],
+    [projects, listLocked, closeOverlays, persistent, onlyServer, serverLabel, hosting.server?.canRemove, currentId, files.length, downloadProject, registry, reloadProjects, notify, fail],
+  );
+
+  // Settings → Project → Recently deleted, where the server keeps deleted projects: asked while it's
+  // open, and a restored project comes straight into the list (and opens, if none was).
+  const recentlyDeleted = useRemovedProjects(hosting.server?.removed, settingsTab === 'project', async (restored) => {
+    await reloadProjects();
+    setCurrentId((now) => now ?? restored.id);
+    notify(`Restored “${restored.name}”.`);
+  });
+
+  // And beside them, the open project's deleted files, where its server keeps them (a server that
+  // says so: the database backend). Folders and the browser have none, and show nothing.
+  const deletedFiles = useDeletedFiles(project?.tier === 'server' && hosting.server?.deletedFiles === true ? store : null, settingsTab === 'project', (restored) =>
+    notify(`Restored “${basename(restored.path)}”.`),
   );
 
   // When the open project was last downloaded from this browser, for Settings.
@@ -1133,11 +1295,12 @@ export function Workspace({
       notify('Preparing the .zip…');
       void downloadProject(id).then(() => {
         setMessage(null);
-        recordDownload(id);
+        // A server project's download isn't its safety net, and its id stays off this device.
+        if (projects.find((record) => record.id === id)?.tier !== 'server') recordDownload(id);
         noteDownload();
       }, fail('Couldn’t download the project'));
     },
-    [closeOverlays, downloadProject, notify, fail],
+    [closeOverlays, downloadProject, projects, notify, fail],
   );
 
   const openProjectSettings = useCallback(
@@ -1149,33 +1312,17 @@ export function Workspace({
     [closeOverlays, currentId, switchProject, showSettingsTab],
   );
 
-  const importOlderTab = useCallback(
-    (canvas: OlderTabCanvas) => {
-      if (!olderTabCanvases) return;
-      // Into the project its earlier version went to, else the open one.
-      const target = projects.find((record) => record.id === canvas.projectId) ?? project;
-      if (!target) return;
-      void olderTabCanvases
-        .importCopy(canvas.key, target.id)
-        .then(async (path) => {
-          setOlderTab((current) => current.filter((item) => item.key !== canvas.key));
-          notify(`Imported “${canvas.name}” into ${target.name} as ‘${describeName(basename(path)).label}’.`);
-          if (target.id !== currentId) return;
-          await refresh();
-          openFile(path);
-        })
-        .catch(fail(`Couldn’t import “${canvas.name}”`));
-    },
-    [olderTabCanvases, projects, project, currentId, notify, refresh, openFile, fail],
-  );
-
   const openNewProject = useCallback(() => {
     if (listLocked) return;
     closeOverlays();
     setPaletteOpen(false);
     setSheet(false);
+    if (newHomes.length === 0) {
+      notify(`${serverLabel} doesn’t make new projects.`);
+      return;
+    }
     setDialog({ type: 'newProject' });
-  }, [listLocked, closeOverlays]);
+  }, [listLocked, closeOverlays, newHomes, serverLabel, notify]);
 
   /** The bar's button when the browser forgot a folder's permission: it
    * asks again (a prompt, so from this click). */
@@ -1214,6 +1361,7 @@ export function Workspace({
   // opens, when Settings opens, when an edit asks the browser (keepOnEdit) and
   // when the page comes back into view; only the latest read counts.
   const settingsOpen = settingsTab !== null;
+  const space = useSpace(sessionReady ? store : null, settingsOpen);
   useEffect(() => {
     if (!persistent) return;
     let cancelled = false;
@@ -1238,7 +1386,7 @@ export function Workspace({
   }, [settingsOpen, persistent]);
   // false: it hasn't promised; null: it can't say. Either way, may be cleared.
   // A folder can't be cleared by the browser: its status stays calm.
-  const attention = persistent && !folderName && !serverPlace && (kept === false || kept === null);
+  const attention = persistent && !onlyServer && !folderName && !serverPlace && (kept === false || kept === null);
 
   /* ---- shortcuts ---------------------------------------------------- */
 
@@ -1358,6 +1506,9 @@ export function Workspace({
             },
           ]
         : []),
+      ...(canvas && movableCanvas(path)
+        ? [{ label: 'Move images to files', icon: 'image' as const, disabled: convertWait !== null, onSelect: act(() => moveImagesToFiles([path])) }]
+        : []),
       'separator',
       remove,
     ];
@@ -1382,7 +1533,8 @@ export function Workspace({
 
   /* ---- intro --------------------------------------------------------- */
 
-  const introOpen = intro !== null && !introDone && sessionReady;
+  // With no project yet (the host's server, on a first visit), the welcome opens over the empty stage.
+  const introOpen = intro !== null && !introDone && (sessionReady || (onlyServer && projectList !== null && projectList.length === 0));
   const finishIntro = useCallback(() => {
     setIntroDone(true);
     onIntroDone?.();
@@ -1404,7 +1556,7 @@ export function Workspace({
       <h2>{projectList === null ? 'Opening Nebula…' : 'No projects yet'}</h2>
       {projectList === null ? null : (
         <>
-          <p>A project keeps notes, drawings and files together.</p>
+          <p>A project keeps notes, drawings and files together{onlyServer ? `, kept by ${serverLabel}` : ''}.</p>
           <div className="ws-set-actions">
             <Button className="welcome-dialog-cta ws-cta" disabled={listLocked} onClick={openNewProject}>
               New project
@@ -1486,8 +1638,9 @@ export function Workspace({
           usage={usage}
           ephemeral={!persistent}
           attention={attention}
-          folderName={folderName ?? serverPlace?.folder ?? null}
-          placeLabel={serverPlace ? `On ${serverPlace.label}` : null}
+          folderName={folderName ?? serverFolder}
+          // With no folder to name, the location already says the server: the line under it is the usage.
+          placeLabel={serverFolder ? `On ${serverPlace?.label}` : null}
           blocked={folderBar ? (folderBar.access === 'prompt' ? 'Needs your OK' : folderBar.access === 'denied' ? 'Not allowed' : 'Can’t be found') : isMoving ? 'Moving to a folder…' : null}
           night={night}
           collapsed={collapsed && !phone}
@@ -1640,44 +1793,6 @@ export function Workspace({
             </div>
           ))}
 
-          {/* Once the open project has settled, so an import opens on top of it. */}
-          {olderTab.length > 0 && olderTabCanvases && projectList !== null && (sessionReady || !project) ? (
-            <div className="ws-ephemeral ws-older" role="note">
-              <span className="ws-store-dot" data-attention="" aria-hidden="true" />
-              <div className="ws-older-body">
-                <p>Canvases saved by an older Nebula tab after the move</p>
-                <ul className="ws-left-behind">
-                  {olderTab.map((canvas) => (
-                    <li key={canvas.key}>
-                      <span>{canvas.name}</span>
-                      <Button
-                        className="ws-btn"
-                        aria-label={`Import “${canvas.name}” as a copy`}
-                        disabled={!project && !projects.some((record) => record.id === canvas.projectId)}
-                        onClick={() => importOlderTab(canvas)}
-                      >
-                        Import as a copy
-                      </Button>
-                      <Button className="ws-btn" aria-label={`Download “${canvas.name}” as .excalidraw`} onClick={() => olderTabCanvases.download(canvas.key)}>
-                        Download
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <Button
-                className="ws-icon-btn"
-                aria-label="Dismiss"
-                onClick={() => {
-                  olderTabCanvases.dismiss?.(olderTab);
-                  setOlderTab([]);
-                }}
-              >
-                <Icon name="close" />
-              </Button>
-            </div>
-          ) : null}
-
           {!folderBar && session.projectId === currentId && session.tooBig !== null ? (
             <div className="ws-ephemeral ws-folder-bar" role="note">
               <span className="ws-store-dot" data-attention="" aria-hidden="true" />
@@ -1716,6 +1831,8 @@ export function Workspace({
             </div>
           ) : null}
 
+          <AccountBanner store={sessionReady ? store : null} />
+
           {!persistent ? (
             <div className="ws-ephemeral" role="note">
               <span className="ws-store-dot" data-ephemeral="" aria-hidden="true" />
@@ -1729,10 +1846,13 @@ export function Workspace({
             </div>
           ) : null}
 
+          <ContextMark store={sessionReady ? store : null} path={activePath} />
+
           {/* The project index, for the panel and the views. */}
           <ProjectIndexProvider source={projectIndex}>
           {/* The links' project (opening a file, at a line) for the stage and for the panel's Linked from. */}
           <ProjectLinksContext.Provider value={projectLinks}>
+          <YouContext.Provider value={you}>
           <div className="ws-body">
             <PageWidthContext.Provider value={pageWidth}>
               <Stage
@@ -1749,12 +1869,13 @@ export function Workspace({
                 jump={jump}
               />
             </PageWidthContext.Provider>
-            {panelOpen && !phone ? <OutlinePanel headings={outline} isNote={activeKind === 'note'} path={sessionReady ? ws.active : null} /> : null}
+            {panelOpen && !phone ? <OutlinePanel headings={outline} isNote={activeKind === 'note'} path={sessionReady ? ws.active : null} history={historyProps} /> : null}
           </div>
+          </YouContext.Provider>
           </ProjectLinksContext.Provider>
           </ProjectIndexProvider>
 
-          <StatusLine ephemeral={!persistent} inFolder={folderName !== null} place={serverPlace?.label ?? null} folderClosed={folderBar !== null} saving={activeMeta?.dirty === true} status={activeMeta?.status ?? null} message={message} />
+          <StatusLine ephemeral={!persistent} inFolder={folderName !== null} place={serverPlace?.label ?? (onlyServer ? serverLabel : null)} folderClosed={folderBar !== null} saving={activeMeta?.dirty === true} status={activeMeta?.status ?? null} message={message} edited={sessionReady && activeKind !== 'note' ? activeEntry : null} you={you} />
 
           <nav className="ws-phone-bar" aria-label="Phone">
             <Button aria-expanded={sheetOpen} onClick={() => setSheet(true)}>
@@ -1822,6 +1943,21 @@ export function Workspace({
         onSettings={() => projectForMenu && openProjectSettings(projectForMenu.id)}
         onDownload={() => projectForMenu && runDownloadProject(projectForMenu.id)}
         onRemove={() => projectForMenu && removeProject(projectForMenu.id)}
+        extra={
+          projectForMenu && projectForMenu.id === currentId
+            ? [
+                {
+                  label: 'Move canvas images to files…',
+                  icon: 'image',
+                  disabled: convertWait !== null,
+                  onSelect: () => {
+                    setProjectMenu(null);
+                    confirmMoveImages();
+                  },
+                },
+              ]
+            : undefined
+        }
         onClose={() => setProjectMenu(null)}
       />
 
@@ -1884,6 +2020,8 @@ export function Workspace({
         ephemeral={!persistent}
         folderName={folderName}
         serverPlace={serverPlace}
+        keptBy={onlyServer ? serverLabel : null}
+        space={space}
         kept={kept}
         // A .zip is a browser project's safety net; a folder's files are already on this computer.
         downloaded={folderName === null && serverPlace === null ? downloadedLabel(downloadedAt) : null}
@@ -1895,6 +2033,8 @@ export function Workspace({
         onImport={() => pickUpload('')}
         onRemove={() => project && removeProject(project.id)}
         onMoveToFolder={canUseFolders && project?.tier === 'browser' ? moveProjectToFolder : undefined}
+        canDelete={hosting.server?.canRemove === true}
+        recentlyDeleted={hosting.server?.removed ? { ...recentlyDeleted, files: deletedFiles ? { ...deletedFiles, you, projectName: project?.name } : undefined } : undefined}
       />
 
       {dialog?.type === 'newProject' ? (
@@ -1904,6 +2044,10 @@ export function Workspace({
           initialColour={nextColour(projects)}
           defaultName={dialog.first || projects.length === 0 ? FIRST_PROJECT_NAME : undefined}
           canUseFolders={canUseFolders}
+          homes={newHomes}
+          serverLabel={serverLabel}
+          busy={dialog.busy === true}
+          error={dialog.error ?? null}
           onCancel={() => setDialog(null)}
           onCreate={createFromDialog}
         />
@@ -1914,6 +2058,7 @@ export function Workspace({
           open
           title={dialog.title}
           body={dialog.body}
+          list={dialog.list}
           confirmLabel={dialog.confirmLabel}
           danger={dialog.danger}
           onConfirm={dialog.onConfirm}
@@ -1954,10 +2099,8 @@ export function Workspace({
       {introOpen && intro ? (
         <IntroDialog
           open
-          variant={intro}
-          leftBehind={intro === 'migrated' ? leftBehind : null}
-          onDownloadLeftBehind={onDownloadLeftBehind}
           persistent={persistent}
+          keptBy={onlyServer ? serverLabel : null}
           projectName={project?.name ?? 'Night Sky'}
           canDownload={downloadProject !== undefined}
           onExplore={finishIntro}
@@ -1968,7 +2111,7 @@ export function Workspace({
         />
       ) : null}
 
-      {onHelp ? null : <Help open={aboutOpen} persistent={persistent} canDownload={downloadProject !== undefined} canUseFolders={canUseFolders} onClose={() => setAboutOpen(false)} />}
+      {onHelp ? null : <Help open={aboutOpen} persistent={persistent} canDownload={downloadProject !== undefined} canUseFolders={canUseFolders} keptBy={onlyServer ? serverLabel : null} onClose={() => setAboutOpen(false)} />}
     </div>
   );
 }

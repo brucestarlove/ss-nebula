@@ -27,9 +27,6 @@ type Registry = {
   zip(id: string, folder?: string): Promise<string>;
   storage(): Promise<{ requested: boolean | null; status: { persisted: boolean | null; usage?: number; quota?: number } }>;
   entries(id: string): Promise<Array<{ path: string; type: string; size?: number }>>;
-  migrate(seed: Record<string, string>): Promise<{ status: string; projects: Array<{ projectId: string; files: Array<{ path: string }> }>; keys: string[] }>;
-  localStorage(): Record<string, string>;
-  clearLocalStorage(): void;
   canvas(id: string, path: string): Promise<{ elements: Array<Record<string, unknown>>; files: Record<string, unknown> }>;
 };
 
@@ -163,53 +160,6 @@ test.describe('the first run on OPFS', () => {
     expect(Buffer.from(entries['Night Sky/Charts/Star chart — October.pdf']).equals(readFileSync('public/sample/star-chart.pdf'))).toBe(true);
     expect(Buffer.from(entries['Night Sky/Guides/Orion.md']).equals(readFileSync('src/files/sample/Orion.md'))).toBe(true);
     expect(JSON.parse(Buffer.from(entries['Night Sky/.nebula/project.json']).toString('utf8'))).toMatchObject({ id: project.id, name: 'Night Sky', color: '#7c8cff' });
-    await page.close();
-  });
-
-  test('migrates Nebula 1.x canvases into OPFS once, leaving the old keys in place', async ({ persistentContext }) => {
-    const hexagon = JSON.parse(readFileSync('e2e/assets/images/winter-hexagon.excalidraw', 'utf8'));
-    const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
-    const files = { photo: { mimeType: 'image/png', id: 'photo', dataURL: png, created: 1761100000000 } };
-    const image = { id: 'img', type: 'image', x: 0, y: 0, width: 10, height: 10, angle: 0, fileId: 'photo', status: 'saved', scale: [1, 1], groupIds: [], frameId: null, boundElements: null, link: null, locked: false };
-    const doc = (boardId: string, canvasId: string, name: string, scene: object) => ({
-      type: 'starscape.nebula.excalidraw',
-      version: 1,
-      boardId,
-      canvasId,
-      name,
-      updatedAt: '2026-05-29T12:00:00.000Z',
-      scene,
-      nebula: { ticketLinks: [], missionFrames: [], artifactRefs: [], semanticIndex: {} },
-    });
-    const seed = {
-      'nebula:excalidraw:ss-nebula:main': JSON.stringify(doc('ss-nebula', 'main', 'Winter hexagon', hexagon)),
-      'nebula:excalidraw:board%2Fa:canvas%20b': JSON.stringify(doc('board/a', 'canvas b', 'With a photo', { type: 'excalidraw', version: 2, elements: [image], appState: {}, files })),
-      'nebula:excalidraw-libraries:board/a': '{"collections":[],"activeId":"personal"}',
-    };
-
-    const page = await openHarness(persistentContext, HARNESS);
-    await page.evaluate(() => window.filesRegistry.wipe());
-    await page.evaluate(() => window.filesRegistry.clearLocalStorage());
-    await page.evaluate(() => window.filesRegistry.open());
-    const report = await page.evaluate((entries) => window.filesRegistry.migrate(entries), seed);
-    expect(report.status).toBe('migrated');
-
-    await page.reload();
-    await page.waitForFunction(() => (window as unknown as { filesHarnessReady?: boolean }).filesHarnessReady === true);
-    await page.evaluate(() => window.filesRegistry.open());
-    const projects = await page.evaluate(() => window.filesRegistry.list());
-    expect(projects.map((project) => project.name)).toEqual(['My First Project', 'board/a']);
-    const winter = await page.evaluate(() => window.filesRegistry.canvas('ss-nebula', 'Winter hexagon.excalidraw.md'));
-    expect(winter.elements).toEqual(hexagon.elements.map((element: Record<string, unknown>) => ({ ...element, boundElements: element.boundElements ?? [] })));
-    const photo = await page.evaluate((id) => window.filesRegistry.canvas(id, 'With a photo.excalidraw.md'), projects[1].id);
-    expect(photo.files).toEqual(files);
-
-    const again = await page.evaluate(() => window.filesRegistry.migrate({}));
-    expect(again.status).toBe('already-done');
-    const storage = await page.evaluate(() => window.filesRegistry.localStorage());
-    for (const [key, value] of Object.entries(seed)) expect(storage[key]).toBe(value);
-    expect(storage[`nebula:excalidraw-libraries:${projects[1].id}`]).toBe(seed['nebula:excalidraw-libraries:board/a']);
-    expect(await page.evaluate(() => window.filesRegistry.list())).toHaveLength(2);
     await page.close();
   });
 });

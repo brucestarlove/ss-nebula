@@ -2,12 +2,8 @@ import { CaptureUpdateAction, Excalidraw, useHandleLibrary } from '@excalidraw/e
 import { elementsWithTextLinks } from './excalidraw/textLinks';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ExcalidrawProps, LibraryItems, UIAppState } from '@excalidraw/excalidraw/types';
-import type { NebulaContext, NebulaContextInput } from './context';
-import { resolveNebulaContext } from './context';
-import {
-  DEFAULT_NEBULA_CANVAS_NAME,
-  createEmptyNebulaExcalidrawDocument,
-} from './excalidraw/document';
+import type { NebulaContext } from './context';
+import { createEmptyNebulaExcalidrawDocument } from './excalidraw/document';
 import {
   addItemsToCollection,
   createCollection,
@@ -29,21 +25,9 @@ import {
 } from './excalidraw/library';
 import { LibraryControls } from './ui/LibraryControls';
 import { normalizeExcalidrawScene, type ExcalidrawScene } from './excalidraw/scene';
-import {
-  downloadExcalidrawScene,
-  downloadNebulaExcalidrawDocument,
-  downloadObsidianExcalidrawMarkdown,
-  getExcalidrawInteropFilename,
-  getNebulaDocumentInteropFilename,
-  readExcalidrawSceneFile,
-} from './excalidraw/interop';
 import { nameExcalidrawControls } from './excalidraw/controlNames';
-import { getObsidianExcalidrawInteropFilename } from './excalidraw/obsidianMarkdown';
-import { createLocalStorageSceneStore } from './storage/localStorageSceneStore';
-import type { CanvasSummary, NebulaExcalidrawDocument, SceneStore } from './storage/types';
-import { NebulaShell } from './ui/NebulaShell';
-import { useTheme, type ResolvedTheme } from './ui/useTheme';
-import { useBackground } from './ui/useBackground';
+import type { NebulaExcalidrawDocument, SceneStore } from './storage/types';
+import type { ResolvedTheme } from './ui/useTheme';
 
 type ExcalidrawAPI = {
   id?: string;
@@ -70,18 +54,11 @@ type ExcalidrawAPI = {
 type ExcalidrawInitialData = ReturnType<typeof toInitialData> & { scrollToContent?: boolean };
 
 export type NebulaExcalidrawShellProps = {
-  context?: NebulaContextInput;
-  store?: SceneStore;
-  onReady?: () => void;
-  /**
-   * `false` renders only the canvas: Excalidraw with Nebula's library
-   * collections (keyed by `context.boardId`), find on canvas (Excalidraw's own
-   * search) and the canvas pan gestures, without NebulaShell's topbar, footer,
-   * settings drawer and about dialog. The canvas then follows the page's theme
-   * (`<html data-theme>`, else the system's) instead of owning it, and writes
-   * no theme or background state. Defaults to `true`: the full shell.
-   */
-  chrome?: boolean;
+  /** The project and the canvas file: the workspace gives the project's id and
+   * the file's path. The library collections are keyed by the project. */
+  context: NebulaContext;
+  /** Where the canvas is read and saved: the workspace gives the canvas file's own store. */
+  store: SceneStore;
   /** Called when an element's link is clicked (Excalidraw's `onLinkOpen`):
    * calling `event.preventDefault()` keeps Excalidraw from opening it as a web
    * address. Nebula's canvas view opens `[[links]]` in the project with it. */
@@ -90,6 +67,9 @@ export type NebulaExcalidrawShellProps = {
    * no longer being edited, as Obsidian Excalidraw does (excalidraw/textLinks.ts).
    * Off by default: it writes to the drawing. */
   linksFromText?: boolean;
+  /** Excalidraw's `generateIdForFile`: the canvas view gives one that keeps
+   * a dropped image's name for the file it's written to (2.0.4). */
+  generateIdForFile?: ExcalidrawProps['generateIdForFile'];
 };
 
 function sanitizeAppState(appState: ExcalidrawScene['appState'] = {}): ExcalidrawScene['appState'] {
@@ -182,96 +162,17 @@ function subscribeToDocumentTheme(onChange: () => void): () => void {
   };
 }
 
-/** The page's resolved theme, read-only: the chrome-less canvas follows the
- * host instead of owning `data-theme` and `data-bg`. */
+/** The page's resolved theme, read-only: the canvas follows the host
+ * instead of owning `data-theme` and `data-bg`. */
 function useDocumentTheme(): ResolvedTheme {
   return useSyncExternalStore(subscribeToDocumentTheme, readDocumentTheme, () => 'light');
 }
 
-/**
- * Canonical Nebula shell seam for both standalone Vite and future Orbit React
- * island mounts. Excalidraw owns the drawing engine; Nebula owns Orbit context,
- * document wrapping, metadata, persistence adapter wiring, and shell overlays.
- * With `chrome={false}` it renders the canvas alone, for hosts that bring
- * their own frame (the workspace's canvas tab).
- */
-export function NebulaExcalidrawShell(props: NebulaExcalidrawShellProps) {
-  return props.chrome === false ? <ChromelessNebulaCanvas {...props} /> : <ChromeNebulaShell {...props} />;
-}
-
-function ChromelessNebulaCanvas(props: NebulaExcalidrawShellProps) {
-  const resolved = useDocumentTheme();
-  return useNebulaCanvas(props, resolved).canvas;
-}
-
-function ChromeNebulaShell(props: NebulaExcalidrawShellProps) {
-  const { resolved, setMode } = useTheme();
-  const { isPlain, setFlavor: setBackgroundFlavor, toggleFlavor } = useBackground(resolved);
-  const {
-    canvas,
-    boardName,
-    canvases,
-    context,
-    setActiveCanvasId,
-    createCanvas,
-    resetCanvasBackground,
-    exportScene,
-    exportNebulaDocument,
-    exportObsidianMarkdown,
-    importScene,
-    openCanvasSearch,
-  } = useNebulaCanvas(props, resolved);
-
-  // Nebula themes own the visible app background. If Excalidraw's native
-  // Canvas background picker made the scene opaque, clear it before switching
-  // theme/flavor so Starfield, Parchment, white, or black show through again.
-  const setNebulaFlavor = useCallback(
-    (next: Parameters<typeof setBackgroundFlavor>[0]) => {
-      resetCanvasBackground();
-      setBackgroundFlavor(next);
-    },
-    [resetCanvasBackground, setBackgroundFlavor],
-  );
-
-  // The sun/moon buttons double as a flavor switch: clicking the inactive theme
-  // switches theme; clicking the active theme toggles its background flavor.
-  const activateTheme = useCallback(
-    (next: ResolvedTheme) => {
-      resetCanvasBackground();
-      if (next === resolved) toggleFlavor();
-      else setMode(next);
-    },
-    [resolved, resetCanvasBackground, toggleFlavor, setMode],
-  );
-
-  return (
-    <NebulaShell
-      boardName={boardName}
-      canvases={canvases}
-      activeCanvasId={context.canvasId}
-      onSelectCanvas={setActiveCanvasId}
-      onCreateCanvas={createCanvas}
-      themeResolved={resolved}
-      onActivateTheme={activateTheme}
-      isPlain={isPlain}
-      setFlavor={setNebulaFlavor}
-      onExport={exportScene}
-      onExportNebulaDocument={exportNebulaDocument}
-      onExportObsidianMarkdown={exportObsidianMarkdown}
-      onImport={(file) => void importScene(file)}
-      onOpenSearch={openCanvasSearch}
-    >
-      {canvas}
-    </NebulaShell>
-  );
-}
-
 /** A store over one file (the workspace's canvas tab) says so: when its load
  * fails, the shell shows the error rather than an empty canvas that would
- * take edits nobody can save. A 1.x board's store keeps the
- * empty canvas. */
-function isFileBacked(store: SceneStore | undefined): boolean {
-  return (store as { fileBacked?: unknown } | undefined)?.fileBacked === true;
+ * take edits nobody can save. */
+function isFileBacked(store: SceneStore): boolean {
+  return (store as { fileBacked?: unknown }).fileBacked === true;
 }
 
 function loadErrorMessage(error: unknown): string {
@@ -279,20 +180,17 @@ function loadErrorMessage(error: unknown): string {
   return typeof error === 'string' && error ? error : 'The file couldn’t be read.';
 }
 
-/** Everything but the chrome: the scene, persistence, libraries, gestures and
- * the Excalidraw element itself. */
-function useNebulaCanvas({ context: contextInput, store, onReady, chrome = true, onLinkOpen, linksFromText = false }: NebulaExcalidrawShellProps, resolved: ResolvedTheme) {
-  const baseContext = useMemo(() => resolveNebulaContext(contextInput), [contextInput]);
-  const sceneStore = useMemo(() => store || createLocalStorageSceneStore(), [store]);
-  const [activeCanvasId, setActiveCanvasId] = useState(baseContext.canvasId);
-  useEffect(() => {
-    setActiveCanvasId(baseContext.canvasId);
-  }, [baseContext.canvasId]);
-  const context = useMemo<NebulaContext>(
-    () => ({ ...baseContext, canvasId: activeCanvasId }),
-    [baseContext, activeCanvasId],
-  );
-  const fallbackDocument = useMemo(() => createEmptyNebulaExcalidrawDocument(context), [context]);
+/**
+ * Nebula's canvas: Excalidraw owns the drawing engine; Nebula owns the
+ * document wrapping, metadata, the store wiring, library collections and
+ * overlays. It renders the canvas alone, for the workspace's canvas tab, which
+ * brings its own frame, and follows the page's theme instead of owning it.
+ */
+export function NebulaExcalidrawShell({ context, store, onLinkOpen, linksFromText = false, generateIdForFile }: NebulaExcalidrawShellProps) {
+  const resolved = useDocumentTheme();
+  const sceneStore = store;
+  const { boardId, canvasId } = context;
+  const fallbackDocument = useMemo(() => createEmptyNebulaExcalidrawDocument({ boardId, canvasId }), [boardId, canvasId]);
   const [document, setDocument] = useState<NebulaExcalidrawDocument>(fallbackDocument);
   const documentRef = useRef<NebulaExcalidrawDocument>(fallbackDocument);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -301,9 +199,8 @@ function useNebulaCanvas({ context: contextInput, store, onReady, chrome = true,
   const [loadError, setLoadError] = useState<{ error: unknown } | null>(null);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const fileBacked = isFileBacked(store);
-  const [canvases, setCanvases] = useState<CanvasSummary[]>([]);
   const [collections, setCollections] = useState<LibraryCollectionsState>(() =>
-    loadLibraryCollections(baseContext.boardId),
+    loadLibraryCollections(context.boardId),
   );
   const apiRef = useRef<ExcalidrawAPI | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
@@ -313,10 +210,10 @@ function useNebulaCanvas({ context: contextInput, store, onReady, chrome = true,
 
   const persistCollections = useCallback(
     (next: LibraryCollectionsState) => {
-      saveLibraryCollections(baseContext.boardId, next);
+      saveLibraryCollections(context.boardId, next);
       setCollections(next);
     },
-    [baseContext.boardId],
+    [context.boardId],
   );
 
   // Route any edit to Excalidraw's single library list back into whichever
@@ -325,17 +222,17 @@ function useNebulaCanvas({ context: contextInput, store, onReady, chrome = true,
     (nextLibraryItems: LibraryItems) => {
       setCollections((current) => {
         const next = setCollectionItems(current, current.activeId, nextLibraryItems);
-        saveLibraryCollections(baseContext.boardId, next);
+        saveLibraryCollections(context.boardId, next);
         return next;
       });
     },
-    [baseContext.boardId],
+    [context.boardId],
   );
 
   const libraryAdapter = useMemo(
     () => ({
       load() {
-        const state = loadLibraryCollections(baseContext.boardId);
+        const state = loadLibraryCollections(context.boardId);
         setCollections(state);
         return { libraryItems: getActiveCollection(state).items };
       },
@@ -343,7 +240,7 @@ function useNebulaCanvas({ context: contextInput, store, onReady, chrome = true,
         applyActiveLibraryItems(nextLibraryItems);
       },
     }),
-    [baseContext.boardId, applyActiveLibraryItems],
+    [context.boardId, applyActiveLibraryItems],
   );
 
   useHandleLibrary({
@@ -355,19 +252,8 @@ function useNebulaCanvas({ context: contextInput, store, onReady, chrome = true,
   });
 
   useEffect(() => {
-    setCollections(loadLibraryCollections(baseContext.boardId));
-  }, [baseContext.boardId]);
-
-  useEffect(() => {
-    onReady?.();
-  }, [onReady]);
-
-  const refreshCanvases = useCallback(() => {
-    sceneStore
-      .list(baseContext.boardId)
-      .then(setCanvases)
-      .catch(() => setCanvases([]));
-  }, [sceneStore, baseContext.boardId]);
+    setCollections(loadLibraryCollections(context.boardId));
+  }, [context.boardId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -394,13 +280,12 @@ function useNebulaCanvas({ context: contextInput, store, onReady, chrome = true,
       .finally(() => {
         if (cancelled) return;
         setIsLoaded(true);
-        refreshCanvases();
       });
 
     return () => {
       cancelled = true;
     };
-  }, [context.boardId, context.canvasId, fallbackDocument, sceneStore, refreshCanvases, fileBacked, loadAttempt]);
+  }, [context.boardId, context.canvasId, fallbackDocument, sceneStore, fileBacked, loadAttempt]);
 
   const saveDocument = useCallback(
     (next: NebulaExcalidrawDocument, options: { updateState?: boolean } = {}) => {
@@ -474,50 +359,6 @@ function useNebulaCanvas({ context: contextInput, store, onReady, chrome = true,
         }
       : documentRef.current.scene;
   }, []);
-
-  const currentDocument = useCallback((): NebulaExcalidrawDocument => {
-    return nextDocument(documentRef.current, currentScene());
-  }, [currentScene]);
-
-  const resetCanvasBackground = useCallback(() => {
-    const scene = currentScene();
-    const appState = {
-      ...sanitizeAppState(scene.appState || {}),
-      viewBackgroundColor: CANVAS_BACKGROUND,
-    };
-    const nextScene = { ...scene, appState };
-
-    apiRef.current?.updateScene?.({ appState });
-    saveDocument(nextDocument(documentRef.current, nextScene), { updateState: true });
-  }, [currentScene, saveDocument]);
-
-  const exportNebulaDocument = useCallback(() => {
-    downloadNebulaExcalidrawDocument(
-      currentDocument(),
-      getNebulaDocumentInteropFilename(context.boardSlug, context.boardId, context.canvasId),
-    );
-  }, [context.boardId, context.boardSlug, context.canvasId, currentDocument]);
-
-  const exportScene = useCallback(() => {
-    downloadExcalidrawScene(
-      currentScene(),
-      getExcalidrawInteropFilename(context.boardSlug, context.boardId, context.canvasId),
-    );
-  }, [context.boardId, context.boardSlug, context.canvasId, currentScene]);
-
-  const exportObsidianMarkdown = useCallback(() => {
-    downloadObsidianExcalidrawMarkdown(
-      currentScene(),
-      getObsidianExcalidrawInteropFilename(context.boardSlug, context.boardId, context.canvasId),
-    );
-  }, [context.boardId, context.boardSlug, context.canvasId, currentScene]);
-
-  const importScene = useCallback(async (file: File) => {
-    const scene = await readExcalidrawSceneFile(file);
-    const imported = nextDocument(documentRef.current, { ...scene, source: scene.source || 'imported.excalidraw' });
-    saveDocument(imported, { updateState: true });
-    apiRef.current?.updateScene?.({ elements: scene.elements, appState: sanitizeAppState(scene.appState), files: scene.files });
-  }, [saveDocument]);
 
   // Load a named collection into Excalidraw's single library slot (merge:false
   // replaces the grid). Set active first so the resulting onLibraryChange writes
@@ -608,12 +449,6 @@ function useNebulaCanvas({ context: contextInput, store, onReady, chrome = true,
     if (typeof window !== 'undefined') {
       window.open(EXCALIDRAW_LIBRARY_SUBMIT_URL, '_blank', 'noopener,noreferrer');
     }
-  }, []);
-
-  // The top-bar search box opens Excalidraw's native "Find on canvas" panel,
-  // where the user types and navigates matches.
-  const openCanvasSearch = useCallback(() => {
-    apiRef.current?.toggleSidebar?.({ name: 'default', tab: 'search', force: true });
   }, []);
 
   const panCanvasByClientDelta = useCallback((deltaX: number, deltaY: number) => {
@@ -774,19 +609,6 @@ function useNebulaCanvas({ context: contextInput, store, onReady, chrome = true,
     ],
   );
 
-  const createCanvas = useCallback(() => {
-    if (typeof window === 'undefined') return;
-    const name = window.prompt('Name your new canvas', 'Untitled canvas');
-    if (name === null) return;
-    const canvasId = `canvas-${Date.now().toString(36)}`;
-    const created = createEmptyNebulaExcalidrawDocument({ ...baseContext, canvasId }, name.trim() || canvasId);
-    saveDocument(created);
-    refreshCanvases();
-    setActiveCanvasId(canvasId);
-  }, [baseContext, saveDocument, refreshCanvases]);
-
-  const boardName = baseContext.boardName || baseContext.boardSlug || DEFAULT_NEBULA_CANVAS_NAME;
-
   const canvas = loadError ? (
     <div className="nebula-loading" data-nebula-load-error="">
       <div className="nebula-error-card" role="alert">
@@ -794,7 +616,7 @@ function useNebulaCanvas({ context: contextInput, store, onReady, chrome = true,
         <p className="nebula-loading__title">Couldn’t read this drawing.</p>
         <p>Nothing was changed. Try again, or it opens by itself when the file changes.</p>
         <pre>{loadErrorMessage(loadError.error)}</pre>
-        {/* The chrome-less canvas lives in the workspace's tab: its buttons. */}
+        {/* The canvas lives in the workspace's tab: its buttons. */}
         <button type="button" className="btn-secondary ws-view-btn" data-no-arc onClick={() => setLoadAttempt((count) => count + 1)}>
           Try again
         </button>
@@ -806,7 +628,7 @@ function useNebulaCanvas({ context: contextInput, store, onReady, chrome = true,
         key={`${context.boardId}:${context.canvasId}`}
         excalidrawAPI={handleApi}
         initialData={toExcalidrawInitialData(
-          chrome || hasScrollPosition(document.scene)
+          hasScrollPosition(document.scene)
             ? toInitialData(document.scene, activeLibraryItems)
             : { ...toInitialData(document.scene, activeLibraryItems), scrollToContent: true },
         )}
@@ -818,26 +640,14 @@ function useNebulaCanvas({ context: contextInput, store, onReady, chrome = true,
         libraryReturnUrl={createLibraryReturnUrl()}
         UIOptions={{ canvasActions: { loadScene: false, saveToActiveFile: false } }}
         onLinkOpen={onLinkOpen}
+        generateIdForFile={generateIdForFile}
       />
     </div>
   ) : (
     <div className="nebula-loading">Loading Nebula scene…</div>
   );
 
-  return {
-    canvas,
-    boardName,
-    canvases,
-    context,
-    setActiveCanvasId,
-    createCanvas,
-    resetCanvasBackground,
-    exportScene,
-    exportNebulaDocument,
-    exportObsidianMarkdown,
-    importScene,
-    openCanvasSearch,
-  };
+  return canvas;
 }
 
 export default NebulaExcalidrawShell;

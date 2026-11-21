@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
+import type { Actor } from '../../../files/types';
 import {
   countLines,
   folderOf,
   formatBytes,
   formatCount,
   formatDuration,
+  formatActor,
   formatEdited,
+  isYou,
   kindLabel,
   titleFromName,
 } from './format';
@@ -85,6 +88,50 @@ describe('formatEdited', () => {
   it('treats a clock slightly ahead as just now, and says nothing without a time', () => {
     expect(formatEdited(now + 5_000, now)).toBe('Edited just now');
     expect(formatEdited(undefined, now)).toBe('');
+  });
+});
+
+describe('formatEdited with who made the change', () => {
+  const now = Date.UTC(2026, 9, 22, 12, 0, 0);
+  const lear: Actor = { type: 'agent', id: 'lear', name: 'Lear' };
+  const bruce: Actor = { type: 'human', id: 'u-1', name: 'Bruce' };
+
+  it('names the actor before the time, in each of the time’s forms', () => {
+    expect(formatEdited(now - 4 * 60_000, now, lear)).toBe('Edited by Lear, 4 min ago');
+    expect(formatEdited(now - 26 * 60 * 60_000, now, lear)).toBe('Edited by Lear, yesterday');
+    expect(formatEdited(Date.UTC(2026, 6, 4, 12), now, lear)).toBe('Edited by Lear, 4 Jul');
+  });
+
+  it('says you when type and id both match the asker', () => {
+    expect(formatEdited(now - 4 * 60_000, now, bruce, { ...bruce })).toBe('Edited by you, 4 min ago');
+    // the same id from the other kind of actor is someone else, and a different id is too
+    expect(formatEdited(now - 4 * 60_000, now, { ...bruce, type: 'agent' }, bruce)).toBe('Edited by Bruce, 4 min ago');
+    expect(formatEdited(now - 4 * 60_000, now, bruce, { ...bruce, id: 'u-2' })).toBe('Edited by Bruce, 4 min ago');
+    expect(formatEdited(now - 4 * 60_000, now, bruce, undefined)).toBe('Edited by Bruce, 4 min ago');
+  });
+
+  it('falls back to the actor’s id when it has no name', () => {
+    expect(formatEdited(now - 4 * 60_000, now, { type: 'agent', id: 'corona', name: '' })).toBe('Edited by corona, 4 min ago');
+  });
+
+  it('keeps the existing line with no actor, and says nothing with no time even with one', () => {
+    expect(formatEdited(now - 4 * 60_000, now)).toBe('Edited 4 min ago');
+    expect(formatEdited(now - 4 * 60_000, now, undefined, bruce)).toBe('Edited 4 min ago');
+    expect(formatEdited(undefined, now, lear, bruce)).toBe('');
+  });
+
+  it('isYou needs both an actor and an asker, matching by type and id', () => {
+    expect(isYou(bruce, { ...bruce, name: 'Someone else' })).toBe(true);
+    expect(isYou(undefined, bruce)).toBe(false);
+    expect(isYou(bruce, undefined)).toBe(false);
+    expect(isYou(lear, bruce)).toBe(false);
+    expect(isYou({ type: 'agent', id: 'u-1', name: 'x' }, bruce)).toBe(false);
+  });
+
+  it('formatActor is you, or the name, or the id', () => {
+    expect(formatActor(bruce, bruce)).toBe('you');
+    expect(formatActor(lear, bruce)).toBe('Lear');
+    expect(formatActor({ type: 'agent', id: 'corona', name: '' })).toBe('corona');
   });
 });
 

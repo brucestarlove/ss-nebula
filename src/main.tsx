@@ -15,8 +15,10 @@ import { initPreferencesFromStorage } from './workspace/preferences'
 
 // Excalidraw's fonts come from this site: every app build copies them to
 // <base>fonts/ (scripts/excalidrawFonts.ts), and Excalidraw asks esm.sh only
-// when this path is unset. Set before any canvas loads.
-(window as Window & { EXCALIDRAW_ASSET_PATH?: string }).EXCALIDRAW_ASSET_PATH = import.meta.env.BASE_URL
+// when this path is unset. Set before any canvas loads, as an absolute URL:
+// a server's build has the relative base './', read against the page's
+// <base href> (cli/app.mjs).
+(window as Window & { EXCALIDRAW_ASSET_PATH?: string }).EXCALIDRAW_ASSET_PATH = new URL(import.meta.env.BASE_URL, document.baseURI).href
 
 // Apply the stored theme, motion, background (with an image's preview) and
 // workspace preferences (style, page width, note text, dock) before first

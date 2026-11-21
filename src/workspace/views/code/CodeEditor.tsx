@@ -1,5 +1,6 @@
 import { markdown } from '@codemirror/lang-markdown';
 import { languages } from '@codemirror/language-data';
+import type { Extension as EditorExtension } from '@codemirror/state';
 import { basicSetup, EditorView } from 'codemirror';
 import { useEffect, useRef } from 'react';
 import { nebulaEditorTheme, nebulaHighlighting } from './codeTheme';
@@ -25,6 +26,8 @@ export type CodeEditorProps = {
   readOnly?: boolean;
   /** The language CodeMirror picked (null for plain text). */
   onLanguage?(name: string | null): void;
+  /** More for the editor, added when it is made (a note's source takes the paste and drop of images). */
+  extensions?: EditorExtension;
 };
 
 async function languageFor(fileName: string, variant: CodeEditorProps['variant']): Promise<{ extension: Extension; name: string | null }> {
@@ -72,6 +75,7 @@ export default function CodeEditor(props: CodeEditorProps) {
           nebulaHighlighting,
           EditorView.contentAttributes.of({ 'aria-label': latest.current.label, ...(readOnly ? { 'aria-readonly': 'true' } : {}) }),
           EditorView.editable.of(!readOnly),
+          latest.current.extensions ?? [],
           EditorView.updateListener.of((update) => {
             if (update.docChanged) latest.current.onChange(update.state.doc.toString());
           }),

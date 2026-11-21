@@ -7,8 +7,9 @@
  */
 import { startStarscape } from '@starlove/ui/starscape';
 
-// Nebula 1.x's and 2.0's board links that land on the landing page (a
-// bookmark of /?board=… or /#/b/…) belong to the app, which reads them.
+// A Nebula 1.x board link that lands on the landing page (a bookmark of
+// /?board=… or /#/b/…) goes on to the app's front door; the app no longer
+// reads the board or the canvas in it.
 const boardLink = /^#\/(?:b|board|c|canvas)(?:\/|$)/.test(location.hash) || /[?&](?:board|canvas)=/.test(location.search);
 
 // Nebula installed as an app opens the app, never this page. Installs made

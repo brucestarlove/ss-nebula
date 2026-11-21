@@ -1,8 +1,11 @@
 import { Component, Suspense, useEffect, useMemo, useRef, type ComponentType, type ErrorInfo, type ReactNode } from 'react';
-import type { FileEntry, FileKind, FileStore, FileViewProps } from '../../files/types';
+import type { Actor, FileEntry, FileKind, FileStore, FileViewProps } from '../../files/types';
 import { occurrences, type Heading } from '../outline';
 import { BacklinksPanel } from './BacklinksPanel';
 import { TagsPanel } from './TagsPanel';
+import { HistoryPanel, type HistoryProps } from './HistoryPanel';
+import { formatEdited } from '../views/shared/format';
+import { useNow } from '../views/shared/hooks';
 import { ViewActionsContext, type ViewActions } from '../views/shared/viewActions';
 import { Button } from './Button';
 import { findHeading, findJump, HEADING_JUMP_MS, type HeadingJump } from './headings';
@@ -137,10 +140,17 @@ function jumpTo(heading: Heading, nth: number) {
   if (target) scrollToHeading(target);
 }
 
-type OutlineProps = { headings: Heading[] | null; isNote: boolean; /** The active tab's file. */ path?: string | null };
+type OutlineProps = {
+  headings: Heading[] | null;
+  isNote: boolean;
+  /** The active tab's file. */
+  path?: string | null;
+  /** What History needs to know of the project and the file; without it there's no History section. */
+  history?: HistoryProps;
+};
 
-/** The right panel: the active note's outline. Backlinks arrive with search. */
-export function OutlinePanel({ headings, isNote, path = null }: OutlineProps) {
+/** The right panel: the active note's outline, what links to it, its tags, and the file's history. */
+export function OutlinePanel({ headings, isNote, path = null, history }: OutlineProps) {
   const nths = headings ? occurrences(headings) : [];
   const current = useReadingHeading(isNote ? path : null, isNote ? headings : null);
   const list = useRef<HTMLUListElement>(null);
@@ -179,6 +189,7 @@ export function OutlinePanel({ headings, isNote, path = null }: OutlineProps) {
       </section>
       <BacklinksPanel path={path} />
       <TagsPanel path={path} />
+      {history ? <HistoryPanel {...history} /> : null}
     </aside>
   );
 }
@@ -194,16 +205,29 @@ type StatusLineProps = {
   saving: boolean;
   status: string | null;
   message: string | null;
+  /** The open file's entry: when it was edited, and by whom where the server says. */
+  edited?: Pick<FileEntry, 'modified' | 'modifiedBy'> | null;
+  /** Who is using the app, so "Edited by you" says it. */
+  you?: Actor;
 };
 
-/** Where the files are kept, whether they're saved, the view's own status
- * ('76 words'), and the signature. */
-export function StatusLine({ ephemeral, inFolder = false, place = null, folderClosed = false, saving, status, message }: StatusLineProps) {
+/** Where the files are kept, whether they're saved, when the open file was last edited and by whom,
+ * the view's own status ('76 words'), and the signature. */
+export function StatusLine({ ephemeral, inFolder = false, place = null, folderClosed = false, saving, status, message, edited = null, you }: StatusLineProps) {
+  // The same clock the note's own line uses, so the two never disagree.
+  const now = useNow(30_000);
+  const editedText = edited ? formatEdited(edited.modified, now, edited.modifiedBy, you) : '';
   const kept = folderClosed ? 'The folder isn’t open' : place ? `Saved on ${place}` : inFolder ? 'Saved on this computer' : ephemeral ? 'Kept in this tab only' : 'Saved in this browser';
   return (
     <footer className="ws-status">
       <span className="ws-store-dot" data-ephemeral={ephemeral ? '' : undefined} data-attention={folderClosed ? '' : undefined} aria-hidden="true" />
       <span>{saving ? 'Saving…' : kept}</span>
+      {editedText ? (
+        <>
+          <span aria-hidden="true">·</span>
+          <span className="ws-status-edited">{editedText}</span>
+        </>
+      ) : null}
       {message ? (
         <>
           <span aria-hidden="true">·</span>

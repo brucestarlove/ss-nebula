@@ -6,6 +6,8 @@
  * which tabs are open) don't count.
  */
 import type { BrowserRegistry } from '../files/registry';
+import { withHistoryCalls } from '../files/history';
+import { withAccountCalls } from '../files/account';
 import type { FileStore } from '../files/types';
 
 function isNebulaSettings(path: string): boolean {
@@ -26,33 +28,35 @@ export function askToKeepOnFirstEdit(registry: BrowserRegistry, ask: () => unkno
     }
   };
 
-  const wrap = (store: FileStore): FileStore => ({
-    list: () => store.list(),
-    stat: (path) => store.stat(path),
-    readText: (path) => store.readText(path),
-    readBlob: (path) => store.readBlob(path),
-    watch: (listener) => store.watch(listener),
-    // The arguments whole, so no write option is dropped.
-    async write(...args) {
-      await store.write(...args);
-      if (!isNebulaSettings(args[0])) edited();
-    },
-    async mkdir(path) {
-      await store.mkdir(path);
-      if (!isNebulaSettings(path)) edited();
-    },
-    async rename(from, to) {
-      await store.rename(from, to);
-      edited();
-    },
-    async remove(path) {
-      await store.remove(path);
-      if (!isNebulaSettings(path)) edited();
-    },
-  });
+  // A server's store keeps its history, account, card context and space calls through the wrapper.
+  const wrap = (store: FileStore): FileStore =>
+    withAccountCalls(store, withHistoryCalls(store, {
+      list: () => store.list(),
+      stat: (path) => store.stat(path),
+      readText: (path) => store.readText(path),
+      readBlob: (path) => store.readBlob(path),
+      watch: (listener) => store.watch(listener),
+      // The arguments whole, so no write option is dropped.
+      async write(...args) {
+        await store.write(...args);
+        if (!isNebulaSettings(args[0])) edited();
+      },
+      async mkdir(path) {
+        await store.mkdir(path);
+        if (!isNebulaSettings(path)) edited();
+      },
+      async rename(from, to) {
+        await store.rename(from, to);
+        edited();
+      },
+      async remove(path) {
+        await store.remove(path);
+        if (!isNebulaSettings(path)) edited();
+      },
+    }));
 
   return {
-    // The tree (the migration's) and read-only (re-review R5) as the
+    // The tree (device files) and read-only (re-review R5) as the
     // registry has them; readOnly turns true only once registry.json is read.
     tree: registry.tree,
     get readOnly() {

@@ -8,7 +8,7 @@
  * nothing.
  *
  * Every test runs under the site's Content-Security-Policy (serve-site.mjs
- * sends vercel.json's headers), and fails if the policy blocked anything or a
+ * sends routes.json's headers), and fails if the policy blocked anything or a
  * request left the origin.
  */
 import { test as base, expect, type BrowserContext, type BrowserContextOptions, type Page } from '@playwright/test';
@@ -129,17 +129,17 @@ export async function openApp(page: Page, path = '/'): Promise<string[]> {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   const response = await page.goto(appUrl(path));
-  // The suite runs under the policy the site sends (vercel.json via serve-site.mjs).
+  // The suite runs under the policy the site sends (routes.json via serve-site.mjs).
   expect(response?.headers()['content-security-policy']).toMatch(/^default-src 'self'/);
   await page.locator('.ws-root').waitFor({ timeout: 30_000 });
   await page.locator('#loader').waitFor({ state: 'detached', timeout: 10_000 });
   return errors;
 }
 
-/** Leaves the welcome (or the note about moved canvases) by its main button. */
-export async function closeIntro(page: Page, button: 'Explore the sample' | 'Got it' = 'Explore the sample') {
+/** Leaves the welcome by its main button. */
+export async function closeIntro(page: Page) {
   const dialog = page.locator('dialog.ws-welcome');
-  await dialog.getByRole('button', { name: button }).click();
+  await dialog.getByRole('button', { name: 'Explore the sample' }).click();
   await expect(dialog).toHaveCount(0);
 }
 
@@ -263,132 +263,6 @@ export async function seedLocalStorage(context: BrowserContext, items: Record<st
   }, items);
 }
 
-/* ---- Nebula 1.x canvases, as LocalStorageSceneStore saved them ----------- */
-
-type Element = Record<string, unknown> & { id: string };
-type Scene = { type: 'excalidraw'; version: number; source: string; elements: Element[]; appState: Record<string, unknown>; files: Record<string, unknown> };
-
-const hexagon = JSON.parse(readFileSync(join(import.meta.dirname, 'assets', 'images', 'winter-hexagon.excalidraw'), 'utf8')) as Scene;
-
-// A 16×16 PNG (a night gradient with a star): an embedded image, as
-// Excalidraw keeps one in the scene.
-const PNG =
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAACdklEQVR42kXLIaukQAAAYH/EJIMIghhmypQxiCCIQcuUMQzyhEEezoYJGwwGg8FgMBgMBoPBYDAYDBs2bFiOF164X3L50oULD776acDguvFhGsI2PqFxw4ZyjbtvVKFRx0ZDjTY1uszohTGUxqiMSQPWh24J0/q0rRu0FLburlX5Vh1aTWy11OpSq8+sQVhjaU3KmjXgCN35NJ2b7Sjo3LFTuU7tO03otLHTUadPnSFzRuFMpTMrZ9EA+tTRzUTKRneIKoxqFzU+akPUxainaEjRmKFJoLlEi0KrBvBNx8rEdxtXENcYNy5ufdyFuI/xQPGY4inDs8BLiVeFNw0QpZO7SSqb1JA0mLQu6XzSh2SIyUjJlJI5I4sga0k2RXYNeHfdq0yvtr0Gei32OtfrfW8IvTH2JurNqbdk3iq8rfR25R0aCCo9qM2gsYMWBh0OejcY/v759R8NljRYs2ATwV4GhwpODUS1HjVm1NpRB6MeR4MbjT8hWtNoy6JdREcZnSq6NJA0etKaSWcnPUwGnIxuMv2EZEuTPUsOkZxlcqnkoQHa6rQzaW/TAdIR08mls0+XkK4x3SjdU3pk9BT0KulD0acGWKez3mSDzUbIJsxmly0+W0O2xWyn7EjZmbFLsEfJnoq9NMB7nQ8mH20+QT5jvrh89fkW8j3mB+Vnyq+MPwR/lvyl+FsD+aDno5lPdj7DfMH56uabn+9hfsT5SfMrzR9Z/hT5q8zfKv/SQDHqxWQWs10ssFhxsbnF7hdHWJxxcdHikRbPrHiJ4l0WX6r41oCcdDmbcrHlCuWG5e7Kw5dnKK9YPqh8pvKVybeQX6X8VvL3P1J5KI7vCHlaAAAAAElFTkSuQmCC';
-
-function imageScene(id: string): Scene {
-  return {
-    type: 'excalidraw',
-    version: 2,
-    source: 'https://nebula.starscape.app',
-    elements: [
-      {
-        id: `${id}-img`,
-        type: 'image',
-        x: 40,
-        y: 60,
-        width: 160,
-        height: 160,
-        angle: 0,
-        strokeColor: 'transparent',
-        backgroundColor: 'transparent',
-        fillStyle: 'solid',
-        strokeWidth: 2,
-        strokeStyle: 'solid',
-        roughness: 1,
-        opacity: 100,
-        fileId: `${id}-file`,
-        status: 'saved',
-        scale: [1, 1],
-        crop: null,
-        groupIds: [],
-        frameId: null,
-        roundness: null,
-        boundElements: null,
-        link: null,
-        locked: false,
-        seed: 1,
-        version: 3,
-        versionNonce: 7,
-        isDeleted: false,
-        updated: 1761100000000,
-        index: 'a0',
-      },
-      {
-        id: `${id}-label`,
-        type: 'text',
-        x: 40,
-        y: 240,
-        width: 180,
-        height: 25,
-        angle: 0,
-        strokeColor: '#1e1e1e',
-        backgroundColor: 'transparent',
-        fillStyle: 'solid',
-        strokeWidth: 2,
-        strokeStyle: 'solid',
-        roughness: 1,
-        opacity: 100,
-        groupIds: [],
-        frameId: null,
-        roundness: null,
-        boundElements: null,
-        link: null,
-        locked: false,
-        seed: 2,
-        version: 2,
-        versionNonce: 9,
-        isDeleted: false,
-        updated: 1761100000000,
-        text: 'The Pleiades',
-        fontSize: 20,
-        fontFamily: 5,
-        textAlign: 'left',
-        verticalAlign: 'top',
-        containerId: null,
-        originalText: 'The Pleiades',
-        autoResize: true,
-        lineHeight: 1.25,
-        index: 'a1',
-      },
-    ],
-    appState: { viewBackgroundColor: 'transparent', theme: 'dark', zoom: { value: 1 } },
-    files: { [`${id}-file`]: { mimeType: 'image/png', id: `${id}-file`, dataURL: PNG, created: 1761100000000, lastRetrieved: 1761100000500 } },
-  };
-}
-
-const EMPTY_METADATA = { ticketLinks: [], missionFrames: [], artifactRefs: [], semanticIndex: {} };
-
-function legacyDocument(boardId: string, canvasId: string, name: string, scene: Scene, nebula: unknown = EMPTY_METADATA) {
-  return { type: 'starscape.nebula.excalidraw', version: 1, boardId, canvasId, name, updatedAt: '2026-09-25T18:00:00.000Z', scene, nebula };
-}
-
-function legacyKey(boardId: string, canvasId: string) {
-  return `nebula:excalidraw:${encodeURIComponent(boardId)}:${encodeURIComponent(canvasId)}`;
-}
-
-export type LegacyCanvas = { key: string; boardId: string; canvasId: string; name: string; file: string; elementIds: string[] };
-
-/** Two boards as Nebula 1.x left them: the default board with the sketch's
- * Winter hexagon and a canvas holding an embedded image plus Orbit metadata,
- * and a board whose id can't be a project id. Plus a library and the theme. */
-export function legacyFixtures(): { storage: Record<string, string>; canvases: LegacyCanvas[] } {
-  const entries: Array<[LegacyCanvas, unknown]> = [];
-  const add = (boardId: string, canvasId: string, name: string, file: string, scene: Scene, nebula?: unknown) => {
-    const key = legacyKey(boardId, canvasId);
-    entries.push([{ key, boardId, canvasId, name, file, elementIds: scene.elements.filter((element) => !element.isDeleted).map((element) => element.id) }, legacyDocument(boardId, canvasId, name, scene, nebula)]);
-  };
-  add('ss-nebula', 'main', 'Winter hexagon', 'Winter hexagon.excalidraw.md', hexagon);
-  add('ss-nebula', 'pleiades', 'The Pleiades', 'The Pleiades.excalidraw.md', imageScene('pleiades'), {
-    ...EMPTY_METADATA,
-    ticketLinks: [{ ticketId: 'ORB-12', elementIds: ['pleiades-img'], label: 'Launch' }],
-  });
-  add('board/a', 'canvas b', 'Plan: phase 1/2', 'Plan- phase 1-2.excalidraw.md', imageScene('plan'));
-  const storage: Record<string, string> = Object.fromEntries(entries.map(([canvas, document]) => [canvas.key, JSON.stringify(document)]));
-  storage['nebula:excalidraw-libraries:ss-nebula'] = JSON.stringify({ collections: [], activeId: 'personal' });
-  storage['nebula:theme'] = 'dark';
-  return { storage, canvases: entries.map(([canvas]) => canvas) };
-}
-
 /* ---- files and views ------------------------------------------------------ */
 
 /** The open project's id, from the address. */
@@ -481,6 +355,10 @@ export function wavFile(): Buffer {
   for (let index = 0; index < samples; index += 1) buffer.writeInt16LE(Math.round(Math.sin((index / rate) * 2 * Math.PI * 440) * 3000), 44 + index * 2);
   return buffer;
 }
+
+// A 16×16 PNG as a data URL.
+const PNG =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAACdklEQVR42kXLIaukQAAAYH/EJIMIghhmypQxiCCIQcuUMQzyhEEezoYJGwwGg8FgMBgMBoPBYDAYDBs2bFiOF164X3L50oULD776acDguvFhGsI2PqFxw4ZyjbtvVKFRx0ZDjTY1uszohTGUxqiMSQPWh24J0/q0rRu0FLburlX5Vh1aTWy11OpSq8+sQVhjaU3KmjXgCN35NJ2b7Sjo3LFTuU7tO03otLHTUadPnSFzRuFMpTMrZ9EA+tTRzUTKRneIKoxqFzU+akPUxainaEjRmKFJoLlEi0KrBvBNx8rEdxtXENcYNy5ufdyFuI/xQPGY4inDs8BLiVeFNw0QpZO7SSqb1JA0mLQu6XzSh2SIyUjJlJI5I4sga0k2RXYNeHfdq0yvtr0Gei32OtfrfW8IvTH2JurNqbdk3iq8rfR25R0aCCo9qM2gsYMWBh0OejcY/v759R8NljRYs2ATwV4GhwpODUS1HjVm1NpRB6MeR4MbjT8hWtNoy6JdREcZnSq6NJA0etKaSWcnPUwGnIxuMv2EZEuTPUsOkZxlcqnkoQHa6rQzaW/TAdIR08mls0+XkK4x3SjdU3pk9BT0KulD0acGWKez3mSDzUbIJsxmly0+W0O2xWyn7EjZmbFLsEfJnoq9NMB7nQ8mH20+QT5jvrh89fkW8j3mB+Vnyq+MPwR/lvyl+FsD+aDno5lPdj7DfMH56uabn+9hfsT5SfMrzR9Z/hT5q8zfKv/SQDHqxWQWs10ssFhxsbnF7hdHWJxxcdHikRbPrHiJ4l0WX6r41oCcdDmbcrHlCuWG5e7Kw5dnKK9YPqh8pvKVybeQX6X8VvL3P1J5KI7vCHlaAAAAAElFTkSuQmCC';
 
 /** A 16×16 PNG: a night gradient with a star. */
 export function pngFile(): Buffer {

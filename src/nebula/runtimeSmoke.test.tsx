@@ -1,6 +1,5 @@
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { NebulaExcalidrawDocument } from './storage/types';
 
 const startStarscape = vi.hoisted(() => vi.fn());
 const excalidrawMock = vi.hoisted(() => {
@@ -136,7 +135,6 @@ describe('Nebula runtime smoke paths', () => {
         removeListener: vi.fn(),
       })),
     });
-    delete window.__NEBULA_CONTEXT__;
     document.body.innerHTML = '';
   });
 
@@ -166,138 +164,15 @@ describe('Nebula runtime smoke paths', () => {
     expect(document.querySelector('.nebula-error-state')).toBeNull();
 
     expect(startStarscape).toHaveBeenCalledTimes(1);
-    // Excalidraw's fonts come from this site, not esm.sh (finding 20).
-    expect((window as Window & { EXCALIDRAW_ASSET_PATH?: unknown }).EXCALIDRAW_ASSET_PATH).toBe(import.meta.env.BASE_URL);
+    // Excalidraw's fonts come from this site, not esm.sh (finding 20): the
+    // build's base read against the page's, so a mounted copy finds them too.
+    expect((window as Window & { EXCALIDRAW_ASSET_PATH?: unknown }).EXCALIDRAW_ASSET_PATH).toBe(
+      new URL(import.meta.env.BASE_URL, document.baseURI).href,
+    );
     expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
     expect(document.documentElement.getAttribute('data-motion')).toBe('full');
     expect(document.documentElement.getAttribute('data-bg')).toBe('black');
     await delay(1300);
     expect(document.getElementById('loader')).toBeNull();
   }, 15000);
-
-  it('mounts as a host-embedded island, updates context, and unmounts without owning sibling DOM', async () => {
-    const host = document.createElement('main');
-    host.innerHTML = `
-      <h1 id="suite-title">Suite Dashboard</h1>
-      <div id="nebula-island"></div>
-      <aside id="suite-sidebar">Host chrome</aside>
-    `;
-    document.body.append(host);
-    const island = document.getElementById('nebula-island');
-    if (!island) throw new Error('missing island fixture');
-
-    const onReady = vi.fn();
-    const onUnmount = vi.fn();
-    const onError = vi.fn();
-    const store = {
-      load: vi.fn(async () => null),
-      save: vi.fn(async () => undefined),
-      list: vi.fn(async () => []),
-    };
-    const { mountNebula } = await import('./mountNebula');
-
-    let handle: ReturnType<typeof mountNebula> | undefined;
-    await act(async () => {
-      handle = mountNebula(island, {
-        context: { boardId: 'suite-board', boardName: 'Suite Board', canvasId: 'mission-map' },
-        lifecycle: { onReady, onUnmount, onError },
-        store,
-      });
-    });
-    if (!handle) throw new Error('mountNebula did not return a handle');
-    const mountedHandle = handle;
-
-    await expect(mountedHandle.ready).resolves.toBeUndefined();
-    expect(onReady).toHaveBeenCalledTimes(1);
-    expect(onReady).toHaveBeenCalledWith(mountedHandle);
-    expect(onError).not.toHaveBeenCalled();
-    expect(mountedHandle.getStatus()).toBe('mounted');
-    expect(window.__NEBULA_CONTEXT__).toBeUndefined();
-    expect(document.getElementById('suite-title')?.textContent).toBe('Suite Dashboard');
-    expect(document.getElementById('suite-sidebar')?.textContent).toBe('Host chrome');
-    expect(island.querySelector('.nebula-app')).not.toBeNull();
-    await waitFor(() => {
-      expect(island.querySelector('.nebula-canvas')?.getAttribute('data-nebula-canvas-id')).toBe('mission-map');
-    });
-
-    await act(async () => {
-      mountedHandle.update({
-        context: { boardId: 'suite-board', boardName: 'Suite Board', canvasId: 'retro' },
-        lifecycle: { onReady, onUnmount, onError },
-        store,
-      });
-    });
-    await waitFor(() => {
-      expect(island.querySelector('.nebula-canvas')?.getAttribute('data-nebula-canvas-id')).toBe('retro');
-    });
-
-    await act(async () => {
-      mountedHandle.unmount();
-    });
-
-    expect(mountedHandle.getStatus()).toBe('unmounted');
-    expect(onUnmount).toHaveBeenCalledTimes(1);
-    expect(island.innerHTML).toBe('');
-    expect(document.getElementById('suite-title')?.textContent).toBe('Suite Dashboard');
-    expect(document.getElementById('suite-sidebar')?.textContent).toBe('Host chrome');
-  });
-
-  it('resets an opaque Excalidraw canvas background when Nebula theme controls are used', async () => {
-    const host = document.createElement('main');
-    host.innerHTML = '<div id="nebula-island"></div>';
-    document.body.append(host);
-    const island = document.getElementById('nebula-island');
-    if (!island) throw new Error('missing island fixture');
-
-    const savedDocuments: NebulaExcalidrawDocument[] = [];
-    const store = {
-      load: vi.fn(async () => null),
-      save: vi.fn(async (document: NebulaExcalidrawDocument) => {
-        savedDocuments.push(document);
-      }),
-      list: vi.fn(async () => []),
-    };
-    const { mountNebula } = await import('./mountNebula');
-
-    let handle: ReturnType<typeof mountNebula> | undefined;
-    await act(async () => {
-      handle = mountNebula(island, {
-        context: { boardId: 'suite-board', boardName: 'Suite Board', canvasId: 'mission-map' },
-        store,
-      });
-    });
-    if (!handle) throw new Error('mountNebula did not return a handle');
-    const mountedHandle = handle;
-
-    await expect(mountedHandle.ready).resolves.toBeUndefined();
-    await waitFor(() => {
-      expect(island.querySelector('[data-nebula-smoke-excalidraw="ready"]')).not.toBeNull();
-    });
-
-    store.save.mockClear();
-    excalidrawMock.updateScene.mockClear();
-    excalidrawMock.state.appState = {
-      ...excalidrawMock.state.appState,
-      viewBackgroundColor: '#f8f9fa',
-    };
-
-    const activeThemeButton = Array.from(island.querySelectorAll<HTMLButtonElement>('.nebula-theme-option')).find(
-      (button) => button.getAttribute('aria-checked') === 'true',
-    );
-    if (!activeThemeButton) throw new Error('missing active theme button');
-
-    await act(async () => {
-      activeThemeButton.click();
-    });
-
-    expect(excalidrawMock.updateScene).toHaveBeenCalledWith({
-      appState: expect.objectContaining({ viewBackgroundColor: 'transparent' }),
-    });
-    const savedDocument = savedDocuments.at(-1);
-    expect(savedDocument?.scene.appState?.viewBackgroundColor).toBe('transparent');
-
-    await act(async () => {
-      mountedHandle.unmount();
-    });
-  });
 });

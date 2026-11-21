@@ -31,10 +31,9 @@ async function drawRectangle(page: Page, at: { x: number; y: number }) {
   await page.mouse.up();
 }
 
-test('the canvas sits in the framed board without the old chrome', async ({ page }) => {
+test('the canvas sits in the framed board, with its library controls', async ({ page }) => {
   const errors = await openHarness(page, HEXAGON);
   await expect(page.locator('.ws-board.ws-canvas .excalidraw')).toBeVisible({ timeout: 30_000 });
-  await expect(page.locator('.nebula-topbar, .nebula-app, .frame-footer')).toHaveCount(0);
   await expect(page.locator('.ws-canvas .nebula-library-controls')).toBeVisible();
   expect(await elementCount(page)).toBe(29);
   // Opening never writes.

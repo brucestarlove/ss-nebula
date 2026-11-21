@@ -1,5 +1,5 @@
 /* Lane C: the canvas tab. The sketch's .ws-board (a framed board, ported by
- * the shell lane) holds Nebula's chrome-less Excalidraw; the canvas is
+ * the shell lane) holds Nebula's Excalidraw canvas; the canvas is
  * transparent, so the sky or the parchment shows through the frame. */
 
 .ws-board.ws-canvas {

@@ -1,6 +1,8 @@
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemoryFileStore, type MemoryFileStore } from '../../../../e2e/harness/views-store';
+import type { AccountStatus } from '../../../files/account';
+import { SignedOutError, SpaceFullError } from '../../../files/serverStore';
 import type { FileEntry } from '../../../files/types';
 import { readObsidianExcalidrawMarkdown, toObsidianExcalidrawMarkdown } from '../../../nebula/excalidraw/obsidianMarkdown';
 import type { LazyNebulaExcalidrawShellProps } from '../../../nebula/LazyNebulaExcalidrawShell';
@@ -41,7 +43,7 @@ vi.mock('../../../nebula/LazyNebulaExcalidrawShell', async () => {
           cancelled = true;
         };
       }, [store, context]);
-      return <div data-fake-shell={props.chrome === false ? 'chromeless' : 'chrome'} />;
+      return <div data-fake-shell="canvas" />;
     },
   };
 });
@@ -84,12 +86,12 @@ describe('CanvasView', () => {
     document.body.innerHTML = '';
   });
 
-  it('opens the canvas in the framed board, without Nebula\u2019s chrome, with the project\u2019s libraries', async () => {
+  it('opens the canvas in the framed board, with the project\u2019s libraries', async () => {
     const view = await render(<CanvasView projectId="night-sky" store={store} entry={entry} kind="canvas" />);
     await waitFor(() => expect(shell.loaded).not.toBeNull());
     const board = view.container.querySelector('.ws-board');
     expect(board?.getAttribute('data-view-of')).toBe('canvas');
-    expect(board?.querySelector('[data-fake-shell="chromeless"]')).not.toBeNull();
+    expect(board?.querySelector('[data-fake-shell="canvas"]')).not.toBeNull();
     expect(shell.props?.context).toMatchObject({ boardId: 'night-sky', canvasId: PATH });
     expect(shell.loaded?.scene.elements.map((element) => element.id)).toEqual(['a', 'b']);
     await view.unmount();
@@ -252,6 +254,83 @@ describe('CanvasView', () => {
         await store.remove(PATH);
       });
       await waitFor(() => expect(bar(view.container)?.textContent).toBe('Deleted elsewhere. Edits here aren’t saved.'));
+      await view.unmount();
+    });
+  });
+  describe('a save the account refuses (signed out, space full)', () => {
+    /** The store refuses writes as `refusing` says, and tells whoever listens when it's signed in. */
+    function accountStore() {
+      const stored = store.write.bind(store);
+      const listeners = new Set<(status: AccountStatus) => void>();
+      let refusing: Error | null = null;
+      store.write = async (path, data, options) => {
+        if (refusing) throw refusing;
+        await stored(path, data, options);
+      };
+      Object.assign(store, {
+        onAccount(listener: (status: AccountStatus) => void) {
+          listeners.add(listener);
+          return () => void listeners.delete(listener);
+        },
+        signedOut: () => (refusing instanceof SignedOutError ? {} : null),
+        retryAccount: async () => {},
+      });
+      return {
+        refuse(error: Error | null) {
+          refusing = error;
+        },
+        say: (status: AccountStatus) => [...listeners].forEach((listener) => listener(status)),
+      };
+    }
+
+    const bar = (container: HTMLElement) => container.querySelector('.ws-canvas-bar');
+    const labels = (container: HTMLElement) => [...container.querySelectorAll('.ws-canvas-bar button, .ws-canvas-bar a')].map((item) => item.textContent);
+
+    async function drawRefused(view: Awaited<ReturnType<typeof render>>) {
+      await waitFor(() => expect(shell.loaded).not.toBeNull());
+      vi.useFakeTimers();
+      await draw([rectangle('a', 2), rectangle('b'), rectangle('c')]);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(400);
+      });
+      vi.useRealTimers();
+      await waitFor(() => expect(bar(view.container)).not.toBeNull());
+    }
+
+    it('keeps the drawing, offers to sign in again, and saves it by itself once the store says signed-in', async () => {
+      const { refuse, say } = accountStore();
+      const view = await render(<CanvasView projectId="p" store={store} entry={entry} kind="canvas" />);
+      refuse(new SignedOutError());
+      await drawRefused(view);
+      expect(labels(view.container)).toEqual(['Sign in again', 'Try again']);
+      expect(store.writes).toHaveLength(0);
+
+      refuse(null);
+      await act(async () => {
+        say('signed-in');
+      });
+      await waitFor(() => expect(store.writes).toHaveLength(1));
+      expect(readObsidianExcalidrawMarkdown(store.peek(PATH) ?? '').elements.map((element) => element.id)).toEqual(['a', 'b', 'c']);
+      await waitFor(() => expect(bar(view.container)).toBeNull());
+      await view.unmount();
+    });
+
+    it('a full space offers a way to more space, and does not save by itself when the store says signed-in', async () => {
+      const { refuse, say } = accountStore();
+      const view = await render(<CanvasView projectId="p" store={store} entry={entry} kind="canvas" />);
+      refuse(new SpaceFullError({ used: 10, limit: 10, upgrade: 'https://suite.test/plans' }));
+      await drawRefused(view);
+      expect(labels(view.container)).toEqual(['Get more space', 'Try again']);
+      refuse(null);
+      await act(async () => {
+        say('signed-in');
+      });
+      await settle(50);
+      expect(store.writes).toHaveLength(0);
+      await act(async () => {
+        byLabel(view.container, 'Try again')?.click();
+      });
+      await waitFor(() => expect(store.writes).toHaveLength(1));
       await view.unmount();
     });
   });

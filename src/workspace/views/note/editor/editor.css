@@ -318,12 +318,6 @@
   text-decoration-color: currentcolor;
 }
 
-/* note.css .ws-prose .ws-tag-inline: workspace.css .ws-tag draws the pill. */
-.ws-cm-live .ws-tag-inline {
-  font-size: 0.78em;
-  vertical-align: 0.08em;
-}
-
 /* ---- ![[embeds]] on a line of their own (embeds.tsx) ------------------------ */
 
 /* The reading view's components (note.css .ws-embed-*) inside a block widget.
@@ -420,10 +414,26 @@
 
 /* Tags */
 
-/* editor/tags.ts marks each #tag (the pill itself is .ws-tag-inline above); with
- * Ctrl/⌘ held a click opens search, so it shows the pointer that says so. */
-.ws-cm-live .ws-cm-mod .ws-cm-tag {
+/* editor/tags.ts marks each #tag. In live preview livePreview.ts also gives it
+ * the page's link look (.ws-tag, workspace.css); the source has only this mark,
+ * so it takes the same colour and underline here, and a tag reads the same in
+ * both modes. A plain click places the cursor; with Ctrl/⌘ held a click opens
+ * search, so the pointer says so. */
+.ws-cm-source .ws-cm-tag {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, var(--accent) 40%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.ws-cm-note .ws-cm-mod .ws-cm-tag {
   cursor: pointer;
+}
+
+.ws-cm-note .ws-cm-mod .ws-cm-tag:hover,
+.ws-cm-live .ws-cm-mod .ws-tag:hover {
+  text-decoration-color: currentcolor;
 }
 
 /* Tables (2.0.2) ------------------------------------------------------------ */

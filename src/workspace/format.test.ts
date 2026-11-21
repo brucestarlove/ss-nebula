@@ -18,6 +18,12 @@ describe('usage labels', () => {
     expect(countLabel(14, 'file')).toBe('14 files');
   });
 
+  it('takes the plural of a noun that does not add a plain s', () => {
+    expect(countLabel(1, 'canvas', 'canvases')).toBe('1 canvas');
+    expect(countLabel(2, 'canvas', 'canvases')).toBe('2 canvases');
+    expect(countLabel(0, 'canvas', 'canvases')).toBe('0 canvases');
+  });
+
   it('says how many files and how much space', () => {
     expect(usageLabel([{ path: 'a', name: 'a', type: 'file', size: 1_500_000 }, { path: 'b', name: 'b', type: 'dir' }])).toBe(
       '1 file · 1.5 MB',

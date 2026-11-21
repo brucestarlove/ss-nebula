@@ -13,13 +13,12 @@ import {
 import { kindFromName } from '../../files/kinds';
 import type { FileKind } from '../../files/types';
 import { dirname, isInside } from '../../files/paths';
+import { FILE_DRAG_TYPE as DRAG_TYPE } from '../dragTypes';
 import { visibleNodes, type TreeNode } from '../tree';
 import { iconForFile } from './fileIcon';
 import { Icon } from './icons';
 import { isContextMenuKey, menuAtElement, type MenuAt } from './ui';
 import { hasMod } from './ui';
-
-const DRAG_TYPE = 'application/x-nebula-path';
 
 export type FileTreeProps = {
   tree: TreeNode[];

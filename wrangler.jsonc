@@ -2,7 +2,7 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   // nebula.starscape.app on Cloudflare Workers static assets (2026-10-25). The site is
   // `pnpm run build:cloudflare`: dist/site, plus _headers and _redirects written from
-  // vercel.json by scripts/cloudflare-assets.mjs. Ship with `pnpm run deploy` (checks
+  // routes.json by scripts/cloudflare-assets.mjs. Ship with `pnpm run deploy` (checks
   // first) or `pnpm run deploy:preview`; never a bare `wrangler deploy`, which ships
   // whatever dist/site holds, a test build included.
   "name": "nebula",
