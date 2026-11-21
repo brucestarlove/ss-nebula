@@ -4,7 +4,7 @@
 // the FileStore conformance every tier passes; the server refuses what it must.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createServer, request as httpRequest } from 'node:http'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { API, createFilesApi, isHiddenName, pathProblem } from '../cli/nebula-files.mjs'
@@ -289,6 +289,39 @@ describe('the server tier: changes made outside Nebula', () => {
         { type: 'unreachable', folder: 'test-server' },
         { type: 'reachable' },
         { type: 'write', path: 'while-away.md' },
+      ])
+    } finally {
+      stop()
+    }
+  })
+
+  it('tells an outside write once, however often the system reports the file unchanged, and the next write again', async () => {
+    const { id, folder } = await newProject()
+    const store = await openStore(id)
+    const changes: FileChange[] = []
+    const stop = store.watch((change) => changes.push(change))
+    const writes = () => changes.filter((c) => c.type === 'write' && c.path === 'once.md').length
+    const until = async (count: number) => {
+      const started = Date.now()
+      while (writes() < count && Date.now() - started < 4_000) await new Promise((resolve) => setTimeout(resolve, 20))
+    }
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 150))
+      const file = join(folder, 'once.md')
+      writeFileSync(file, 'x')
+      await until(1)
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      // macOS can report one write in two batches (Bruce's 2.0.4 publish run); a change of mode is
+      // a report here that leaves the file's bytes and time as they were.
+      chmodSync(file, 0o600)
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      expect(writes()).toBe(1)
+      writeFileSync(file, 'xy')
+      await until(2)
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      expect(changes).toEqual([
+        { type: 'write', path: 'once.md' },
+        { type: 'write', path: 'once.md' },
       ])
     } finally {
       stop()

@@ -68,8 +68,12 @@ const bytesFaults: Record<string, (store: Any) => Any> = {
   },
 }
 
+/** Each test here runs a whole set of cases, on disk for the folder store and the database: a
+ * few seconds on an idle machine, past vitest's 5 s default on a busy Mac (Bruce's 2.0.4 publish run). */
+const SLOW = { timeout: 120_000 }
+
 describe('the byte store cases bite', () => {
-  it('pass the folder store, the control', async () => {
+  it('pass the folder store, the control', SLOW, async () => {
     const cases = byteStoreCases(() => {
       const { dir, dispose } = scratch()
       return { store: createFolderByteStore({ root: dir }), dispose }
@@ -78,7 +82,7 @@ describe('the byte store cases bite', () => {
   })
 
   for (const [fault, make] of Object.entries(bytesFaults)) {
-    it(`fail on ${fault}`, async () => {
+    it(`fail on ${fault}`, SLOW, async () => {
       const cases = byteStoreCases(() => {
         const { dir, dispose } = scratch()
         return { store: make(createFolderByteStore({ root: dir })), dispose }
@@ -132,12 +136,12 @@ const memoryFaults: Record<string, (backend: Any) => Any> = {
 }
 
 describe('the backend cases bite: the rules every backend keeps', () => {
-  it('pass the memory backend, the control', async () => {
+  it('pass the memory backend, the control', SLOW, async () => {
     expect(await firstFailure(backendCases(() => ({ backend: createMemoryBackend() })))).toBeNull()
   })
 
   for (const [fault, make] of Object.entries(memoryFaults)) {
-    it(`fail on ${fault}`, async () => {
+    it(`fail on ${fault}`, SLOW, async () => {
       expect(await firstFailure(backendCases(() => ({ backend: make(createMemoryBackend()) }))), fault).not.toBeNull()
     })
   }
@@ -199,7 +203,7 @@ describe('the backend cases bite: the History cases', () => {
     return { backend: fault ? fault(backend) : backend, dispose }
   }
 
-  it('pass the database backend, the control, and leave out what a backend without history doesn’t claim', { timeout: 120_000 }, async () => {
+  it('pass the database backend, the control, and leave out what a backend without history doesn’t claim', SLOW, async () => {
     expect(await firstFailure(backendCases(make()))).toBeNull()
     const memory = backendCases(() => ({ backend: createMemoryBackend() }))
     const needing = memory.filter((each: Any) => each.needs === 'versions' || each.needs === 'removeProject')
@@ -208,7 +212,7 @@ describe('the backend cases bite: the History cases', () => {
   })
 
   for (const [fault, word, wrap] of historyFaults) {
-    it(`fail on ${fault}, in a case about it`, async () => {
+    it(`fail on ${fault}, in a case about it`, SLOW, async () => {
       // Only the History cases: the others have their own faults above.
       const history = backendCases(make(wrap)).filter((each: Any) => each.needs === 'versions' || each.needs === 'removeProject')
       expect(history.length).toBeGreaterThanOrEqual(9)

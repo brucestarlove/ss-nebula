@@ -202,6 +202,9 @@ class Project {
     this.subscribers = new Set()
     this.queue = Promise.resolve()
     this.recentPaths = new Map()
+    /** Each file told as written by someone else: how it was then (inode, size, time), so a report
+     * of it unchanged isn't told again. */
+    this.toldFiles = new Map()
     this.dirs = new Set()
     /** One native recursive watcher (macOS, Windows), or one per served folder (relative path, '' for
      * the root; Linux). */
@@ -239,6 +242,8 @@ class Project {
   /** Records a change, with who made it when it was made through Nebula (none when the watcher heard it). */
   emit(change, author = {}) {
     this.noteFolders(change)
+    const gone = change.type === 'remove' ? change.path : change.type === 'rename' ? change.from : null
+    if (gone !== null) for (const path of [...this.toldFiles.keys()]) if (isInside(path, gone)) this.toldFiles.delete(path)
     this.seq += 1
     const record = changeRecord({ seq: this.seq, cursor: this.cursor, project: this.meta.id, change, actor: author.actor, context: author.context, client: author.client })
     this.ring.push(record)
@@ -880,6 +885,11 @@ export function createFolderBackend({
     if (st?.isFile()) {
       const touched = project.touchedAt(path, ['wrote', 'moved'])
       if (touched && Number(st.mtimeMs) <= touched) return
+      // A system may report one write more than once, later (macOS, in two batches): the file as
+      // it was told is told once. A new write changes its time, size or inode, and is told.
+      const now = `${st.ino}:${st.size}:${st.mtimeMs}`
+      if (project.toldFiles.get(path) === now) return
+      project.toldFiles.set(path, now)
       project.emit({ type: 'write', path })
     } else if (st?.isDirectory()) {
       if (project.dirs.has(path) || project.touchedAt(path, ['made', 'moved'])) {
